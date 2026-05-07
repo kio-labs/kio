@@ -1,0 +1,4 @@
+[submodule "third_party/kotlinx-io"]
+	path = third_party/kotlinx-io
+	url = https://github.com/kio-labs/kotlinx-io.git
+	branch = experimental/asyc-io

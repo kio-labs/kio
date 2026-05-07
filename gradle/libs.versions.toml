@@ -1,0 +1,11 @@
+[versions]
+kotlin = "2.3.21"
+kotlinx-io = "0.9.0"
+kotlinxCoroutines = "1.10.2"
+
+[libraries]
+kotlinx-io = { group = "org.jetbrains.kotlinx", name = "kotlinx-io-core", version.ref = "kotlinx-io" }
+kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
+
+[plugins]
+kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
