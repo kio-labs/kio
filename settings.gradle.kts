@@ -31,4 +31,3 @@ includeBuild("third_party/kotlinx-io") {
     }
 }
 include(":example:async-echo-server")
-include(":example:echo-server")
