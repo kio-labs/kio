@@ -2,7 +2,7 @@
  * Copyright 2026, the kio-async project contributors
  * SPDX-License-Identifier: Zlib
  */
-package me.andannn.kotlinx.io.extension
+package io.github.andannn.kio.async
 
 import kotlinx.cinterop.CValuesRef
 import kotlinx.cinterop.ExperimentalForeignApi

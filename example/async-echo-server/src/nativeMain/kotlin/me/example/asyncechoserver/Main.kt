@@ -4,15 +4,15 @@
  */
 package me.example.asyncechoserver
 
+import io.github.andannn.kio.async.asyncFdRawSink
+import io.github.andannn.kio.async.asyncFdRawSource
 import kotlinx.cinterop.*
 import kotlinx.coroutines.launch
 import kotlinx.io.AsyncSource
 import kotlinx.io.IOException
 import kotlinx.io.buffered
-import me.andannn.kotlinx.io.extension.asyncFdRawSink
-import me.andannn.kotlinx.io.extension.asyncFdRawSource
-import me.andannn.kotlinx.io.extension.runPollEventLoop
-import me.andannn.kotlinx.io.extension.awaitReadIo
+import io.github.andannn.kio.async.runPollEventLoop
+import io.github.andannn.kio.async.awaitReadIo
 import platform.darwin.inet_addr
 import platform.posix.*
 

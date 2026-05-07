@@ -1,4 +1,4 @@
-package me.andannn.kotlinx.io.extension
+package io.github.andannn.kio.async
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
@@ -22,6 +22,15 @@ import kotlinx.coroutines.disposeOnCancellation
 import kotlinx.coroutines.newCoroutineContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.io.IOException
+import platform.posix.CLOCK_MONOTONIC
+import platform.posix.POLLRDNORM
+import platform.posix.POLLWRNORM
+import platform.posix.clock_gettime
+import platform.posix.errno
+import platform.posix.poll
+import platform.posix.pollfd
+import platform.posix.strerror
+import platform.posix.timespec
 import kotlin.concurrent.AtomicInt
 import kotlin.coroutines.AbstractCoroutineContextKey
 import kotlin.coroutines.Continuation
@@ -34,7 +43,7 @@ import kotlin.native.concurrent.Worker
 
 suspend fun awaitReadIo(fd: Int): Unit = suspendCancellableCoroutine { c ->
     val dispatcher = c.context[AsyncPollEventDispatcher] ?: error("not in async poll event")
-    val fdRequest = PollFdRequest(fd, platform.posix.POLLRDNORM)
+    val fdRequest = PollFdRequest(fd, POLLRDNORM)
     dispatcher.registerFd(fdRequest, c)
 
     c.invokeOnCancellation {
@@ -45,7 +54,7 @@ suspend fun awaitReadIo(fd: Int): Unit = suspendCancellableCoroutine { c ->
 
 suspend fun awaitWriteIo(fd: Int): Unit = suspendCancellableCoroutine { c ->
     val dispatcher = c.context[AsyncPollEventDispatcher] ?: error("not in async poll event")
-    val fdRequest = PollFdRequest(fd, platform.posix.POLLWRNORM)
+    val fdRequest = PollFdRequest(fd, POLLWRNORM)
     dispatcher.registerFd(fdRequest, c)
 
     c.invokeOnCancellation {
@@ -292,16 +301,16 @@ internal class PollFdRequest(
 @OptIn(ObsoleteWorkersApi::class, ExperimentalForeignApi::class)
 internal fun poll(fds: List<PollFdRequest>, timeoutMillis: Long): Unit = memScoped {
 // TODO: avoid alloc memory in each poll
-    val nativePollfd = allocArray<platform.posix.pollfd>(fds.size) { i ->
+    val nativePollfd = allocArray<pollfd>(fds.size) { i ->
         fd = fds[i].fd
         events = fds[i].events.convert()
     }
 
-    val res = platform.posix.poll(nativePollfd, fds.size.convert(), timeoutMillis.toInt())
+    val res = poll(nativePollfd, fds.size.convert(), timeoutMillis.toInt())
 
     if (res < 0) {
-        val e = platform.posix.errno
-        val msg = platform.posix.strerror(e)?.toKString()
+        val e = errno
+        val msg = strerror(e)?.toKString()
         throw IOException("poll failed: errno=$e, message=$msg")
     }
 
@@ -312,10 +321,10 @@ internal fun poll(fds: List<PollFdRequest>, timeoutMillis: Long): Unit = memScop
 
 @OptIn(ExperimentalForeignApi::class)
 internal fun nowMillis(): Long = memScoped {
-    val ts = alloc<platform.posix.timespec>()
-    if (platform.posix.clock_gettime(platform.posix.CLOCK_MONOTONIC.convert(), ts.ptr) != 0) {
-        val e = platform.posix.errno
-        val msg = platform.posix.strerror(e)?.toKString()
+    val ts = alloc<timespec>()
+    if (clock_gettime(CLOCK_MONOTONIC.convert(), ts.ptr) != 0) {
+        val e = errno
+        val msg = strerror(e)?.toKString()
         throw IOException("clock_gettime failed: errno=$e, message=$msg")
     }
 

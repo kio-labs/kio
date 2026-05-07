@@ -1,4 +1,4 @@
-package me.andannn.kotlinx.io.extension
+package io.github.andannn.kio.async
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString

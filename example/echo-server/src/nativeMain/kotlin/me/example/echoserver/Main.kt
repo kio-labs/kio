@@ -4,6 +4,8 @@
  */
 package me.example.echoserver
 
+import io.github.andannn.kio.async.fdRawSink
+import io.github.andannn.kio.async.fdRawSource
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.UIntVar
@@ -18,8 +20,6 @@ import kotlinx.cinterop.value
 import kotlinx.io.IOException
 import kotlinx.io.Source
 import kotlinx.io.buffered
-import me.andannn.kotlinx.io.extension.fdRawSink
-import me.andannn.kotlinx.io.extension.fdRawSource
 import platform.darwin.inet_addr
 import platform.posix.AF_INET
 import platform.posix.SHUT_WR
