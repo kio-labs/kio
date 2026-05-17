@@ -1,4 +1,4 @@
-package io.github.andannn.kio.async
+package kio.async
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
