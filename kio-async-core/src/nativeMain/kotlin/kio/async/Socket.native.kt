@@ -102,10 +102,10 @@ private fun getSocketError(fd: Int): Int = memScoped {
     if (rc < 0) errno else error.value
 }
 
-private fun setNonBlocking(sockfd: Int): Int {
-    val flags = fcntl(sockfd, F_GETFL, 0)
+fun setNonBlocking(fd: Int): Int {
+    val flags = fcntl(fd, F_GETFL, 0)
     if (flags < 0) return -1
-    if (fcntl(sockfd, F_SETFL, flags or O_NONBLOCK) < 0) return -1
+    if (fcntl(fd, F_SETFL, flags or O_NONBLOCK) < 0) return -1
     return 0
 }
 
