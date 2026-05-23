@@ -1,6 +1,8 @@
 package kio.async
 
+import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
@@ -8,6 +10,7 @@ import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.toKString
+import kotlinx.cinterop.value
 import kotlinx.coroutines.AbstractCoroutine
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CoroutineDispatcher
@@ -23,14 +26,21 @@ import kotlinx.coroutines.newCoroutineContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.io.IOException
 import platform.posix.CLOCK_MONOTONIC
+import platform.posix.EAGAIN
+import platform.posix.EWOULDBLOCK
+import platform.posix.POLLIN
 import platform.posix.POLLRDNORM
 import platform.posix.POLLWRNORM
 import platform.posix.clock_gettime
+import platform.posix.close
 import platform.posix.errno
+import platform.posix.pipe
 import platform.posix.poll
 import platform.posix.pollfd
+import platform.posix.read
 import platform.posix.strerror
 import platform.posix.timespec
+import platform.posix.write
 import kotlin.concurrent.AtomicInt
 import kotlin.coroutines.AbstractCoroutineContextKey
 import kotlin.coroutines.Continuation
@@ -88,6 +98,8 @@ internal class AsyncPollEventDispatcher : CoroutineDispatcher(), Delay {
     private val timerRequestMap: MutableMap<TimerRequest, Continuation<Unit>> = mutableMapOf()
     private val taskQueue = ArrayDeque<Runnable>()
 
+    private val wakeupPipe = wakeupPipe()
+
     override fun dispatch(
         context: CoroutineContext,
         block: Runnable
@@ -111,7 +123,7 @@ internal class AsyncPollEventDispatcher : CoroutineDispatcher(), Delay {
     }
 
     fun doBlockPoll() {
-        val currentPollRequests = pollFdRequestMap.keys.toList()
+        val currentPollRequests = pollFdRequestMap.keys.toList() + wakeupPipe.wakeupPollFdRequest
 
         // case1: having active tasks, do not block. timeout = 0
         // case2: no tasks, having timer requests. timeout = nearest timeout.
@@ -130,6 +142,7 @@ internal class AsyncPollEventDispatcher : CoroutineDispatcher(), Delay {
         }
 
         poll(currentPollRequests, timeout)
+        wakeupPipe.drainWakeup()
 
         // resume all continuation.
         resumeSleepingFds()
@@ -183,11 +196,17 @@ internal class AsyncPollEventDispatcher : CoroutineDispatcher(), Delay {
     fun unRegisterFd(fd: PollFdRequest) {
         pollFdRequestMap.remove(fd)
             ?: throw IllegalStateException("try to unRegisterFd but $fd not exist.")
+
+        wakeupPipe.wakeup()
     }
 
     fun processNextEvent(): Boolean {
         taskQueue.removeLastOrNull()?.run() ?: return false
         return true
+    }
+
+    fun close() {
+        wakeupPipe.close()
     }
 }
 
@@ -232,6 +251,8 @@ private class BlockingAIOCoroutine<T>(
 
             if (isCompleted) break
         }
+
+        dispatcher.close()
 
         return result?.getOrThrow() ?: throw IllegalStateException("No result???")
     }
@@ -329,4 +350,63 @@ internal fun nowMillis(): Long = memScoped {
     }
 
     ts.tv_sec * 1000L + ts.tv_nsec / 1_000_000L
+}
+
+@OptIn(ExperimentalForeignApi::class)
+internal fun wakeupPipe() = memScoped {
+    val fds = allocArray<IntVar>(2)
+    check(pipe(fds) == 0)
+
+    val wakeupReadFd: Int = fds[0]
+    val wakeupWriteFd: Int = fds[1]
+
+    setNonBlocking(wakeupReadFd)
+    setNonBlocking(wakeupWriteFd)
+
+    object : WakeupPipe {
+        override val wakeupPollFdRequest = PollFdRequest(wakeupReadFd, POLLIN)
+
+        override fun drainWakeup() = memScoped {
+            val buf = allocArray<ByteVar>(64)
+
+            while (true) {
+                val n = read(wakeupReadFd, buf, 64.convert())
+                if (n > 0) continue
+
+                if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                    break
+                }
+
+                break
+            }
+        }
+
+        override fun wakeup() = memScoped {
+            val b = alloc<ByteVar>()
+            b.value = 1
+
+            val n = write(wakeupWriteFd, b.ptr, 1.convert())
+
+            if (n < 0) {
+                val e = errno
+                if (e == EAGAIN || e == EWOULDBLOCK) {
+                    return@memScoped
+                }
+                error("wakeup write failed: errno=$e")
+            }
+        }
+
+        override fun close() {
+            close(wakeupReadFd)
+            close(wakeupWriteFd)
+        }
+    }
+}
+
+internal interface WakeupPipe {
+    val wakeupPollFdRequest: PollFdRequest
+    fun drainWakeup()
+    fun wakeup()
+
+    fun close()
 }
