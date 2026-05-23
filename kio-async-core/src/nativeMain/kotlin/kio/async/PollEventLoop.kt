@@ -185,7 +185,6 @@ internal class AsyncPollEventDispatcher : CoroutineDispatcher(), Delay {
 
     fun unRegisterTimer(req: TimerRequest) {
         timerRequestMap.remove(req)
-            ?: throw IllegalStateException("try to unRegisterTimer but $req not exist.")
     }
 
     fun registerFd(fd: PollFdRequest, c: Continuation<Unit>) {
@@ -194,10 +193,9 @@ internal class AsyncPollEventDispatcher : CoroutineDispatcher(), Delay {
     }
 
     fun unRegisterFd(fd: PollFdRequest) {
-        pollFdRequestMap.remove(fd)
-            ?: throw IllegalStateException("try to unRegisterFd but $fd not exist.")
-
-        wakeupPipe.wakeup()
+        if (pollFdRequestMap.remove(fd) != null) {
+            wakeupPipe.wakeup()
+        }
     }
 
     fun processNextEvent(): Boolean {
