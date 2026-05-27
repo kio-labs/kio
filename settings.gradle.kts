@@ -23,13 +23,7 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "kio-async"
-include(":kio-async-core")
-includeBuild("third_party/kotlinx-io") {
-    dependencySubstitution {
-        substitute(module("org.jetbrains.kotlinx:kotlinx-io-core"))
-            .using(project(":kotlinx-io-core"))
-    }
-}
+include(":kio-async")
 include(":example:async-echo-server")
 include(":example:std-in-out")
 include(":example:pipe")

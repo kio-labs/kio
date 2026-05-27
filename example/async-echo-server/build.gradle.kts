@@ -21,7 +21,7 @@ kotlin {
         }
 
         nativeMain.dependencies {
-            implementation(project(":kio-async-core"))
+            implementation(project(":kio-async"))
         }
     }
 }

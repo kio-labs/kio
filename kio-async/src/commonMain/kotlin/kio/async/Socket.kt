@@ -1,8 +1,5 @@
 package kio.async
 
-import kotlinx.io.AsyncSink
-import kotlinx.io.AsyncSource
-
 interface AsyncConnection {
     val source: AsyncSource
     val sink: AsyncSink
