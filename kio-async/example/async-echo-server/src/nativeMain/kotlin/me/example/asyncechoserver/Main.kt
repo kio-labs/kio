@@ -10,7 +10,6 @@ import kio.async.asyncFdRawSource
 import kotlinx.cinterop.*
 import kotlinx.coroutines.launch
 import kotlinx.io.IOException
-import kotlinx.io.buffered
 import kio.async.runPollEventLoop
 import kio.async.awaitReadIo
 import kio.async.buffered

@@ -17,11 +17,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            implementation(libs.kotlinx.io)
-        }
-
-        nativeMain.dependencies {
-            implementation(project(":kio-async"))
+            implementation(project(":kio-async:core"))
         }
     }
 }

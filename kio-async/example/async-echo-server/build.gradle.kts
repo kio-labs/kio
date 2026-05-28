@@ -10,18 +10,14 @@ kotlin {
     macosArm64 {
         binaries {
             executable {
-                entryPoint("me.example.pipe.main")
+                entryPoint("me.example.asyncechoserver.main")
             }
         }
     }
 
     sourceSets {
         commonMain.dependencies {
-            implementation(libs.kotlinx.io)
-        }
-
-        nativeMain.dependencies {
-            implementation(project(":kio-async"))
+            implementation(project(":kio-async:core"))
         }
     }
 }
