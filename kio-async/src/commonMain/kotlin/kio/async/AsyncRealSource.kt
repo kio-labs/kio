@@ -10,7 +10,6 @@ import kotlin.jvm.JvmField
 public class AsyncRealSource(
     public val source: AsyncRawSource
 ) : AsyncSource {
-    @JvmField
     public var closed: Boolean = false
     private val bufferField = Buffer()
 

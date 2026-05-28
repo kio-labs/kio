@@ -4,14 +4,11 @@ import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.InternalIoApi
 import kotlinx.io.RawSource
-import kotlinx.io.Segment
-import kotlin.jvm.JvmField
 
 @OptIn(InternalIoApi::class)
 public class AsyncRealSink(
     public val sink: AsyncRawSink
 ) : AsyncSink {
-    @JvmField
     public var closed: Boolean = false
     private val bufferField = Buffer()
 
