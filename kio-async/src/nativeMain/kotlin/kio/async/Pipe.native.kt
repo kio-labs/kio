@@ -5,8 +5,6 @@ import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
-import kotlinx.io.AsyncSink
-import kotlinx.io.AsyncSource
 import kotlinx.io.buffered
 import platform.posix.pipe
 

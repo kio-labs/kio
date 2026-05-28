@@ -7,7 +7,6 @@ plugins {
 }
 
 kotlin {
-    jvm()
     macosArm64()
     sourceSets {
         commonMain.dependencies {

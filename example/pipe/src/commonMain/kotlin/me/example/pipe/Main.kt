@@ -1,14 +1,14 @@
 package me.example.pipe
 
+import kio.async.AsyncSource
 import kio.async.openPipe
 import kio.async.runPollEventLoop
+import kio.async.writeString
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
-import kotlinx.io.AsyncSource
 import kotlinx.io.Buffer
 import kotlinx.io.readString
-import kotlinx.io.writeString
 import kotlin.time.Duration.Companion.seconds
 
 fun main() = runPollEventLoop {

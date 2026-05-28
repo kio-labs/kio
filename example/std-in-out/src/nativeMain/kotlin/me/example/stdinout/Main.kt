@@ -4,16 +4,16 @@
  */
 package me.example.stdinout
 
+import kio.async.AsyncSource
 import kio.async.asyncFdRawSink
 import kio.async.asyncFdRawSource
+import kio.async.buffered
 import kio.async.runPollEventLoop
 import kio.async.setNonBlocking
+import kio.async.writeString
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.io.AsyncSource
 import kotlinx.io.Buffer
-import kotlinx.io.buffered
 import kotlinx.io.readString
-import kotlinx.io.writeString
 import platform.posix.fileno
 import platform.posix.stdin
 import platform.posix.stdout

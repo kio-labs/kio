@@ -1,8 +1,5 @@
 package kio.async
 
-import kotlinx.io.AsyncSink
-import kotlinx.io.AsyncSource
-import kotlinx.io.buffered
 import platform.posix.*
 import kotlinx.cinterop.*
 import kotlinx.io.IOException
