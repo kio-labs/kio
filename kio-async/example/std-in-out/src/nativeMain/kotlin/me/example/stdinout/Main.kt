@@ -1,7 +1,3 @@
-/*
- * Copyright 2026, the kio-async project contributors
- * SPDX-License-Identifier: Zlib
- */
 package me.example.stdinout
 
 import kio.async.AsyncSource

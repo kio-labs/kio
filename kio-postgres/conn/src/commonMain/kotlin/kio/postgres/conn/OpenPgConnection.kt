@@ -48,6 +48,11 @@ suspend fun openPgConnection(
                 conn.sink.flush()
             }
 
+            is Message.AuthenticationCleartextPassword -> {
+                conn.sink.writePassword(password ?: error("password must be set."))
+                conn.sink.flush()
+            }
+
             is Message.BackendKeyData -> {
                 pid = msg.processId
                 secretKey = msg.secretKey

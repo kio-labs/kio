@@ -394,9 +394,9 @@ class PgConnectionTest {
 
 private fun withTestPgDatabase(block: suspend PgConnection.() -> Unit) =
     runPollEventLoop {
-        val HOST_IP = "127.0.0.1"
-        val PORT = 55432
-        val conn = openPgConnection(HOST_IP, PORT, "postgres", password = "postgres")
+        val HOST_IP = "localhost"
+        val PORT = 5432
+        val conn = openPgConnection(HOST_IP, PORT, "test_clear", database = "postgres", password = "test123")
         conn.block()
         conn.close()
     }

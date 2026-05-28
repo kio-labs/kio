@@ -1,7 +1,3 @@
-/*
- * Copyright 2026, the kio-async project contributors
- * SPDX-License-Identifier: Zlib
- */
 package kio.async
 
 import kotlinx.cinterop.CValuesRef
