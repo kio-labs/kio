@@ -22,7 +22,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "kio-async"
+rootProject.name = "kio"
 include(":kio-async:core")
 include(":kio-async:example:async-echo-server")
 include(":kio-async:example:std-in-out")
