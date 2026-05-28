@@ -1,8 +1,8 @@
 package me.example.asyncechoserver
 
-import io.github.andannn.kio.websocket.*
 import kio.async.awaitReadIo
 import kio.async.runPollEventLoop
+import kio.websocket.*
 import kotlinx.cinterop.*
 import kotlinx.coroutines.launch
 import kotlinx.io.Buffer

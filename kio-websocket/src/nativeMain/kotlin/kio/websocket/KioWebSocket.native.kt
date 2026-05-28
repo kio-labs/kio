@@ -1,4 +1,4 @@
-package io.github.andannn.kio.websocket
+package kio.websocket
 
 import kio.async.asyncFdRawSink
 import kio.async.asyncFdRawSource

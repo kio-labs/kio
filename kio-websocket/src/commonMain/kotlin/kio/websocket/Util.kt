@@ -19,14 +19,17 @@
  * limitations under the License.
  */
 
-package io.github.andannn.kio.websocket
+package kio.websocket
 
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.InternalIoApi
 import kotlinx.io.Source
+import org.kotlincrypto.hash.sha1.SHA1
 
-internal expect fun sha1(bytes: ByteArray): ByteArray
+internal fun sha1(bytes: ByteArray): ByteArray {
+    return SHA1().digest(bytes)
+}
 
 internal class InvalidUtf8Exception(message: String) : IllegalStateException(message)
 

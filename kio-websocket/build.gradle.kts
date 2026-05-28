@@ -8,6 +8,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":kio-async:core"))
+            implementation(libs.hash.sha1)
         }
     }
 }
