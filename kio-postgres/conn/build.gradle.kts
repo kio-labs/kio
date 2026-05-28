@@ -1,0 +1,21 @@
+plugins {
+    alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.serialization)
+}
+
+kotlin {
+    macosArm64()
+
+    sourceSets {
+        commonMain.dependencies {
+            implementation(project(":kio-postgres:protocol"))
+            implementation(project(":kio-postgres:types"))
+            implementation(libs.hash.md5)
+        }
+
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
+        }
+    }
+}

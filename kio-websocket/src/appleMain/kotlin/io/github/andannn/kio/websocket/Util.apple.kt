@@ -1,7 +1,3 @@
-/*
- * Copyright 2026, the KWebSocket project contributors
- * SPDX-License-Identifier: Zlib
- */
 package io.github.andannn.kio.websocket
 
 import kotlinx.cinterop.*

@@ -1,7 +1,3 @@
-/*
- * Copyright 2026, the KWebSocket project contributors
- * SPDX-License-Identifier: Zlib
- */
 package me.example.asyncechoserver
 
 import io.github.andannn.kio.websocket.*
