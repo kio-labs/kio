@@ -132,4 +132,4 @@ private fun Buffer.commonReadUtf8CodePointOrThrow(): Int {
     }
 }
 
-private inline infix fun Byte.and(other: Int): Int = toInt() and other
+private infix fun Byte.and(other: Int): Int = toInt() and other

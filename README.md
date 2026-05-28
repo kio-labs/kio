@@ -16,6 +16,7 @@ The repository currently contains:
 * `kio-async` — coroutine-friendly async I/O primitives built on top of `kotlinx-io`
 * `kio-websocket` — WebSocket protocol implementation based on `kio-async`
 * `kio-postgres` — PostgreSQL wire protocol, connection, and type encoding/decoding experiments
+* `kio-compression` — compression utilities and streaming compression/decompression support
 
 ## Modules
 
@@ -35,3 +36,10 @@ PostgreSQL-related modules:
 * `kio-postgres:types` — PostgreSQL type representations and binary/text encoding support
 * `kio-postgres:conn` — connection-level client logic
 
+### kio-compression
+
+Compression-related utilities and algorithms.
+
+* DEFLATE support
+* zlib support
+* gzip support

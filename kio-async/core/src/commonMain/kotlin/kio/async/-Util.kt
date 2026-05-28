@@ -4,7 +4,7 @@ import kotlinx.io.Buffer
 
 internal const val SEGMENT_SIZE = 8192
 
-internal inline fun checkBounds(size: Int, startIndex: Int, endIndex: Int) =
+internal fun checkBounds(size: Int, startIndex: Int, endIndex: Int) =
     checkBounds(size.toLong(), startIndex.toLong(), endIndex.toLong())
 
 internal fun checkBounds(size: Long, startIndex: Long, endIndex: Long) {
@@ -30,10 +30,10 @@ internal fun checkOffsetAndCount(size: Long, offset: Long, byteCount: Long) {
     }
 }
 
-internal inline fun minOf(a: Long, b: Int): Long = minOf(a, b.toLong())
+internal fun minOf(a: Long, b: Int): Long = minOf(a, b.toLong())
 
 // Syntactic sugar.
-internal inline fun minOf(a: Int, b: Long): Long = minOf(a.toLong(), b)
+internal fun minOf(a: Int, b: Long): Long = minOf(a.toLong(), b)
 
 internal fun Buffer.completeSegmentByteCount(): Long {
     return size - size % SEGMENT_SIZE
