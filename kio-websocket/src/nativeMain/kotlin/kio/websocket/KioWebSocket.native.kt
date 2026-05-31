@@ -1,14 +1,10 @@
 package kio.websocket
 
-import kio.async.asyncFdRawSink
-import kio.async.asyncFdRawSource
-import kio.async.buffered
-import platform.posix.SHUT_WR
+import kio.async.FdAsyncConnection
 
-fun asyncKioWebSocket(fd: Int, isClient: Boolean): AsyncKioWebSocket = object : InternalWebSocket(
+fun KioWsConnection(fd: Int, isClient: Boolean): WsConnection = object : InternalWebSocket(
     isClient,
-    asyncFdRawSink(fd).buffered(),
-    asyncFdRawSource(fd).buffered(),
+    FdAsyncConnection(fd)
 ) {
     override suspend fun close() {
         try {
@@ -18,15 +14,6 @@ fun asyncKioWebSocket(fd: Int, isClient: Boolean): AsyncKioWebSocket = object : 
             println("exception when sendCloseEventIfNeeded $t")
         }
 
-        platform.posix.shutdown(fd, SHUT_WR)
-
-        try {
-            drainSourceBuffer()
-        } catch (t: Throwable) {
-            // ignore exception because we are closing
-            println("exception when drainSourceBuffer: $t")
-        } finally {
-            platform.posix.close(fd)
-        }
+        conn.close()
     }
 }

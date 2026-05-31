@@ -1,5 +1,6 @@
 package kio.websocket
 
+import kio.async.AsyncConnection
 import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.readByteArray
@@ -52,7 +53,7 @@ sealed interface WebSocketEvent {
 }
 
 
-interface AsyncKioWebSocket {
+interface WsConnection {
     suspend fun close()
 
     suspend fun serverHandShake(): Result<Unit>
@@ -72,22 +73,21 @@ interface AsyncKioWebSocket {
     suspend fun sendClose(code: CloseCode, reason: String? = null)
 }
 
-suspend fun AsyncKioWebSocket.sendTextMessage(text: String, chunkSize: Long = CHUNK_SIZE) {
+suspend fun WsConnection.sendTextMessage(text: String, chunkSize: Long = CHUNK_SIZE) {
     sendMessage(MessageType.TEXT, payload = Buffer().apply { writeString(text) }, chunkSize)
 }
 
 internal abstract class InternalWebSocket(
     override val isClient: Boolean,
-    val asyncSink: AsyncSink,
-    val source: AsyncSource,
-) : AsyncKioWebSocket, KWebSocket {
+    val conn: AsyncConnection,
+) : WsConnection, KWebSocket {
     override var needSendCloseEvent: Boolean = true
 
     override suspend fun sendClose(code: CloseCode, reason: String?) {
         sendClose(
             code,
             reason,
-            sendFrame = { a, b, c, d, e -> asyncSink.sendFrame(a, b, c, d, e) }
+            sendFrame = { a, b, c, d, e -> conn.sink.sendFrame(a, b, c, d, e) }
         )
     }
 
@@ -104,8 +104,8 @@ internal abstract class InternalWebSocket(
             readMessage(
                 sink = sink,
                 isClient = isClient,
-                readFrame = { source.readFrame() },
-                sendFrame = { a, b, c, d, e -> asyncSink.sendFrame(a, b, c, d, e) }
+                readFrame = { conn.source.readFrame() },
+                sendFrame = { a, b, c, d, e -> conn.sink.sendFrame(a, b, c, d, e) }
             )
         }
 
@@ -118,30 +118,22 @@ internal abstract class InternalWebSocket(
             path = path,
             host = host,
             clientSecKey = clientSecKey,
-            parseHeaders = { source.parseHeaders() },
-            writeString = { a, b, c -> asyncSink.writeString(a, b, c) },
-            flush = { asyncSink.flush() }
+            parseHeaders = { conn.source.parseHeaders() },
+            writeString = { a, b, c -> conn.sink.writeString(a, b, c) },
+            flush = { conn.sink.flush() }
         )
     }
 
     override suspend fun serverHandShake() = runCatching {
         serverHandShake(
-            parseHeaders = { source.parseHeaders() },
-            writeString = { a, b, c -> asyncSink.writeString(a, b, c) },
-            flush = { asyncSink.flush() }
+            parseHeaders = { conn.source.parseHeaders() },
+            writeString = { a, b, c -> conn.sink.writeString(a, b, c) },
+            flush = { conn.sink.flush() }
         )
     }
 
     suspend fun sendCloseEventIfNeeded() {
         if (needSendCloseEvent) sendClose(CloseCode.NORMAL, "Normal close")
-    }
-
-    suspend fun drainSourceBuffer() {
-        val buf = ByteArray(1024)
-        while (!source.exhausted()) {
-            val read = source.readAtMostTo(buf)
-            if (read == -1) break
-        }
     }
 }
 
@@ -182,7 +174,7 @@ private suspend fun AsyncSource.parseHeaders() = parseHeaders(
     readLine = { readLine() }
 )
 
-private suspend fun AsyncKioWebSocket.sendMessage(
+private suspend fun WsConnection.sendMessage(
     type: MessageType,
     payload: Source,
     chunkSize: Long = CHUNK_SIZE
@@ -193,7 +185,7 @@ private suspend fun AsyncKioWebSocket.sendMessage(
         type = type,
         payload = payload,
         chunkSize = chunkSize,
-        sendFrame = { a, b, c, d, e -> asyncSink.sendFrame(a, b, c, d, e) }
+        sendFrame = { a, b, c, d, e -> conn.sink.sendFrame(a, b, c, d, e) }
     )
 }
 
