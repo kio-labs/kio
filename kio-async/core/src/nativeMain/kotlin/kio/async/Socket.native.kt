@@ -3,6 +3,9 @@ package kio.async
 import platform.posix.*
 import kotlinx.cinterop.*
 import kotlinx.io.IOException
+import kotlin.Int
+
+fun FdAsyncConnection(fd: Int): AsyncConnection = FdBasedAsyncConnection(fd = fd)
 
 @OptIn(ExperimentalForeignApi::class)
 actual suspend fun openConnection(host: String, port: Int): AsyncConnection = memScoped {
@@ -106,7 +109,7 @@ fun setNonBlocking(fd: Int): Int {
     return 0
 }
 
-class FdBasedAsyncConnection(
+internal class FdBasedAsyncConnection(
     val fd: Int,
     override val source: AsyncSource = asyncFdRawSource(fd).buffered(),
     override val sink: AsyncSink = asyncFdRawSink(fd).buffered()

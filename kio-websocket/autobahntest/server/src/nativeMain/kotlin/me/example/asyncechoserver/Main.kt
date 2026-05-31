@@ -84,7 +84,7 @@ fun main(): Unit = runPollEventLoop {
 @OptIn(ObsoleteWorkersApi::class)
 private suspend fun webSocketClient(clientFd: Int) {
     println("INFO: webSocket Start.. ${Worker.current.name}")
-    val webSocketClient = asyncKioWebSocket(clientFd, false)
+    val webSocketClient = KioWsConnection(clientFd, false)
     try {
         webSocketClient.serverHandShake().getOrThrow()
 
