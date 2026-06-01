@@ -1,5 +1,6 @@
 package kio.websocket
 
+import kio.async.AsyncConnection
 import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.readByteArray
@@ -15,9 +16,11 @@ import kotlinx.io.Source
 import kotlinx.io.readUShort
 import kotlinx.io.writeString
 import kotlinx.io.writeUShort
+import kotlin.collections.get
 import kotlin.experimental.and
 import kotlin.experimental.xor
 import kotlin.io.encoding.Base64
+import kotlin.text.toInt
 
 class ProtocolException(val closeCode: CloseCode, message: String) : IOException(message)
 
@@ -52,7 +55,7 @@ sealed interface WebSocketEvent {
 }
 
 
-interface AsyncKioWebSocket {
+interface WsConnection {
     suspend fun close()
 
     suspend fun serverHandShake(): Result<Unit>
@@ -72,23 +75,18 @@ interface AsyncKioWebSocket {
     suspend fun sendClose(code: CloseCode, reason: String? = null)
 }
 
-suspend fun AsyncKioWebSocket.sendTextMessage(text: String, chunkSize: Long = CHUNK_SIZE) {
+suspend fun WsConnection.sendTextMessage(text: String, chunkSize: Long = CHUNK_SIZE) {
     sendMessage(MessageType.TEXT, payload = Buffer().apply { writeString(text) }, chunkSize)
 }
 
-internal abstract class InternalWebSocket(
+internal class InternalWebSocket(
     override val isClient: Boolean,
-    val asyncSink: AsyncSink,
-    val source: AsyncSource,
-) : AsyncKioWebSocket, KWebSocket {
+    val conn: AsyncConnection,
+) : WsConnection, KWebSocket {
     override var needSendCloseEvent: Boolean = true
 
     override suspend fun sendClose(code: CloseCode, reason: String?) {
-        sendClose(
-            code,
-            reason,
-            sendFrame = { a, b, c, d, e -> asyncSink.sendFrame(a, b, c, d, e) }
-        )
+        doSendClose(code, reason)
     }
 
     override suspend fun sendBinMessage(bin: Source, chunkSize: Long) {
@@ -101,11 +99,9 @@ internal abstract class InternalWebSocket(
 
     override suspend fun readMessage(sink: Sink): Result<WebSocketEvent> =
         runCatching {
-            readMessage(
-                sink = sink,
+            readMessageTo(
+                target = sink,
                 isClient = isClient,
-                readFrame = { source.readFrame() },
-                sendFrame = { a, b, c, d, e -> asyncSink.sendFrame(a, b, c, d, e) }
             )
         }
 
@@ -114,75 +110,87 @@ internal abstract class InternalWebSocket(
         host: String,
         clientSecKey: String
     ): Result<Unit> = runCatching {
-        clientHandShake(
+        doClientHandShake(
             path = path,
             host = host,
             clientSecKey = clientSecKey,
-            parseHeaders = { source.parseHeaders() },
-            writeString = { a, b, c -> asyncSink.writeString(a, b, c) },
-            flush = { asyncSink.flush() }
         )
     }
 
     override suspend fun serverHandShake() = runCatching {
-        serverHandShake(
-            parseHeaders = { source.parseHeaders() },
-            writeString = { a, b, c -> asyncSink.writeString(a, b, c) },
-            flush = { asyncSink.flush() }
-        )
+        doServerHandShake()
     }
 
-    suspend fun sendCloseEventIfNeeded() {
-        if (needSendCloseEvent) sendClose(CloseCode.NORMAL, "Normal close")
-    }
-
-    suspend fun drainSourceBuffer() {
-        val buf = ByteArray(1024)
-        while (!source.exhausted()) {
-            val read = source.readAtMostTo(buf)
-            if (read == -1) break
+    override suspend fun close() {
+        try {
+            if (needSendCloseEvent) sendClose(CloseCode.NORMAL, "Normal close")
+        } catch (t: Throwable) {
+            // ignore exception because in close
+            println("exception when sendCloseEventIfNeeded $t")
         }
+
+        conn.close()
     }
 }
 
 private suspend fun AsyncSource.readFrame(): FrameResult {
-    return readFrame(
-        readByteArray = { byteCount -> readByteArray(byteCount) },
-        readShort = { readShort() },
-        readLong = { readLong() },
-        readByte = { readByte() },
-        readTo = { a, b -> readTo(a, b) },
-    )
+    val header = readByteArray(2)
+
+    val payloadLength: ULong = when (val len = (header[1] and 0x7F).toInt()) {
+        126 -> {
+            readShort().toUShort().toULong()
+        }
+
+        127 -> {
+            readLong().toULong()
+        }
+
+        else -> len.toULong()
+    }
+
+    // Read the RSV
+    val header1 = header[0].toInt()
+    val rsv1 = (header1 and 0x40) != 0
+    val rsv2 = (header1 and 0x20) != 0
+    val rsv3 = (header1 and 0x10) != 0
+
+    // Read the mask
+    var mask = ByteArray(4)
+    val masked = (header[1].toInt() and 0x80) != 0
+    if (masked) {
+        mask = readByteArray(4)
+    }
+
+    val isFin = (header[0].toInt() and 0x80) != 0
+    val opCode = Opcode.valueOf(header[0].toInt() and 0xF)
+        ?: throw ProtocolException(
+            CloseCode.PROTOCOL_ERROR,
+            "received invalid opcode(${header[0].toInt() and 0xF})."
+        )
+
+    val buffer = Buffer()
+
+    // Read the payload
+    if (masked) {
+        var read = 0UL
+        while (read < payloadLength) {
+            val chunk = ByteArray(1024)
+            var chunkSize = 0
+            while (read < payloadLength && chunkSize < chunk.size) {
+                chunk[chunkSize] = readByte() xor mask[(read % 4UL).toInt()]
+                chunkSize++
+                read++
+            }
+            buffer.write(chunk, 0, chunkSize)
+        }
+    } else {
+        readTo(buffer, payloadLength.toLong())
+    }
+
+    return FrameResult(isFin, rsv1, rsv2, rsv3, opCode, buffer, payloadLength)
 }
 
-private suspend fun AsyncSink.sendFrame(
-    isClient: Boolean,
-    isFin: Boolean,
-    opcode: Opcode,
-    payload: Source,
-    payloadLength: ULong,
-) {
-    sendFrame(
-        isClient = isClient,
-        isFin = isFin,
-        opcode = opcode,
-        payload = payload,
-        payloadLength = payloadLength,
-        writeByte = { writeByte(it) },
-        writeShort = { writeShort(it) },
-        writeLong = { writeLong(it) },
-        write = { a, b, c -> write(a, b, c) },
-        writeSource = { a, b -> write(a, b) },
-        flush = { flush() }
-    )
-}
-
-private suspend fun AsyncSource.parseHeaders() = parseHeaders(
-    exhausted = { exhausted() },
-    readLine = { readLine() }
-)
-
-private suspend fun AsyncKioWebSocket.sendMessage(
+private suspend fun WsConnection.sendMessage(
     type: MessageType,
     payload: Source,
     chunkSize: Long = CHUNK_SIZE
@@ -193,7 +201,6 @@ private suspend fun AsyncKioWebSocket.sendMessage(
         type = type,
         payload = payload,
         chunkSize = chunkSize,
-        sendFrame = { a, b, c, d, e -> asyncSink.sendFrame(a, b, c, d, e) }
     )
 }
 
@@ -308,12 +315,8 @@ private fun isValidReceivedCloseCode(code: Int): Boolean {
     }
 }
 
-internal inline fun serverHandShake(
-    parseHeaders: () -> Map<String, String>,
-    writeString: (string: String, startIndex: Int, endIndex: Int) -> Unit,
-    flush: () -> Unit
-) {
-    val headers = parseHeaders()
+internal suspend fun InternalWebSocket.doServerHandShake() {
+    val headers = conn.source.parseHeaders()
     val secWebsocketKey = headers["Sec-WebSocket-Key"]
         ?: throw IOException("Sec-WebSocket-Key is not set by client")
 
@@ -325,17 +328,14 @@ internal inline fun serverHandShake(
         append("\r\n")
     }
 
-    writeString(handShake, 0, handShake.length)
-    flush()
+    conn.sink.writeString(handShake, 0, handShake.length)
+    conn.sink.flush()
 }
 
-internal inline fun clientHandShake(
+private suspend fun InternalWebSocket.doClientHandShake(
     path: String,
     host: String,
     clientSecKey: String = CLIENT_SEC_KEY,
-    parseHeaders: () -> Map<String, String>,
-    writeString: (string: String, startIndex: Int, endIndex: Int) -> Unit,
-    flush: () -> Unit
 ) {
     val handShake = buildString {
         append("GET $path HTTP/1.1\r\n")
@@ -347,10 +347,10 @@ internal inline fun clientHandShake(
         append("\r\n")
     }
 
-    writeString(handShake, 0, handShake.length)
-    flush()
+    conn.sink.writeString(handShake, 0, handShake.length)
+    conn.sink.flush()
 
-    val headers = parseHeaders()
+    val headers = conn.source.parseHeaders()
     for ((key, value) in headers.entries) {
         when (key) {
             "Sec-WebSocket-Accept" -> {
@@ -363,14 +363,12 @@ internal inline fun clientHandShake(
     }
 }
 
-// TODO: Only return headers now, consider return all http information.
-internal inline fun parseHeaders(
-    exhausted: () -> Boolean,
-    readLine: () -> String?,
-): Map<String, String> {
+// TODO: Support Http response info parsing
+internal suspend fun AsyncSource.parseHeaders(): Map<String, String> {
     return buildMap {
         while (!exhausted()) {
             val line = readLine()
+            println("http res :: $line")
             if (line.isNullOrEmpty()) break
             if (!line.contains(':')) {
                 // not header, continue
@@ -384,82 +382,13 @@ internal inline fun parseHeaders(
     }
 }
 
-internal inline fun readFrame(
-    readByteArray: (byteCount: Int) -> ByteArray,
-    readShort: () -> Short,
-    readLong: () -> Long,
-    readByte: () -> Byte,
-    readTo: (sink: RawSink, byteCount: Long) -> Unit
-): FrameResult {
-    val header = readByteArray(2)
-
-    val payloadLength: ULong = when (val len = (header[1] and 0x7F).toInt()) {
-        126 -> {
-            readShort().toUShort().toULong()
-        }
-
-        127 -> {
-            readLong().toULong()
-        }
-
-        else -> len.toULong()
-    }
-
-    // Read the RSV
-    val header1 = header[0].toInt()
-    val rsv1 = (header1 and 0x40) != 0
-    val rsv2 = (header1 and 0x20) != 0
-    val rsv3 = (header1 and 0x10) != 0
-
-    // Read the mask
-    var mask = ByteArray(4)
-    val masked = (header[1].toInt() and 0x80) != 0
-    if (masked) {
-        mask = readByteArray(4)
-    }
-
-    val isFin = (header[0].toInt() and 0x80) != 0
-    val opCode = Opcode.valueOf(header[0].toInt() and 0xF)
-        ?: throw ProtocolException(
-            CloseCode.PROTOCOL_ERROR,
-            "received invalid opcode(${header[0].toInt() and 0xF})."
-        )
-
-    val buffer = Buffer()
-
-    // Read the payload
-    if (masked) {
-        var read = 0UL
-        while (read < payloadLength) {
-            val chunk = ByteArray(1024)
-            var chunkSize = 0
-            while (read < payloadLength && chunkSize < chunk.size) {
-                chunk[chunkSize] = readByte() xor mask[(read % 4UL).toInt()]
-                chunkSize++
-                read++
-            }
-            buffer.write(chunk, 0, chunkSize)
-        }
-    } else {
-        readTo(buffer, payloadLength.toLong())
-    }
-
-    return FrameResult(isFin, rsv1, rsv2, rsv3, opCode, buffer, payloadLength)
-}
-
 @OptIn(ExperimentalUnsignedTypes::class)
-internal inline fun sendFrame(
+internal suspend fun AsyncSink.sendFrame(
     isClient: Boolean,
     isFin: Boolean,
     opcode: Opcode,
     payload: Source,
     payloadLength: ULong,
-    writeByte: (byte: Byte) -> Unit,
-    writeShort: (short: Short) -> Unit,
-    writeLong: (long: Long) -> Unit,
-    write: (source: ByteArray, startIndex: Int, endIndex: Int) -> Unit,
-    writeSource: (source: RawSource, byteCount: Long) -> Unit,
-    flush: () -> Unit
 ) {
     // Send FIN and OPCODE
     // NOTE: FIN is always set
@@ -505,16 +434,15 @@ internal inline fun sendFrame(
             write(chunk, 0, chunkSize)
         }
     } else {
-        writeSource(payload, payloadLength.toLong())
+        write(payload, payloadLength.toLong())
     }
 
     flush()
 }
 
-internal inline fun KWebSocket.sendClose(
+internal suspend fun InternalWebSocket.doSendClose(
     code: CloseCode,
     reason: String? = null,
-    sendFrame: (isClient: Boolean, isFin: Boolean, opcode: Opcode, payload: Source, payloadLength: ULong) -> Unit
 ) {
 // TODO: remove all requested fd when close.
     if (!needSendCloseEvent) throw IOException("already send close event.")
@@ -524,7 +452,7 @@ internal inline fun KWebSocket.sendClose(
         reason?.let { writeString(it) }
     }
 
-    sendFrame(
+    conn.sink.sendFrame(
         isClient,
         true,
         Opcode.CLOSE,
@@ -535,16 +463,14 @@ internal inline fun KWebSocket.sendClose(
     needSendCloseEvent = false
 }
 
-internal inline fun KWebSocket.readMessage(
-    sink: Sink,
+internal suspend fun InternalWebSocket.readMessageTo(
+    target: Sink,
     isClient: Boolean,
-    readFrame: () -> FrameResult,
-    sendFrame: (isClient: Boolean, isFin: Boolean, opcode: Opcode, payload: Source, payloadLength: ULong) -> Unit
-): WebSocketEvent   {
+): WebSocketEvent {
     var messageType: MessageType? = null
     val buffer = Buffer()
     while (true) {
-        val (isFin, rsv1, rsv2, rsv3, opCode, payload, payloadLength) = readFrame()
+        val (isFin, rsv1, rsv2, rsv3, opCode, payload, payloadLength) = conn.source.readFrame()
 
         if (rsv1 || rsv2 || rsv3) throw ProtocolException(CloseCode.PROTOCOL_ERROR, "RSV must be 0")
 
@@ -552,7 +478,7 @@ internal inline fun KWebSocket.readMessage(
             Opcode.CLOSE -> {
                 checkControlFrame(opCode, isFin, payload, payloadLength)
 
-                sendFrame(isClient, true, Opcode.CLOSE, payload, payloadLength)
+                conn.sink.sendFrame(isClient, true, Opcode.CLOSE, payload, payloadLength)
                 this.needSendCloseEvent = false
 
                 return WebSocketEvent.Close
@@ -561,7 +487,7 @@ internal inline fun KWebSocket.readMessage(
             Opcode.PING -> {
                 checkControlFrame(opCode, isFin, payload, payloadLength)
 
-                sendFrame(isClient, true, Opcode.PONG, payload, payloadLength)
+                conn.sink.sendFrame(isClient, true, Opcode.PONG, payload, payloadLength)
                 continue
             }
 
@@ -609,22 +535,15 @@ internal inline fun KWebSocket.readMessage(
         buffer.peek().checkUtf8Payload()
     }
 
-    buffer.transferTo(sink)
+    buffer.transferTo(target)
     return WebSocketEvent.Message(messageType)
 }
 
-internal inline fun sendMessage(
+internal suspend fun InternalWebSocket.sendMessage(
     isClient: Boolean,
     type: MessageType,
     payload: Source,
     chunkSize: Long = CHUNK_SIZE,
-    sendFrame: (
-        isClient: Boolean,
-        isFin: Boolean,
-        opcode: Opcode,
-        payload: Source,
-        payloadLength: ULong,
-    ) -> Unit
 ) {
     var isFirst = true
 
@@ -634,7 +553,7 @@ internal inline fun sendMessage(
 
         val isFinal = read == -1L // payload is exhausted
 
-        sendFrame(
+        conn.sink.sendFrame(
             isClient,
             isFinal,
             if (isFirst) type.toOpcode() else Opcode.CONT,
