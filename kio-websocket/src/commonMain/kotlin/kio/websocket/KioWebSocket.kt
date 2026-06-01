@@ -86,11 +86,7 @@ internal class InternalWebSocket(
     override var needSendCloseEvent: Boolean = true
 
     override suspend fun sendClose(code: CloseCode, reason: String?) {
-        sendClose(
-            code,
-            reason,
-            sendFrame = { a, b, c, d, e -> conn.sink.sendFrame(a, b, c, d, e) }
-        )
+        doSendClose(code, reason)
     }
 
     override suspend fun sendBinMessage(bin: Source, chunkSize: Long) {
@@ -194,28 +190,6 @@ private suspend fun AsyncSource.readFrame(): FrameResult {
     return FrameResult(isFin, rsv1, rsv2, rsv3, opCode, buffer, payloadLength)
 }
 
-private suspend fun AsyncSink.sendFrame(
-    isClient: Boolean,
-    isFin: Boolean,
-    opcode: Opcode,
-    payload: Source,
-    payloadLength: ULong,
-) {
-    sendFrame(
-        isClient = isClient,
-        isFin = isFin,
-        opcode = opcode,
-        payload = payload,
-        payloadLength = payloadLength,
-        writeByte = { writeByte(it) },
-        writeShort = { writeShort(it) },
-        writeLong = { writeLong(it) },
-        write = { a, b, c -> write(a, b, c) },
-        writeSource = { a, b -> write(a, b) },
-        flush = { flush() }
-    )
-}
-
 private suspend fun WsConnection.sendMessage(
     type: MessageType,
     payload: Source,
@@ -227,7 +201,6 @@ private suspend fun WsConnection.sendMessage(
         type = type,
         payload = payload,
         chunkSize = chunkSize,
-        sendFrame = { a, b, c, d, e -> conn.sink.sendFrame(a, b, c, d, e) }
     )
 }
 
@@ -410,18 +383,12 @@ internal suspend fun AsyncSource.parseHeaders(): Map<String, String> {
 }
 
 @OptIn(ExperimentalUnsignedTypes::class)
-internal inline fun sendFrame(
+internal suspend fun AsyncSink.sendFrame(
     isClient: Boolean,
     isFin: Boolean,
     opcode: Opcode,
     payload: Source,
     payloadLength: ULong,
-    writeByte: (byte: Byte) -> Unit,
-    writeShort: (short: Short) -> Unit,
-    writeLong: (long: Long) -> Unit,
-    write: (source: ByteArray, startIndex: Int, endIndex: Int) -> Unit,
-    writeSource: (source: RawSource, byteCount: Long) -> Unit,
-    flush: () -> Unit
 ) {
     // Send FIN and OPCODE
     // NOTE: FIN is always set
@@ -467,16 +434,15 @@ internal inline fun sendFrame(
             write(chunk, 0, chunkSize)
         }
     } else {
-        writeSource(payload, payloadLength.toLong())
+        write(payload, payloadLength.toLong())
     }
 
     flush()
 }
 
-internal inline fun KWebSocket.sendClose(
+internal suspend fun InternalWebSocket.doSendClose(
     code: CloseCode,
     reason: String? = null,
-    sendFrame: (isClient: Boolean, isFin: Boolean, opcode: Opcode, payload: Source, payloadLength: ULong) -> Unit
 ) {
 // TODO: remove all requested fd when close.
     if (!needSendCloseEvent) throw IOException("already send close event.")
@@ -486,7 +452,7 @@ internal inline fun KWebSocket.sendClose(
         reason?.let { writeString(it) }
     }
 
-    sendFrame(
+    conn.sink.sendFrame(
         isClient,
         true,
         Opcode.CLOSE,
@@ -573,18 +539,11 @@ internal suspend fun InternalWebSocket.readMessageTo(
     return WebSocketEvent.Message(messageType)
 }
 
-internal inline fun sendMessage(
+internal suspend fun InternalWebSocket.sendMessage(
     isClient: Boolean,
     type: MessageType,
     payload: Source,
     chunkSize: Long = CHUNK_SIZE,
-    sendFrame: (
-        isClient: Boolean,
-        isFin: Boolean,
-        opcode: Opcode,
-        payload: Source,
-        payloadLength: ULong,
-    ) -> Unit
 ) {
     var isFirst = true
 
@@ -594,7 +553,7 @@ internal inline fun sendMessage(
 
         val isFinal = read == -1L // payload is exhausted
 
-        sendFrame(
+        conn.sink.sendFrame(
             isClient,
             isFinal,
             if (isFirst) type.toOpcode() else Opcode.CONT,
