@@ -3,17 +3,19 @@ package kio.http
 import kio.async.InMemoryAsyncBuffer
 import kio.async.writeString
 import kotlinx.coroutines.test.runTest
+import kotlinx.io.EOFException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.text.get
 
 
 class HttpParserTest {
     @Test
     fun parseStatusCodeShouldBeValid() = runTest {
         listOf(
-            "HTTP/1.1 100 OK\r\n",
-            "HTTP/1.1 999 OK\r\n",
+            "HTTP/1.1 100 OK\r\n\r\n",
+            "HTTP/1.1 999 OK\r\n\r\n",
         ).forEach {
             val buffer = inMemoryAsyncBuffer(it)
             val response = buffer.parseResponse()
@@ -46,10 +48,19 @@ class HttpParserTest {
         val cases = listOf("A", "H", "a")
 
         for (case in cases) {
-            assertFailsWith<ParserException> {
+            assertFailsWith<EOFException> {
                 inMemoryAsyncBuffer(case + "\r\n").parseResponse()
             }
         }
+    }
+
+    @Test
+    fun readHeadersSmokeTest() = runTest {
+        val hh = inMemoryAsyncBuffer("Host: localhost\r\n\r\n").readHeaders()
+        assertEquals("localhost", hh["Host"])
+        assertEquals("localhost", hh["host"])
+        assertEquals("localhost", hh["hOst"])
+        assertEquals("localhost", hh["HOST"])
     }
 }
 

@@ -1,43 +1,122 @@
 package kio.http
 
+import io.ktor.http.Headers
+import io.ktor.http.HttpProtocolVersion
+import io.ktor.http.HttpStatusCode
 import kio.async.AsyncSource
 import kio.async.indexOf
-import kio.async.readLine
 import kio.async.readString
+import kotlinx.io.EOFException
+import kotlinx.io.IOException
 
 class ParserException(message: String) : IllegalStateException(message)
 
 class HttpResponse internal constructor(
-    val version: CharSequence,
-    val status: Int,
-    val statusText: CharSequence,
+    val version: HttpProtocolVersion,
+    val status: HttpStatusCode,
+    val statusText: String,
+    val headers: Headers,
+    val body: AsyncSource,
 )
 
 suspend fun AsyncSource.parseResponse(): HttpResponse {
     val version = readVersion()
-    val statusCode = readStatusCode()
-    val statusText = readLine() ?: throw ParserException("no status text.")
+    val statusCode = HttpStatusCode.fromValue(readStatusCode())
+    val statusText = readCrlfLine()
+
+    val headers = readHeaders()
 
     return HttpResponse(
-        version,
+        version = version,
         status = statusCode,
-        statusText = statusText
+        statusText = statusText,
+        headers = headers,
+        body = this,
     )
 }
 
-private val versions = listOf("HTTP/1.0", "HTTP/1.1")
+internal suspend fun AsyncSource.readHeaders(): Headers = Headers.build {
+    while (true) {
+        val line = readCrlfLine()
+        if (line.isEmpty()) {
+            break
+        }
 
-private suspend fun AsyncSource.readVersion() : String {
-    val result = readStringUntilSpace() ?: throw ParserException("no http version.")
-    if (versions.contains(result)) {
-        return result
+        var remains = line
+
+        // Parse header name
+        var headerName: String? = null
+        for (i in line.indices) {
+            val ch = line[i]
+            if (ch == ':' && i != 0) {
+                headerName = line.substring(0, endIndex = i)
+                remains = line.substring(i + 1)
+                break
+            }
+
+            if (isDelimiter(ch)) {
+                parseHeaderNameFailed(line, ch)
+            }
+        }
+
+        headerName ?: noColonFound(line)
+
+        // Skip whitespace or tab.
+        for (i in remains.indices) {
+            val ch = remains[i]
+            if (!ch.isWhitespace() && ch != HTAB) {
+                remains = remains.substring(i)
+                break
+            }
+        }
+
+        // Parse header parse value
+        for (i in remains.indices) {
+            val ch = remains[i]
+            when (ch) {
+                '\r', '\n' -> characterIsNotAllowed(line, ch)
+            }
+        }
+        val headerValue = remains
+
+        append(headerName, headerValue)
+    }
+}
+
+internal const val HTAB: Char = '\u0009'
+
+private fun noColonFound(text: String): Nothing {
+    throw ParserException("No colon in HTTP header in $text")
+}
+
+private fun parseHeaderNameFailed(text: String, ch: Char): Nothing {
+    if (ch == ':') {
+        throw ParserException("Empty header names are not allowed as per RFC7230.")
+    }
+    characterIsNotAllowed(text, ch)
+}
+
+private fun characterIsNotAllowed(text: CharSequence, ch: Char): Nothing =
+    throw ParserException("Character with code ${(ch.code and 0xff)} is not allowed. \n$text")
+
+private fun isDelimiter(ch: Char): Boolean {
+    return ch <= ' ' || ch in "\"(),/:;<=>?@[\\]{}"
+}
+
+private val versions = listOf(HttpProtocolVersion.HTTP_1_0, HttpProtocolVersion.HTTP_1_1)
+
+private suspend fun AsyncSource.readVersion(): HttpProtocolVersion {
+    val result = readStringUntilSpace()
+    val version = HttpProtocolVersion.parse(result)
+    if (versions.contains(version)) {
+        return version
     }
 
     throw ParserException("Unsupported HTTP version: $result")
 }
 
 private suspend fun AsyncSource.readStatusCode(): Int {
-    val statusCodeStr = readStringUntilSpace() ?: throw ParserException("no status code.")
+    val statusCodeStr = readStringUntilSpace()
     var statusCode = 0
     statusCodeStr.forEach { ch ->
         if (ch in '0'..'9') {
@@ -59,20 +138,49 @@ private fun statusOutOfRange(code: Int) =
     code < HTTP_STATUS_CODE_MIN_RANGE || code > HTTP_STATUS_CODE_MAX_RANGE
 
 
-private suspend fun AsyncSource.readStringUntilSpace(): String? {
-    if (!request(1)) return null
+private suspend fun AsyncSource.readStringUntilSpace(): String {
+    while (true) {
+        val spaceIndex = indexOf(' '.code.toByte())
 
-    return when (val spaceIndex = this.indexOf(' '.code.toByte())) {
-        -1L -> null
-        0L -> {
-            skip(1)
-            ""
-        }
+        if (spaceIndex != -1L) {
+            if (spaceIndex == 0L) {
+                skip(1)
+                return ""
+            }
 
-        else -> {
             val string = readString(spaceIndex)
             skip(1)
-            string
+            return string
+        }
+
+        val oldSize = buffer.size
+        if (!request(oldSize + 1)) {
+            throw EOFException("unexpected EOF while reading token")
+        }
+    }
+}
+
+private suspend fun AsyncSource.readCrlfLine(): String {
+    while (true) {
+        val lfIndex = indexOf('\n'.code.toByte())
+
+        if (lfIndex != -1L) {
+            if (lfIndex == 0L) {
+                throw IOException("invalid CRLF line: LF without CR")
+            }
+
+            if (buffer[lfIndex - 1] != '\r'.code.toByte()) {
+                throw IOException("invalid CRLF line: LF without CR")
+            }
+
+            val line = readString(lfIndex - 1)
+            skip(2)
+            return line
+        }
+
+        val oldSize = buffer.size
+        if (!request(oldSize + 1)) {
+            throw EOFException("unexpected EOF while reading CRLF line")
         }
     }
 }
