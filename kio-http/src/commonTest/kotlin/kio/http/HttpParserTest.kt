@@ -2,13 +2,12 @@ package kio.http
 
 import kio.async.InMemoryAsyncBuffer
 import kio.async.writeString
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.EOFException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.text.get
-
 
 class HttpParserTest {
     @Test
@@ -61,6 +60,45 @@ class HttpParserTest {
         assertEquals("localhost", hh["host"])
         assertEquals("localhost", hh["hOst"])
         assertEquals("localhost", hh["HOST"])
+    }
+
+    @Test
+    fun readHeadersSmokeTestUnicode() = runTest {
+        val hh = inMemoryAsyncBuffer("Host: unicode-\u0422\r\n\r\n").readHeaders()
+        assertEquals("unicode-\u0422", hh["Host"])
+    }
+
+    @Test
+    fun readHeadersExtraSpacesLeading() = runTest {
+        assertFailsWith<ParserException> {
+            inMemoryAsyncBuffer(" Host:  localhost\r\n\r\n").readHeaders()
+        }
+    }
+
+    @Test
+    fun readHeadersExtraSpacesMiddle(): Unit = runBlocking {
+        val hh = inMemoryAsyncBuffer("Host:  localhost\r\n\r\n").readHeaders()
+        assertEquals("localhost", hh["Host"])
+    }
+
+    @Test
+    fun readHeadersExtraSpacesMiddleBeforeColon(): Unit = runBlocking<Unit> {
+        assertFailsWith<ParserException> {
+            inMemoryAsyncBuffer("Host : localhost\r\n\r\n").readHeaders()
+        }
+    }
+
+    @Test
+    fun readHeadersExtraSpacesMiddleBeforeColonNoAfter(): Unit = runBlocking<Unit> {
+        assertFailsWith<ParserException> {
+            inMemoryAsyncBuffer("Host :localhost\r\n\r\n").readHeaders()
+        }
+    }
+
+    @Test
+    fun readHeadersExtraSpacesTrailing() = runBlocking {
+        val hh = inMemoryAsyncBuffer("Host:  localhost \r\n\r\n").readHeaders()
+        assertEquals("localhost", hh["Host"])
     }
 }
 

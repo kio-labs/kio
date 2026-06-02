@@ -71,13 +71,16 @@ internal suspend fun AsyncSource.readHeaders(): Headers = Headers.build {
         }
 
         // Parse header parse value
+        var valueLastIndex = 0
         for (i in remains.indices) {
             val ch = remains[i]
             when (ch) {
+                HTAB, ' ' -> {}
                 '\r', '\n' -> characterIsNotAllowed(line, ch)
+                else -> valueLastIndex = i
             }
         }
-        val headerValue = remains
+        val headerValue = remains.substring(0, valueLastIndex + 1)
 
         append(headerName, headerValue)
     }
