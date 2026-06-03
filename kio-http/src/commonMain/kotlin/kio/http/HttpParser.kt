@@ -1,6 +1,9 @@
 package kio.http
 
 import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.parsing.ParseException
 import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.HttpStatusCode
 import kio.async.AsyncSource
@@ -8,20 +11,40 @@ import kio.async.indexOf
 import kio.async.readString
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
-
-class ParserException(message: String) : IllegalStateException(message)
+import kotlin.text.get
 
 class HttpResponse internal constructor(
     val version: HttpProtocolVersion,
     val status: HttpStatusCode,
     val statusText: String,
     val headers: Headers,
-    val body: AsyncSource,
 )
 
+class HttpRequest internal constructor(
+    val method: HttpMethod,
+    val uri: String,
+    val version: HttpProtocolVersion,
+    val headers: Headers,
+)
+
+suspend fun AsyncSource.parseRequest(): HttpRequest {
+    val httpMethod = parseHttpMethod(readStringUntilSpace())
+    val url = readStringUntilSpace()
+    val version = parseVersion(readCrlfLine())
+
+    val headers = readHeaders()
+
+    return HttpRequest(
+        method = httpMethod,
+        uri = url,
+        version = version,
+        headers = headers
+    )
+}
+
 suspend fun AsyncSource.parseResponse(): HttpResponse {
-    val version = readVersion()
-    val statusCode = HttpStatusCode.fromValue(readStatusCode())
+    val version = parseVersion(readStringUntilSpace())
+    val statusCode = parseStatusCode(readStringUntilSpace())
     val statusText = readCrlfLine()
 
     val headers = readHeaders()
@@ -31,7 +54,6 @@ suspend fun AsyncSource.parseResponse(): HttpResponse {
         status = statusCode,
         statusText = statusText,
         headers = headers,
-        body = this,
     )
 }
 
@@ -42,84 +64,104 @@ internal suspend fun AsyncSource.readHeaders(): Headers = Headers.build {
             break
         }
 
-        var remains = line
+        var start = 0
 
         // Parse header name
         var headerName: String? = null
-        for (i in line.indices) {
+        for (i in start until line.length) {
             val ch = line[i]
             if (ch == ':' && i != 0) {
                 headerName = line.substring(0, endIndex = i)
-                remains = line.substring(i + 1)
+                // skip colon
+                start++
                 break
             }
 
             if (isDelimiter(ch)) {
                 parseHeaderNameFailed(line, ch)
             }
+
+            start++
         }
 
         headerName ?: noColonFound(line)
 
         // Skip whitespace or tab.
-        for (i in remains.indices) {
-            val ch = remains[i]
-            if (!ch.isWhitespace() && ch != HTAB) {
-                remains = remains.substring(i)
-                break
-            }
+        for (i in start until line.length) {
+            val ch = line[i]
+            if (!ch.isWhitespace() && ch != HTAB) break
+            start++
         }
 
         // Parse header parse value
-        var valueLastIndex = 0
-        for (i in remains.indices) {
-            val ch = remains[i]
+        var valueLastIndex = start
+        for (i in start until line.length) {
+            val ch = line[i]
             when (ch) {
                 HTAB, ' ' -> {}
                 '\r', '\n' -> characterIsNotAllowed(line, ch)
                 else -> valueLastIndex = i
             }
         }
-        val headerValue = remains.substring(0, valueLastIndex + 1)
+        val headerValue = line.substring(start, (valueLastIndex + 1).coerceAtMost(line.length))
 
         append(headerName, headerValue)
+    }
+}.also { headers ->
+    val host = headers[HttpHeaders.Host]
+    if (host != null) {
+        validateHostHeader(host)
     }
 }
 
 internal const val HTAB: Char = '\u0009'
 
 private fun noColonFound(text: String): Nothing {
-    throw ParserException("No colon in HTTP header in $text")
+    throw ParseException("No colon in HTTP header in $text")
 }
 
 private fun parseHeaderNameFailed(text: String, ch: Char): Nothing {
     if (ch == ':') {
-        throw ParserException("Empty header names are not allowed as per RFC7230.")
+        throw ParseException("Empty header names are not allowed as per RFC7230.")
     }
     characterIsNotAllowed(text, ch)
 }
 
 private fun characterIsNotAllowed(text: CharSequence, ch: Char): Nothing =
-    throw ParserException("Character with code ${(ch.code and 0xff)} is not allowed. \n$text")
+    throw ParseException("Character with code ${(ch.code and 0xff)} is not allowed. \n$text")
 
 private fun isDelimiter(ch: Char): Boolean {
     return ch <= ' ' || ch in "\"(),/:;<=>?@[\\]{}"
 }
 
+private val hostForbiddenSymbols = setOf('/', '?', '#', '@')
+
+private fun validateHostHeader(host: CharSequence) {
+    if (host.endsWith(":")) {
+        throw ParseException("Host header with ':' should contains port: $host")
+    }
+
+    if (host.any { hostForbiddenSymbols.contains(it) }) {
+        throw ParseException("Host cannot contain any of the following symbols: $hostForbiddenSymbols")
+    }
+}
+
 private val versions = listOf(HttpProtocolVersion.HTTP_1_0, HttpProtocolVersion.HTTP_1_1)
 
-private suspend fun AsyncSource.readVersion(): HttpProtocolVersion {
-    val result = readStringUntilSpace()
-    val version = HttpProtocolVersion.parse(result)
+private fun parseHttpMethod(result: String): HttpMethod {
+    return HttpMethod.parse(result)
+}
+
+private fun parseVersion(text: String): HttpProtocolVersion {
+    val version = HttpProtocolVersion.parse(text)
     if (versions.contains(version)) {
         return version
     }
 
-    throw ParserException("Unsupported HTTP version: $result")
+    throw ParseException("Unsupported HTTP version: $text")
 }
 
-private suspend fun AsyncSource.readStatusCode(): Int {
-    val statusCodeStr = readStringUntilSpace()
+private fun parseStatusCode(statusCodeStr: String): HttpStatusCode {
     var statusCode = 0
     statusCodeStr.forEach { ch ->
         if (ch in '0'..'9') {
@@ -130,9 +172,9 @@ private suspend fun AsyncSource.readStatusCode(): Int {
     }
 
     if (statusOutOfRange(statusCode)) {
-        throw ParserException("Status-code must be 3-digit. Status received: $statusCode.")
+        throw ParseException("Status-code must be 3-digit. Status received: $statusCode.")
     }
-    return statusCode
+    return HttpStatusCode.fromValue(statusCode)
 }
 
 private const val HTTP_STATUS_CODE_MIN_RANGE = 100
