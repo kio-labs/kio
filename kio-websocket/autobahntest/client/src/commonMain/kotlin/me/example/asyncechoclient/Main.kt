@@ -1,7 +1,7 @@
 package me.example.asyncechoclient
 
-import kio.async.openConnection
 import kio.async.runPollEventLoop
+import kio.network.openConnection
 import kio.websocket.KioWsConnection
 import kio.websocket.MessageType
 import kio.websocket.ProtocolException

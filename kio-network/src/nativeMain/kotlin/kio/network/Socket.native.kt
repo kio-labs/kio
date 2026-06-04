@@ -1,5 +1,11 @@
-package kio.async
+package kio.network
 
+import kio.async.AsyncSink
+import kio.async.AsyncSource
+import kio.async.asyncFdRawSink
+import kio.async.asyncFdRawSource
+import kio.async.awaitWriteIo
+import kio.async.buffered
 import platform.posix.*
 import kotlinx.cinterop.*
 import kotlinx.io.IOException
@@ -47,11 +53,7 @@ actual suspend fun openConnection(host: String, port: Int): AsyncConnection = me
                 )
 
                 if (ret == 0) {
-                    return@memScoped FdBasedAsyncConnection(
-                        source = asyncFdRawSource(fd).buffered(),
-                        sink = asyncFdRawSink(fd).buffered(),
-                        fd = fd,
-                    )
+                    return@memScoped FdAsyncConnection(fd = fd)
                 }
 
                 if (errno == EINPROGRESS) {
@@ -59,11 +61,7 @@ actual suspend fun openConnection(host: String, port: Int): AsyncConnection = me
 
                     val socketError = getSocketError(fd)
                     if (socketError == 0) {
-                        return@memScoped FdBasedAsyncConnection(
-                            source = asyncFdRawSource(fd).buffered(),
-                            sink = asyncFdRawSink(fd).buffered(),
-                            fd = fd,
-                        )
+                        return@memScoped FdAsyncConnection(fd = fd,)
                     }
 
                     lastError = strerror(socketError)?.toKString()
@@ -127,7 +125,12 @@ internal class FdBasedAsyncConnection(
         } catch (t: Throwable) {
             // ignore exception because we are closing
         } finally {
-            platform.posix.close(fd)
+            close(fd)
         }
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+internal fun errnoMessage(): String {
+    return strerror(errno)?.toKString() ?: "Unknown errno: $errno"
 }

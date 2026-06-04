@@ -24,8 +24,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "kio"
 include(":kio-async:core")
-include(":kio-async:example:async-echo-server")
-include(":kio-async:example:std-in-out")
 include(":kio-async:example:pipe")
 include(":kio-websocket")
 include(":kio-websocket:autobahntest:server")
@@ -36,3 +34,6 @@ include(":kio-postgres:types")
 include(":kio-postgres:example:postgres-client")
 include(":kio-compression")
 include(":kio-http")
+include(":kio-network")
+include(":kio-network:example:async-echo-server")
+include(":kio-network:example:tcp-client")

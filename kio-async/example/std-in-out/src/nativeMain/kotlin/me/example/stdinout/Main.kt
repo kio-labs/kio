@@ -5,7 +5,6 @@ import kio.async.asyncFdRawSink
 import kio.async.asyncFdRawSource
 import kio.async.buffered
 import kio.async.runPollEventLoop
-import kio.async.setNonBlocking
 import kio.async.writeString
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.io.Buffer
@@ -16,8 +15,9 @@ import platform.posix.stdout
 
 @OptIn(ExperimentalForeignApi::class)
 fun main(): Unit = runPollEventLoop {
-    setNonBlocking(fileno(stdout))
-    setNonBlocking(fileno(stdin))
+
+//    setNonBlocking(fileno(stdout))
+//    setNonBlocking(fileno(stdin))
 
     val sink = asyncFdRawSink(fileno(stdout)).buffered()
     val source = asyncFdRawSource(fileno(stdin)).buffered()

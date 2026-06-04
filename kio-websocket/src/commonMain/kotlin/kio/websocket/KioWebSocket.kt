@@ -1,26 +1,22 @@
 package kio.websocket
 
-import kio.async.AsyncConnection
 import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.readByteArray
 import kio.async.readLine
 import kio.async.writeString
+import kio.network.AsyncConnection
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
-import kotlinx.io.RawSink
-import kotlinx.io.RawSource
 import kotlinx.io.Sink
 import kotlinx.io.Source
 import kotlinx.io.readUShort
 import kotlinx.io.writeString
 import kotlinx.io.writeUShort
-import kotlin.collections.get
 import kotlin.experimental.and
 import kotlin.experimental.xor
 import kotlin.io.encoding.Base64
-import kotlin.text.toInt
 
 class ProtocolException(val closeCode: CloseCode, message: String) : IOException(message)
 

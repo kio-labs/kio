@@ -1,4 +1,7 @@
-package kio.async
+package kio.network
+
+import kio.async.AsyncSink
+import kio.async.AsyncSource
 
 interface AsyncConnection {
     val source: AsyncSource
