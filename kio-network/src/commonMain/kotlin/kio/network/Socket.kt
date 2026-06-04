@@ -10,3 +10,7 @@ interface AsyncConnection {
 }
 
 expect suspend fun openConnection(host: String, port: Int): AsyncConnection
+
+interface ServerSocket {
+    suspend fun accept(): AsyncConnection
+}
