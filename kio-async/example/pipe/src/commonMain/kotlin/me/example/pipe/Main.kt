@@ -2,6 +2,7 @@ package me.example.pipe
 
 import kio.async.AsyncSource
 import kio.async.openPipe
+import kio.async.poller.poll.PosixPoll
 import kio.async.runPollEventLoop
 import kio.async.writeString
 import kotlinx.coroutines.delay
@@ -11,7 +12,7 @@ import kotlinx.io.Buffer
 import kotlinx.io.readString
 import kotlin.time.Duration.Companion.seconds
 
-fun main() = runPollEventLoop {
+fun main() = runPollEventLoop(PosixPoll) {
     val (source, sink) = openPipe()
     val sendJob = launch {
         while (true) {

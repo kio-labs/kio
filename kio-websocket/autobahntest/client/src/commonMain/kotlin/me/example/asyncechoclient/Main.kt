@@ -10,12 +10,13 @@ import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
 import kotlinx.io.readString
+import kio.async.poller.poll.PosixPoll
 
 private const val HOST = "127.0.0.1"
 private const val PORT = 9001
 private const val AGENT = "kio"
 
-fun main(): Unit = runPollEventLoop {
+fun main(): Unit = runPollEventLoop(PosixPoll) {
     val count = getCaseCount()
 
     for (caseId in 1..count) {

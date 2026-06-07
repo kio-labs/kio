@@ -24,6 +24,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "kio"
 include(":kio-async:core")
+include(":kio-async:poller-poll")
 include(":kio-async:example:pipe")
 include(":kio-websocket")
 include(":kio-websocket:autobahntest:server")

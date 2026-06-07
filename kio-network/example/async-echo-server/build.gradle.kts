@@ -17,6 +17,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            implementation(project(":kio-async:poller-poll"))
             implementation(project(":kio-network"))
         }
     }

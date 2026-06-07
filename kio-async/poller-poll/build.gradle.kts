@@ -7,17 +7,11 @@ plugins {
 }
 
 kotlin {
-    macosArm64 {
-        binaries {
-            executable {
-                entryPoint("me.example.pipe.main")
-            }
-        }
-    }
-
+    jvm()
+    macosArm64()
     sourceSets {
         commonMain.dependencies {
-            implementation(project(":kio-async:poller-poll"))
+            api(project(":kio-async:core"))
         }
     }
 }

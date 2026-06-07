@@ -18,6 +18,7 @@ kotlin {
     sourceSets {
         nativeMain.dependencies {
             implementation(project(":kio-websocket"))
+            implementation(project(":kio-async:poller-poll"))
         }
     }
 }

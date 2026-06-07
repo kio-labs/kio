@@ -28,7 +28,6 @@ import kotlinx.io.IOException
 import platform.posix.CLOCK_MONOTONIC
 import platform.posix.EAGAIN
 import platform.posix.EWOULDBLOCK
-import platform.posix.POLLIN
 import platform.posix.POLLRDNORM
 import platform.posix.POLLWRNORM
 import platform.posix.clock_gettime
@@ -53,32 +52,31 @@ import kotlin.native.concurrent.Worker
 
 suspend fun awaitReadIo(fd: Int): Unit = suspendCancellableCoroutine { c ->
     val dispatcher = c.context[AsyncPollEventDispatcher] ?: error("not in async poll event")
-    val fdRequest = PollFdRequest(fd, POLLRDNORM)
-    dispatcher.registerFd(fdRequest, c)
+    dispatcher.registerFdForRead(fd, c)
 
     c.invokeOnCancellation {
         println("awaitReadIo cancelled $it")
-        dispatcher.unRegisterFd(fdRequest)
+        dispatcher.unRegisterFdForRead(fd)
     }
 }
 
 suspend fun awaitWriteIo(fd: Int): Unit = suspendCancellableCoroutine { c ->
     val dispatcher = c.context[AsyncPollEventDispatcher] ?: error("not in async poll event")
-    val fdRequest = PollFdRequest(fd, POLLWRNORM)
-    dispatcher.registerFd(fdRequest, c)
+    dispatcher.registerFdForWrite(fd, c)
 
     c.invokeOnCancellation {
         println("awaitWriteIo cancelled $it")
-        dispatcher.unRegisterFd(fdRequest)
+        dispatcher.unRegisterFdForWrite(fd)
     }
 }
 
 @OptIn(DelicateCoroutinesApi::class)
 fun <T> runPollEventLoop(
+    factory: Poller.Factory,
     context: CoroutineContext = EmptyCoroutineContext,
     block: suspend CoroutineScope.() -> T
 ): T {
-    val eventLoop = AsyncPollEventDispatcher()
+    val eventLoop = AsyncPollEventDispatcher(factory)
     val newContext = GlobalScope.newCoroutineContext(context + eventLoop)
     val coroutine = BlockingAIOCoroutine<T>(newContext, eventLoop)
     coroutine.start(CoroutineStart.DEFAULT, coroutine, block)
@@ -86,19 +84,28 @@ fun <T> runPollEventLoop(
 }
 
 @OptIn(InternalCoroutinesApi::class)
-internal class AsyncPollEventDispatcher : CoroutineDispatcher(), Delay {
+internal class AsyncPollEventDispatcher(
+    factory: Poller.Factory
+) : CoroutineDispatcher(), Delay {
     @OptIn(ExperimentalStdlibApi::class)
     companion object Key :
         AbstractCoroutineContextKey<ContinuationInterceptor, AsyncPollEventDispatcher>(
             ContinuationInterceptor,
             { it as? AsyncPollEventDispatcher })
 
+    private val nativePoller = factory.create()
+
     // TODO: Thread safe support for this three collection
-    private val pollFdRequestMap: MutableMap<PollFdRequest, Continuation<Unit>> = mutableMapOf()
+    private val readFdWithContinueMap: MutableMap<Int, Continuation<Unit>> = mutableMapOf()
+    private val writeFdWithContinueMap: MutableMap<Int, Continuation<Unit>> = mutableMapOf()
     private val timerRequestMap: MutableMap<TimerRequest, Continuation<Unit>> = mutableMapOf()
     private val taskQueue = ArrayDeque<Runnable>()
 
     private val wakeupPipe = wakeupPipe()
+
+    init {
+        nativePoller.registerFd(wakeupPipe.wakeupReadFD, Poller.EventType.READ)
+    }
 
     override fun dispatch(
         context: CoroutineContext,
@@ -123,8 +130,6 @@ internal class AsyncPollEventDispatcher : CoroutineDispatcher(), Delay {
     }
 
     fun doBlockPoll() {
-        val currentPollRequests = pollFdRequestMap.keys.toList() + wakeupPipe.wakeupPollFdRequest
-
         // case1: having active tasks, do not block. timeout = 0
         // case2: no tasks, having timer requests. timeout = nearest timeout.
         // case3: no tasks, no timer requests. timeout = -1 (indefinitely block).
@@ -137,11 +142,11 @@ internal class AsyncPollEventDispatcher : CoroutineDispatcher(), Delay {
             else -> -1
         }
 
-        if (timeout == -1L && currentPollRequests.isEmpty()) {
-            throw IllegalStateException("Try to block indefinitely with no fd registration.")
-        }
+//        if (timeout == -1L && fdWithContinueMap.keys.isEmpty()) {
+//            throw IllegalStateException("Try to block indefinitely with no fd registration.")
+//        }
 
-        poll(currentPollRequests, timeout)
+        nativePoller.poll(timeout)
         wakeupPipe.drainWakeup()
 
         // resume all continuation.
@@ -157,14 +162,25 @@ internal class AsyncPollEventDispatcher : CoroutineDispatcher(), Delay {
     }
 
     private fun resumeSleepingFds() {
-        val it = pollFdRequestMap.iterator()
-        while (it.hasNext()) {
-            val (req, continuation) = it.next()
-            if (req.needContinue()) {
-                it.remove()
-                continuation.resume(Unit)
+        fun removeFdIfAwake(fd: Int, event: Poller.EventType): Boolean {
+            val awake = nativePoller.isAwake(fd, event)
+            if (awake) nativePoller.unRegisterFd(fd, event)
+            return awake
+        }
+
+        fun resume(fdMap: MutableMap<Int, Continuation<Unit>>, event: Poller.EventType) {
+            val it = fdMap.iterator()
+            while (it.hasNext()) {
+                val (req, continuation) = it.next()
+                if (removeFdIfAwake(req, event)) {
+                    it.remove()
+                    continuation.resume(Unit)
+                }
             }
         }
+
+        resume(readFdWithContinueMap, Poller.EventType.READ)
+        resume(writeFdWithContinueMap, Poller.EventType.WRITE)
     }
 
     private fun resumeTimers() {
@@ -187,15 +203,34 @@ internal class AsyncPollEventDispatcher : CoroutineDispatcher(), Delay {
         timerRequestMap.remove(req)
     }
 
-    fun registerFd(fd: PollFdRequest, c: Continuation<Unit>) {
-        if (pollFdRequestMap.contains(fd)) throw IllegalStateException("$fd already sleep.")
-        pollFdRequestMap[fd] = c
+    fun registerFdForRead(fd: Int, c: Continuation<Unit>) {
+        registerFd(fd, Poller.EventType.READ, c)
     }
 
-    fun unRegisterFd(fd: PollFdRequest) {
-        if (pollFdRequestMap.remove(fd) != null) {
-            wakeupPipe.wakeup()
+    fun registerFdForWrite(fd: Int, c: Continuation<Unit>) {
+        registerFd(fd, Poller.EventType.WRITE, c)
+    }
+
+    private fun registerFd(fd: Int, event: Poller.EventType, c: Continuation<Unit>) {
+        nativePoller.registerFd(fd, event)
+        when (event) {
+            Poller.EventType.READ -> readFdWithContinueMap[fd] = c
+            Poller.EventType.WRITE -> writeFdWithContinueMap[fd] = c
         }
+    }
+
+    fun unRegisterFdForRead(fd: Int) = unRegisterFd(fd, Poller.EventType.READ)
+
+    fun unRegisterFdForWrite(fd: Int) = unRegisterFd(fd, Poller.EventType.WRITE)
+
+    private fun unRegisterFd(fd: Int, event: Poller.EventType) {
+        nativePoller.unRegisterFd(fd, event)
+        when (event) {
+            Poller.EventType.READ -> readFdWithContinueMap.remove(fd)
+            Poller.EventType.WRITE -> writeFdWithContinueMap.remove(fd)
+        }
+
+        wakeupPipe.wakeup()
     }
 
     fun processNextEvent(): Boolean {
@@ -288,54 +323,30 @@ internal class TimerRequest(
     }
 }
 
+interface Poller {
 
-internal class PollFdRequest(
-    val fd: Int,
-    val events: Int,
-    var revents: Int = 0,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is PollFdRequest) return false
-
-        return fd == other.fd &&
-                events == other.events
+    interface Factory {
+        fun create(): Poller
     }
 
-    override fun hashCode(): Int {
-        var result = fd
-        result = 31 * result + events
-        return result
+    enum class EventType {
+        READ,
+        WRITE,
     }
 
-    override fun toString(): String {
-        return "PollFdRequest(fd=$fd, events=$events, revents=$revents)"
-    }
+    fun registerFd(fd: Int, event: EventType)
+    fun unRegisterFd(fd: Int, event: EventType)
+    fun isAwake(fd: Int, event: EventType): Boolean
 
-    fun needContinue(): Boolean {
-        return revents != 0
-    }
-}
-
-@OptIn(ObsoleteWorkersApi::class, ExperimentalForeignApi::class)
-internal fun poll(fds: List<PollFdRequest>, timeoutMillis: Long): Unit = memScoped {
-// TODO: avoid alloc memory in each poll
-    val nativePollfd = allocArray<pollfd>(fds.size) { i ->
-        fd = fds[i].fd
-        events = fds[i].events.convert()
-    }
-
-    val res = poll(nativePollfd, fds.size.convert(), timeoutMillis.toInt())
-
-    if (res < 0) {
-        val e = errno
-        val msg = strerror(e)?.toKString()
-        throw IOException("poll failed: errno=$e, message=$msg")
-    }
-
-    fds.onEachIndexed { i, request ->
-        request.revents = nativePollfd[i].revents.toInt()
-    }
+    /**
+     * Blocks the current thread until this fd becomes ready or the timeout expires.
+     *
+     * @param timeoutMillis timeout in milliseconds.
+     * - `-1` means wait forever.
+     * - `0` means return immediately.
+     * - `> 0` means wait up to the given milliseconds.
+     */
+    fun poll(timeoutMillis: Long)
 }
 
 @OptIn(ExperimentalForeignApi::class)
@@ -362,7 +373,7 @@ internal fun wakeupPipe() = memScoped {
     setNonBlocking(wakeupWriteFd)
 
     object : WakeupPipe {
-        override val wakeupPollFdRequest = PollFdRequest(wakeupReadFd, POLLIN)
+        override val wakeupReadFD = wakeupReadFd
 
         override fun drainWakeup() = memScoped {
             val buf = allocArray<ByteVar>(64)
@@ -402,7 +413,7 @@ internal fun wakeupPipe() = memScoped {
 }
 
 internal interface WakeupPipe {
-    val wakeupPollFdRequest: PollFdRequest
+    val wakeupReadFD: Int
     fun drainWakeup()
     fun wakeup()
 

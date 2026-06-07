@@ -1,6 +1,7 @@
 package kio.postgres.conn
 
 import kio.async.openPipe
+import kio.async.poller.poll.PosixPoll
 import kio.async.runPollEventLoop
 import kio.async.writeString
 import kio.postegre.types.PgBool
@@ -393,7 +394,7 @@ class PgConnectionTest {
 }
 
 private fun withTestPgDatabase(block: suspend PgConnection.() -> Unit) =
-    runPollEventLoop {
+    runPollEventLoop(PosixPoll) {
         val HOST_IP = "localhost"
         val PORT = 5432
         val conn = openPgConnection(HOST_IP, PORT, "test_clear", database = "postgres", password = "test123")

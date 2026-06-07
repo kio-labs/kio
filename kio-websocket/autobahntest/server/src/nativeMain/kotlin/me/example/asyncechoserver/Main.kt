@@ -11,12 +11,13 @@ import kotlinx.io.IOException
 import platform.posix.*
 import kotlin.native.concurrent.ObsoleteWorkersApi
 import kotlin.native.concurrent.Worker
+import kio.async.poller.poll.PosixPoll
 
 const val HOST_IP = "127.0.0.1"
 const val PORT = 7878
 
 @OptIn(ExperimentalForeignApi::class)
-fun main(): Unit = runPollEventLoop {
+fun main(): Unit = runPollEventLoop(PosixPoll) {
     signal(SIGPIPE, SIG_IGN)
 
     val server = tcpBind(HOST_IP, PORT)

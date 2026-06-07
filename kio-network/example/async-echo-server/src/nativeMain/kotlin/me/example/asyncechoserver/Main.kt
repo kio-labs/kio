@@ -1,5 +1,6 @@
 package me.example.asyncechoserver
 
+import kio.async.poller.poll.PosixPoll
 import kio.async.runPollEventLoop
 import kio.network.tcpBind
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -11,7 +12,7 @@ const val HOST_IP = "127.0.0.1"
 const val PORT = 7878
 
 @OptIn(ExperimentalForeignApi::class)
-fun main(): Unit = runPollEventLoop {
+fun main(): Unit = runPollEventLoop(PosixPoll) {
     signal(SIGPIPE, SIG_IGN)
 
     val server = tcpBind(HOST_IP, PORT)
