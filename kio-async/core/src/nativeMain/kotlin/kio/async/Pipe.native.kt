@@ -5,7 +5,10 @@ import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
-import kotlinx.io.buffered
+import platform.posix.F_GETFL
+import platform.posix.F_SETFL
+import platform.posix.O_NONBLOCK
+import platform.posix.fcntl
 import platform.posix.pipe
 
 @OptIn(ExperimentalForeignApi::class)

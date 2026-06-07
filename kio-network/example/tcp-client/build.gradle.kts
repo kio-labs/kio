@@ -10,14 +10,14 @@ kotlin {
     macosArm64 {
         binaries {
             executable {
-                entryPoint("me.example.stdinout.main")
+                entryPoint("me.example.tcpclient.main")
             }
         }
     }
 
     sourceSets {
         commonMain.dependencies {
-            implementation(project(":kio-async:core"))
+            implementation(project(":kio-network"))
         }
     }
 }

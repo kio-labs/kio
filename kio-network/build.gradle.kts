@@ -8,8 +8,12 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":kio-async:core"))
-            api(project(":kio-network"))
-            implementation(libs.hash.sha1)
+            api(libs.kotlinx.io)
+        }
+
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }

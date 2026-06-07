@@ -1,12 +1,6 @@
 package kio.websocket
 
-import kio.async.AsyncConnection
-import kio.async.FdAsyncConnection
-
-fun KioWsConnection(fd: Int, isClient: Boolean): WsConnection = InternalWebSocket(
-    isClient,
-    FdAsyncConnection(fd)
-)
+import kio.network.AsyncConnection
 
 fun KioWsConnection(conn: AsyncConnection, isClient: Boolean): WsConnection = InternalWebSocket(
     isClient,
