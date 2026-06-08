@@ -65,6 +65,10 @@ interface Poller {
         fun create(): Poller
     }
 
+    fun interface PollScope {
+        fun isAwake(fd: Int, event: EventType): Boolean
+    }
+
     enum class EventType {
         READ,
         WRITE,
@@ -72,7 +76,6 @@ interface Poller {
 
     fun registerFd(fd: Int, event: EventType)
     fun unRegisterFd(fd: Int, event: EventType)
-    fun isAwake(fd: Int, event: EventType): Boolean
 
     /**
      * Blocks the current thread until this fd becomes ready or the timeout expires.
@@ -82,7 +85,9 @@ interface Poller {
      * - `0` means return immediately.
      * - `> 0` means wait up to the given milliseconds.
      */
-    fun poll(timeoutMillis: Long)
+    fun poll(timeoutMillis: Long, block: PollScope.() -> Unit)
+
+    fun close()
 }
 
 @OptIn(InternalCoroutinesApi::class)
@@ -148,12 +153,14 @@ internal class AsyncPollEventDispatcher(
 //            throw IllegalStateException("Try to block indefinitely with no fd registration.")
 //        }
 
-        nativePoller.poll(timeout)
-        wakeupPipe.drainWakeup()
+        // block
+        nativePoller.poll(timeout) {
+            resumeSleepingFds()
+        }
 
-        // resume all continuation.
-        resumeSleepingFds()
         resumeTimers()
+
+        wakeupPipe.drainWakeup()
     }
 
     private fun getNearestTimeout(): Long {
@@ -163,9 +170,9 @@ internal class AsyncPollEventDispatcher(
         return (nearestDeadline - nowMillis()).coerceAtLeast(0)
     }
 
-    private fun resumeSleepingFds() {
+    private fun Poller.PollScope.resumeSleepingFds() {
         fun removeFdIfAwake(fd: Int, event: Poller.EventType): Boolean {
-            val awake = nativePoller.isAwake(fd, event)
+            val awake = isAwake(fd, event)
             if (awake) nativePoller.unRegisterFd(fd, event)
             return awake
         }
@@ -241,6 +248,7 @@ internal class AsyncPollEventDispatcher(
     }
 
     fun close() {
+        nativePoller.close()
         wakeupPipe.close()
     }
 }

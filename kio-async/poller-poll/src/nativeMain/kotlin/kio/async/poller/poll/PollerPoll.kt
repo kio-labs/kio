@@ -23,6 +23,11 @@ private class NativePoller : Poller {
     private val pollFdRequestMap: MutableMap<Pair<Int, Poller.EventType>, PollFdRequest> =
         mutableMapOf()
 
+    private val scope = fun(fd: Int, event: Poller.EventType): Boolean {
+        val request = pollFdRequestMap[fd to event] ?: return false
+        return request.needContinue()
+    }
+
     override fun registerFd(fd: Int, event: Poller.EventType) {
         val fdRequest = when (event) {
             Poller.EventType.READ -> PollFdRequest(fd, POLLRDNORM)
@@ -38,15 +43,16 @@ private class NativePoller : Poller {
         pollFdRequestMap.remove(fd to event)
     }
 
-    override fun isAwake(fd: Int, event: Poller.EventType): Boolean {
-        val request = pollFdRequestMap[fd to event] ?: return false
-        return request.needContinue()
-    }
-
-    override fun poll(timeoutMillis: Long) {
+    override fun poll(
+        timeoutMillis: Long,
+        block: Poller.PollScope.() -> Unit
+    ) {
         println("poll timeoutMillis $timeoutMillis")
         nativePoll(pollFdRequestMap.values.toList(), timeoutMillis)
+        block(scope)
     }
+
+    override fun close() = Unit
 
     @OptIn(ObsoleteWorkersApi::class, ExperimentalForeignApi::class)
     private fun nativePoll(fds: List<PollFdRequest>, timeoutMillis: Long): Unit = memScoped {
