@@ -1,16 +1,5 @@
 package kio.async
 
-import kotlinx.cinterop.ByteVar
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.IntVar
-import kotlinx.cinterop.allocArray
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.convert
-import kotlinx.cinterop.get
-import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.ptr
-import kotlinx.cinterop.toKString
-import kotlinx.cinterop.value
 import kotlinx.coroutines.AbstractCoroutine
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CoroutineDispatcher
@@ -24,31 +13,18 @@ import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.disposeOnCancellation
 import kotlinx.coroutines.newCoroutineContext
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.io.IOException
-import platform.posix.CLOCK_MONOTONIC
-import platform.posix.EAGAIN
-import platform.posix.EWOULDBLOCK
-import platform.posix.POLLRDNORM
-import platform.posix.POLLWRNORM
-import platform.posix.clock_gettime
-import platform.posix.close
-import platform.posix.errno
-import platform.posix.pipe
-import platform.posix.poll
-import platform.posix.pollfd
-import platform.posix.read
-import platform.posix.strerror
-import platform.posix.timespec
-import platform.posix.write
-import kotlin.concurrent.AtomicInt
+import kotlin.collections.component1
+import kotlin.collections.component2
+import kotlin.collections.iterator
+import kotlin.collections.set
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.AbstractCoroutineContextKey
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.resume
-import kotlin.native.concurrent.ObsoleteWorkersApi
-import kotlin.native.concurrent.Worker
 
 suspend fun awaitReadIo(fd: Int): Unit = suspendCancellableCoroutine { c ->
     val dispatcher = c.context[AsyncPollEventDispatcher] ?: error("not in async poll event")
@@ -81,6 +57,32 @@ fun <T> runPollEventLoop(
     val coroutine = BlockingAIOCoroutine<T>(newContext, eventLoop)
     coroutine.start(CoroutineStart.DEFAULT, coroutine, block)
     return coroutine.joinBlocking()
+}
+
+interface Poller {
+
+    interface Factory {
+        fun create(): Poller
+    }
+
+    enum class EventType {
+        READ,
+        WRITE,
+    }
+
+    fun registerFd(fd: Int, event: EventType)
+    fun unRegisterFd(fd: Int, event: EventType)
+    fun isAwake(fd: Int, event: EventType): Boolean
+
+    /**
+     * Blocks the current thread until this fd becomes ready or the timeout expires.
+     *
+     * @param timeoutMillis timeout in milliseconds.
+     * - `-1` means wait forever.
+     * - `0` means return immediately.
+     * - `> 0` means wait up to the given milliseconds.
+     */
+    fun poll(timeoutMillis: Long)
 }
 
 @OptIn(InternalCoroutinesApi::class)
@@ -243,54 +245,6 @@ internal class AsyncPollEventDispatcher(
     }
 }
 
-@OptIn(ObsoleteWorkersApi::class, InternalCoroutinesApi::class)
-private class BlockingAIOCoroutine<T>(
-    parentContext: CoroutineContext,
-    private val dispatcher: AsyncPollEventDispatcher
-) : AbstractCoroutine<T>(parentContext, true, true) {
-    private val joinWorker = Worker.current
-
-    // TODO: is this safe for multi-thread?
-    private var result: Result<T>? = null
-
-    override fun afterCompletion(state: Any?) {
-        // wake up blocked thread
-        if (joinWorker != Worker.current) {
-            // Unpark waiting worker
-            println("unpark thread!!!!")
-            joinWorker.executeAfter(0L, {}) // send an empty task to unpark the waiting event loop
-        }
-    }
-
-    override fun onCompleted(value: T) {
-        super.onCompleted(value)
-        result = Result.success(value)
-        println("Complete !!! $value")
-    }
-
-    override fun onCancelled(cause: Throwable, handled: Boolean) {
-        super.onCancelled(cause, handled)
-        result = Result.failure(cause)
-    }
-
-    fun joinBlocking(): T {
-        while (true) {
-            dispatcher.doBlockPoll()
-
-            if (!dispatcher.processNextEvent()) {
-                // no more task. sleep to wait complete
-                joinWorker.park(Long.MAX_VALUE / 1000L, true)
-            }
-
-            if (isCompleted) break
-        }
-
-        dispatcher.close()
-
-        return result?.getOrThrow() ?: throw IllegalStateException("No result???")
-    }
-}
-
 internal class TimerRequest(
     val id: Int,
     val deadlineMillis: Long,
@@ -318,97 +272,10 @@ internal class TimerRequest(
     }
 
     companion object {
+        @OptIn(ExperimentalAtomicApi::class)
         private val index = AtomicInt(0)
-        internal fun nextKey() = index.getAndAdd(1)
-    }
-}
-
-interface Poller {
-
-    interface Factory {
-        fun create(): Poller
-    }
-
-    enum class EventType {
-        READ,
-        WRITE,
-    }
-
-    fun registerFd(fd: Int, event: EventType)
-    fun unRegisterFd(fd: Int, event: EventType)
-    fun isAwake(fd: Int, event: EventType): Boolean
-
-    /**
-     * Blocks the current thread until this fd becomes ready or the timeout expires.
-     *
-     * @param timeoutMillis timeout in milliseconds.
-     * - `-1` means wait forever.
-     * - `0` means return immediately.
-     * - `> 0` means wait up to the given milliseconds.
-     */
-    fun poll(timeoutMillis: Long)
-}
-
-@OptIn(ExperimentalForeignApi::class)
-internal fun nowMillis(): Long = memScoped {
-    val ts = alloc<timespec>()
-    if (clock_gettime(CLOCK_MONOTONIC.convert(), ts.ptr) != 0) {
-        val e = errno
-        val msg = strerror(e)?.toKString()
-        throw IOException("clock_gettime failed: errno=$e, message=$msg")
-    }
-
-    ts.tv_sec * 1000L + ts.tv_nsec / 1_000_000L
-}
-
-@OptIn(ExperimentalForeignApi::class)
-internal fun wakeupPipe() = memScoped {
-    val fds = allocArray<IntVar>(2)
-    check(pipe(fds) == 0)
-
-    val wakeupReadFd: Int = fds[0]
-    val wakeupWriteFd: Int = fds[1]
-
-    setNonBlocking(wakeupReadFd)
-    setNonBlocking(wakeupWriteFd)
-
-    object : WakeupPipe {
-        override val wakeupReadFD = wakeupReadFd
-
-        override fun drainWakeup() = memScoped {
-            val buf = allocArray<ByteVar>(64)
-
-            while (true) {
-                val n = read(wakeupReadFd, buf, 64.convert())
-                if (n > 0) continue
-
-                if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                    break
-                }
-
-                break
-            }
-        }
-
-        override fun wakeup() = memScoped {
-            val b = alloc<ByteVar>()
-            b.value = 1
-
-            val n = write(wakeupWriteFd, b.ptr, 1.convert())
-
-            if (n < 0) {
-                val e = errno
-                if (e == EAGAIN || e == EWOULDBLOCK) {
-                    return@memScoped
-                }
-                error("wakeup write failed: errno=$e")
-            }
-        }
-
-        override fun close() {
-            close(wakeupReadFd)
-            close(wakeupWriteFd)
-        }
+        @OptIn(ExperimentalAtomicApi::class)
+            internal fun nextKey() = index.addAndFetch(1)
     }
 }
 
@@ -419,3 +286,56 @@ internal interface WakeupPipe {
 
     fun close()
 }
+
+@OptIn(InternalCoroutinesApi::class)
+private class BlockingAIOCoroutine<T>(
+    parentContext: CoroutineContext,
+    private val dispatcher: AsyncPollEventDispatcher
+) : AbstractCoroutine<T>(parentContext, true, true) {
+//    private val joinWorker = Worker.current
+
+    // TODO: is this safe for multi-thread?
+    private var result: Result<T>? = null
+
+    override fun afterCompletion(state: Any?) {
+        // wake up blocked thread
+//        if (joinWorker != Worker.current) {
+//            // Unpark waiting worker
+//            println("unpark thread!!!!")
+//            joinWorker.executeAfter(0L, {}) // send an empty task to unpark the waiting event loop
+//        }
+    }
+
+    override fun onCompleted(value: T) {
+        super.onCompleted(value)
+        result = Result.success(value)
+        println("Complete !!! $value")
+    }
+
+    override fun onCancelled(cause: Throwable, handled: Boolean) {
+        super.onCancelled(cause, handled)
+        result = Result.failure(cause)
+    }
+
+    fun joinBlocking(): T {
+        while (true) {
+            dispatcher.doBlockPoll()
+
+            dispatcher.processNextEvent()
+//            if (!dispatcher.processNextEvent()) {
+//                // no more task. sleep to wait complete
+//                joinWorker.park(Long.MAX_VALUE / 1000L, true)
+//            }
+
+            if (isCompleted) break
+        }
+
+        dispatcher.close()
+
+        return result?.getOrThrow() ?: throw IllegalStateException("No result???")
+    }
+}
+
+internal expect fun nowMillis(): Long
+
+internal expect fun wakeupPipe(): WakeupPipe

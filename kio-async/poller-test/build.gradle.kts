@@ -7,15 +7,10 @@ plugins {
 }
 
 kotlin {
-    jvm()
     macosArm64()
     sourceSets {
-        commonMain.dependencies {
-            api(libs.kotlinx.io)
-            implementation(libs.kotlinx.coroutines.core)
-        }
-
         commonTest.dependencies {
+            implementation(project(":kio-async:poller-poll"))
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }
