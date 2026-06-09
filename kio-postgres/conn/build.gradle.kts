@@ -18,5 +18,10 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }
+
+        nativeTest.dependencies {
+            implementation(project(":kio-async:poller-poll"))
+            implementation(project(":kio-async:poller-kqueue"))
+        }
     }
 }

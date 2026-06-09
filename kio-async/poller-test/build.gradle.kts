@@ -7,18 +7,13 @@ plugins {
 }
 
 kotlin {
-    macosArm64 {
-        binaries {
-            executable {
-                entryPoint("me.example.asyncechoclient.main")
-            }
-        }
-    }
-
+    macosArm64()
     sourceSets {
-        nativeMain.dependencies {
-            implementation(project(":kio-websocket"))
+        commonTest.dependencies {
             implementation(project(":kio-async:poller-poll"))
+            implementation(project(":kio-async:poller-kqueue"))
+            implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }

@@ -1,6 +1,9 @@
 package kio.postgres.conn
 
+import kio.async.Poller
 import kio.async.openPipe
+import kio.async.poller.kqueue.Kqueue
+import kio.async.poller.poll.PosixPoll
 import kio.async.runPollEventLoop
 import kio.async.writeString
 import kio.postegre.types.PgBool
@@ -27,7 +30,17 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.measureTime
 
-class PgConnectionTest {
+class PosixPgConnectionTest : PgConnectionTest() {
+    override val pollerFactory: Poller.Factory = PosixPoll
+}
+
+class KqueuePgConnectionTest : PgConnectionTest() {
+    override val pollerFactory: Poller.Factory = Kqueue
+}
+
+abstract class PgConnectionTest {
+    abstract val pollerFactory: Poller.Factory
+
     @Test
     fun execTest() = withTestPgDatabase {
         exec("create temporary table foo(id integer primary key)")
@@ -390,13 +403,15 @@ class PgConnectionTest {
             exec("select 1")
         }
     }
-}
 
-private fun withTestPgDatabase(block: suspend PgConnection.() -> Unit) =
-    runPollEventLoop {
-        val HOST_IP = "localhost"
-        val PORT = 5432
-        val conn = openPgConnection(HOST_IP, PORT, "test_clear", database = "postgres", password = "test123")
-        conn.block()
-        conn.close()
-    }
+
+
+    private fun withTestPgDatabase(block: suspend PgConnection.() -> Unit) =
+        runPollEventLoop(pollerFactory) {
+            val HOST_IP = "localhost"
+            val PORT = 5432
+            val conn = openPgConnection(HOST_IP, PORT, "test_clear", database = "postgres", password = "test123")
+            conn.block()
+            conn.close()
+        }
+}

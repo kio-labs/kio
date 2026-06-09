@@ -7,18 +7,11 @@ plugins {
 }
 
 kotlin {
-    macosArm64 {
-        binaries {
-            executable {
-                entryPoint("me.example.tcpclient.main")
-            }
-        }
-    }
+    macosArm64()
 
     sourceSets {
         commonMain.dependencies {
-            implementation(project(":kio-network"))
-            implementation(project(":kio-async:poller-poll"))
+            api(project(":kio-async:core"))
         }
     }
 }

@@ -1,11 +1,12 @@
 package me.example.tcpclient
 
+import kio.async.poller.poll.PosixPoll
 import kio.async.readLine
 import kio.async.runPollEventLoop
 import kio.async.writeString
 import kio.network.openConnection
 
-fun main(): Unit = runPollEventLoop {
+fun main(): Unit = runPollEventLoop(PosixPoll) {
     val conn = openConnection("www.example.com", 80)
     conn.sink.writeString(
         "GET / HTTP/1.1\r\n" +
