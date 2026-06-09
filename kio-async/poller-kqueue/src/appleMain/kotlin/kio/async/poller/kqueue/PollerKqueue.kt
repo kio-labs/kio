@@ -1,7 +1,9 @@
 package kio.async.poller.kqueue
 
 import kio.async.Poller
+import kotlinx.cinterop.Arena
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.MemScope
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.get
@@ -25,6 +27,10 @@ object Kqueue : Poller.Factory {
 
 private class NativePoller : Poller {
     private val kq = kqueue()
+    @OptIn(ExperimentalForeignApi::class)
+    private val arean = Arena()
+    @OptIn(ExperimentalForeignApi::class)
+    private val events = arean.allocArray<kevent>(EVENT_CAPACITY)
 
     @OptIn(ExperimentalForeignApi::class, ExperimentalAtomicApi::class)
     override fun registerFd(fd: Int, event: Poller.EventType): Unit = memScoped {
@@ -69,13 +75,11 @@ private class NativePoller : Poller {
             }.ptr
         }
 
-        val events = allocArray<kevent>(EVENT_CAPACITY)
         val n = kevent(kq, null, 0, events, EVENT_CAPACITY, timeoutPtr)
 
         if (n < 0) {
             throw IOException("error when poll kqueue")
         }
-
 
         val awakeSet = buildSet {
             for (i in 0 until n) {
@@ -97,7 +101,9 @@ private class NativePoller : Poller {
         scope.block()
     }
 
+    @OptIn(ExperimentalForeignApi::class)
     override fun close() {
+        arean.clear()
         platform.posix.close(kq)
     }
 }
