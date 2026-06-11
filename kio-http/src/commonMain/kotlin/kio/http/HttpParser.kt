@@ -11,7 +11,6 @@ import kio.async.indexOf
 import kio.async.readString
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
-import kotlin.text.get
 
 class HttpResponse internal constructor(
     val version: HttpProtocolVersion,

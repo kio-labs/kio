@@ -1,14 +1,14 @@
 package kio.network
 
-import kio.async.AsyncSink
-import kio.async.AsyncSource
+import kio.async.AsyncRawSink
+import kio.async.AsyncRawSource
 import kio.async.asyncFdRawSink
 import kio.async.asyncFdRawSource
 import kio.async.awaitReadIo
 import kio.async.awaitWriteIo
-import kio.async.buffered
 import platform.posix.*
 import kotlinx.cinterop.*
+import kotlinx.io.Buffer
 import kotlinx.io.IOException
 import platform.darwin.inet_addr
 import kotlin.Int
@@ -53,7 +53,7 @@ actual suspend fun openConnection(host: String, port: Int): AsyncConnection = me
                 )
 
                 if (ret == 0) {
-                    return@memScoped FdAsyncConnection(fd = fd)
+                    return@memScoped FdRawAsyncConnection(fd = fd).buffered()
                 }
 
                 if (errno == EINPROGRESS) {
@@ -61,7 +61,7 @@ actual suspend fun openConnection(host: String, port: Int): AsyncConnection = me
 
                     val socketError = getSocketError(fd)
                     if (socketError == 0) {
-                        return@memScoped FdAsyncConnection(fd = fd,)
+                        return@memScoped FdRawAsyncConnection(fd = fd).buffered()
                     }
 
                     lastError = strerror(socketError)?.toKString()
@@ -132,7 +132,7 @@ fun tcpBind(
     }
 }
 
-private  class FdServerSocket(
+private class FdServerSocket(
     private val serverFd: Int,
 ): ServerSocket {
     @OptIn(ExperimentalForeignApi::class)
@@ -153,7 +153,7 @@ private  class FdServerSocket(
                 throw IOException("ERROR: could not set client socket non-blocking: ${errnoMessage()}\n")
             }
 
-            FdAsyncConnection(clientFd)
+            FdRawAsyncConnection(clientFd).buffered()
         } catch (t: Throwable) {
             close(clientFd)
             throw t
@@ -161,20 +161,20 @@ private  class FdServerSocket(
     }
 }
 
-private class FdAsyncConnection(
+private class FdRawAsyncConnection(
     val fd: Int,
-    override val source: AsyncSource = asyncFdRawSource(fd).buffered(),
-    override val sink: AsyncSink = asyncFdRawSink(fd).buffered()
-) : AsyncConnection {
+    override val source: AsyncRawSource = asyncFdRawSource(fd),
+    override val sink: AsyncRawSink = asyncFdRawSink(fd)
+) : AsyncRawConnection {
     override suspend fun close() {
         shutdown(fd, SHUT_WR)
 
         try {
             // drain source buffer
-            val buf = ByteArray(1024)
-            while (!source.exhausted()) {
-                val read = source.readAtMostTo(buf)
-                if (read == -1) break
+            val buf = Buffer()
+            while (true) {
+                val read = source.asyncReadAtMostTo(buf, 1024)
+                if (read == -1L) break
             }
         } catch (t: Throwable) {
             // ignore exception because we are closing
