@@ -5,10 +5,10 @@ import kio.async.readLine
 import kio.async.runPollEventLoop
 import kio.async.writeString
 import kio.network.openConnection
-import kio.tls.withTls
+import kio.tls.withClientTls
 
 fun main() = runPollEventLoop(PosixPoll) {
-    val conn = openConnection("www.example.com", 443).withTls("www.example.com")
+    val conn = openConnection("www.example.com", 443).withClientTls("www.example.com")
     conn.sink.writeString(
         "GET / HTTP/1.1\r\n" +
                 "Host: www.example.com\r\n" +

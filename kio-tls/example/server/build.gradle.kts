@@ -6,7 +6,7 @@ kotlin {
     macosArm64  {
         binaries {
             executable {
-                entryPoint("me.example.kio.tls.client.main")
+                entryPoint("me.example.kio.tls.server.main")
             }
         }
     }

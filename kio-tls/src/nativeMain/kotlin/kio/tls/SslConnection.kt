@@ -24,25 +24,31 @@ import kotlinx.io.InternalIoApi
 import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
 import kotlinx.io.unsafe.withData
-import openssl.BIO
-import openssl.BIO_CTRL_PENDING
-import openssl.BIO_new
-import openssl.BIO_s_mem
-import openssl.BIO_write
-import openssl.ERR_error_string_n
-import openssl.ERR_get_error
-import openssl.SSL_CTX
-import openssl.SSL_CTX_new
-import openssl.SSL_new
-import openssl.SSL_set_bio
-import openssl.SSL_set_connect_state
-import openssl.TLS_client_method
+import openssl.*
 
-fun AsyncRawConnection.withTls(
+fun AsyncRawConnection.withClientTls(
     host: String,
-): AsyncConnection = InternalSslConnection(host, this)
+): AsyncConnection = InternalSslClientConnection(host, this)
 
-internal class InternalSslConnection(
+fun AsyncRawConnection.withServerTls(
+    certificate: CertificateFile,
+    privateKeyFile: CertificateFile,
+): AsyncConnection = InternalSslServerConnection(certificate, privateKeyFile, this)
+
+data class CertificateFile(
+    val file: String,
+    val type: CertificateFileType,
+)
+
+val String.pem get() = CertificateFile(this, CertificateFileType.PEM)
+val String.asn1 get() = CertificateFile(this, CertificateFileType.ASN1)
+
+enum class CertificateFileType {
+    PEM,
+    ASN1
+}
+
+internal class InternalSslClientConnection(
     host: String,
     rawConnection: AsyncRawConnection
 ) : AsyncConnection {
@@ -51,7 +57,7 @@ internal class InternalSslConnection(
     private val ctx: CPointer<SSL_CTX> = SSL_CTX_new(TLS_client_method())
         ?: error("SSL_CTX_new failed")
 
-    private val ssl = SSL_new(ctx)
+    private val ssl: CPointer<SSL> = SSL_new(ctx)
         ?: error("SSL_new failed")
 
     private val rbio: CPointer<BIO> = BIO_new(BIO_s_mem())
@@ -66,10 +72,10 @@ internal class InternalSslConnection(
         memScoped {
             val hostPtr = host.cstr.ptr
 
-            val ret = openssl.SSL_ctrl(
+            val ret = SSL_ctrl(
                 ssl,
-                openssl.SSL_CTRL_SET_TLSEXT_HOSTNAME,
-                openssl.TLSEXT_NAMETYPE_host_name.toLong(),
+                SSL_CTRL_SET_TLSEXT_HOSTNAME,
+                TLSEXT_NAMETYPE_host_name.toLong(),
                 hostPtr
             )
 
@@ -95,38 +101,100 @@ internal class InternalSslConnection(
 
     private suspend fun doHandshakeIfNeeded() {
         if (handshakeDone) return
-        doHandshake()
+        doHandshake(ssl, wbio, rbio, bufferedConnection)
         handshakeDone = true
     }
 
-    suspend fun doHandshake() {
-        val outputChunk = ByteArray(CHUNK_SIZE)
-        while (openssl.SSL_is_init_finished(ssl) == 0) {
-            val ret = openssl.SSL_do_handshake(ssl)
-            if (ret != 1) {
-                val err = openssl.SSL_get_error(ssl, ret)
-                if (err == openssl.SSL_ERROR_WANT_READ || err == openssl.SSL_ERROR_WANT_WRITE) {
-                    // ignore
-                } else {
-                    throw IOException(opensslErrorString())
-                }
-            }
+    override suspend fun close() {
+        SSL_shutdown(ssl)
+        SSL_free(ssl)
+        SSL_CTX_free(ctx)
 
-            flushWbioToSink(wbio, bufferedConnection.sink, outputChunk)
-            bufferedConnection.sink.flush()
+        bufferedConnection.close()
+    }
+}
 
-            if (openssl.SSL_is_init_finished(ssl) == 0) {
-                feedRbioFromSource(rbio, bufferedConnection.source)
-            }
+internal class InternalSslServerConnection(
+    certificate: CertificateFile,
+    privateKeyFile: CertificateFile,
+    rawConnection: AsyncRawConnection,
+): AsyncConnection {
+    private val bufferedConnection = rawConnection.buffered()
+
+    private val ctx: CPointer<SSL_CTX> = SSL_CTX_new(TLS_server_method())
+        ?: error("SSL_CTX_new failed")
+
+    init {
+        if (SSL_CTX_use_certificate_file(ctx, certificate.file, certificate.type.toType()) != 1) {
+            throw IOException(opensslErrorString())
+        }
+
+        if (SSL_CTX_use_PrivateKey_file(ctx, privateKeyFile.file, privateKeyFile.type.toType()) != 1) {
+            throw IOException(opensslErrorString())
         }
     }
 
+    private val ssl = SSL_new(ctx)
+        ?: error("SSL_new failed")
+
+    private val rbio: CPointer<BIO> = BIO_new(BIO_s_mem())
+        ?: error("BIO_new failed")
+    private val wbio: CPointer<BIO> = BIO_new(BIO_s_mem())
+        ?: error("BIO_new failed")
+
+    init {
+        SSL_set_bio(ssl, rbio, wbio)
+        SSL_set_accept_state(ssl)
+    }
+
+    private var handshakeDone = false
+
+    override val source = SslSource(
+        rbio = rbio,
+        ssl = ssl,
+        source = bufferedConnection.source,
+    ).withReadHook(::doHandshakeIfNeeded).buffered()
+
+    override val sink = SslSink(
+        wbio = wbio,
+        ssl = ssl,
+        sink = bufferedConnection.sink,
+    ).withWriteHook(::doHandshakeIfNeeded).buffered()
+
+    private suspend fun doHandshakeIfNeeded() {
+        if (handshakeDone) return
+        doHandshake(ssl, wbio, rbio, bufferedConnection)
+        handshakeDone = true
+    }
+
     override suspend fun close() {
-        openssl.SSL_shutdown(ssl)
-        openssl.SSL_free(ssl)
-        openssl.SSL_CTX_free(ctx)
+        SSL_shutdown(ssl)
+        SSL_free(ssl)
+        SSL_CTX_free(ctx)
 
         bufferedConnection.close()
+    }
+}
+
+internal suspend fun doHandshake(ssl: CPointer<SSL>, wbio: CPointer<BIO>, rbio: CPointer<BIO>, bufferedConnection: AsyncConnection) {
+    val outputChunk = ByteArray(CHUNK_SIZE)
+    while (SSL_is_init_finished(ssl) == 0) {
+        val ret = SSL_do_handshake(ssl)
+        if (ret != 1) {
+            val err = SSL_get_error(ssl, ret)
+            if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+                // ignore
+            } else {
+                throw IOException(opensslErrorString())
+            }
+        }
+
+        flushWbioToSink(wbio, bufferedConnection.sink, outputChunk)
+        bufferedConnection.sink.flush()
+
+        if (SSL_is_init_finished(ssl) == 0) {
+            feedRbioFromSource(rbio, bufferedConnection.source)
+        }
     }
 }
 
@@ -135,9 +203,9 @@ internal suspend fun flushWbioToSink(
     target: AsyncSink,
     outputChunk: ByteArray,
 ) {
-    while (openssl.BIO_ctrl(wbio, BIO_CTRL_PENDING, 0, null) > 0) {
+    while (BIO_ctrl(wbio, BIO_CTRL_PENDING, 0, null) > 0) {
         val n = outputChunk.asUByteArray().usePinned { pinnedOutput ->
-            openssl.BIO_read(wbio, pinnedOutput.addressOf(0), outputChunk.size)
+            BIO_read(wbio, pinnedOutput.addressOf(0), outputChunk.size)
         }
 
         if (n <= 0) break
@@ -195,6 +263,11 @@ internal fun opensslErrorString(): String {
     return errors.joinToString("\n").ifEmpty {
         "No OpenSSL error in queue"
     }
+}
+
+private fun CertificateFileType.toType() = when (this) {
+    CertificateFileType.PEM -> SSL_FILETYPE_PEM
+    CertificateFileType.ASN1 -> SSL_FILETYPE_ASN1
 }
 
 private fun AsyncRawSource.withReadHook(onRead: suspend () -> Unit): AsyncRawSource =

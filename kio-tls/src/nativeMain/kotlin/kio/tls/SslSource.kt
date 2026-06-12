@@ -9,14 +9,8 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import kotlinx.io.Buffer
-import kotlinx.io.InternalIoApi
-import kotlinx.io.UnsafeIoApi
-import kotlinx.io.unsafe.UnsafeBufferOperations
-import kotlinx.io.unsafe.withData
-import openssl.BIO
-import openssl.BIO_write
-import openssl.SSL
 import kotlin.math.min
+import openssl.*
 
 internal const val CHUNK_SIZE = 8192
 
@@ -38,7 +32,7 @@ internal class SslSource(
 
         while (true) {
             val read = output.usePinned { pinned ->
-                openssl.SSL_read(ssl, pinned.addressOf(0), output.size)
+                SSL_read(ssl, pinned.addressOf(0), output.size)
             }
 
             if (read > 0) {
@@ -46,18 +40,18 @@ internal class SslSource(
                 return read.toLong()
             }
 
-            when (val err = openssl.SSL_get_error(ssl, read)) {
-                openssl.SSL_ERROR_WANT_READ -> {
+            when (val err = SSL_get_error(ssl, read)) {
+                SSL_ERROR_WANT_READ -> {
                     if (!feedRbioFromSource(rbio, source)) {
                         return -1L
                     }
                 }
 
-                openssl.SSL_ERROR_WANT_WRITE -> {
+                SSL_ERROR_WANT_WRITE -> {
                     return 0L
                 }
 
-                openssl.SSL_ERROR_ZERO_RETURN -> {
+                SSL_ERROR_ZERO_RETURN -> {
                     return -1L
                 }
 

@@ -12,10 +12,7 @@ import kotlinx.io.Buffer
 import kotlinx.io.IOException
 import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
-import openssl.BIO
-import openssl.SSL
-import openssl.SSL_ERROR_WANT_READ
-import openssl.SSL_ERROR_WANT_WRITE
+import openssl.*
 
 internal class SslSink(
     private val wbio: CPointer<BIO>,
@@ -42,14 +39,14 @@ internal class SslSink(
                 data.asUByteArray().usePinned { pinnedInput ->
                     val len = minOf(limit - pos, remaining.toInt())
 
-                    val ret = openssl.SSL_write(
+                    val ret = SSL_write(
                         ssl,
                         pinnedInput.addressOf(pos),
                         len
                     )
 
                     if (ret <= 0) {
-                        val err = openssl.SSL_get_error(ssl, ret)
+                        val err = SSL_get_error(ssl, ret)
                         when (err) {
                             SSL_ERROR_WANT_READ,
                             SSL_ERROR_WANT_WRITE -> {
