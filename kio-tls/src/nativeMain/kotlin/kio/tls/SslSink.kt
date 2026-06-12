@@ -13,7 +13,6 @@ import kotlinx.io.IOException
 import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
 import openssl.BIO
-import openssl.BIO_CTRL_PENDING
 import openssl.SSL
 import openssl.SSL_ERROR_WANT_READ
 import openssl.SSL_ERROR_WANT_WRITE
@@ -22,7 +21,7 @@ internal class SslSink(
     private val wbio: CPointer<BIO>,
     private val ssl: CPointer<SSL>,
     private val sink: AsyncSink,
-    private val bufferChunkSize: Int = CHUNK_SIZE
+    private val bufferChunkSize: Int = CHUNK_SIZE,
 ) : AsyncRawSink {
     override suspend fun write(source: Buffer, byteCount: Long) {
         writeBytesFromSource(source, byteCount, sink)
@@ -66,7 +65,7 @@ internal class SslSink(
                 }
             }
 
-            flushWbioToSink(target, outputChunk)
+            flushWbioToSink(wbio, target, outputChunk)
 
             if (sourceRead == 0) {
                 continue
@@ -76,26 +75,13 @@ internal class SslSink(
         }
     }
 
-    private suspend fun flushWbioToSink(
-        target: AsyncSink,
-        outputChunk: ByteArray,
-    ) {
-        while (openssl.BIO_ctrl(wbio, BIO_CTRL_PENDING, 0, null) > 0) {
-            val n = outputChunk.asUByteArray().usePinned { pinnedOutput ->
-                openssl.BIO_read(wbio, pinnedOutput.addressOf(0), outputChunk.size)
-            }
-
-            if (n <= 0) break
-
-            target.write(outputChunk, 0, n)
-        }
-    }
-
     override suspend fun flush() {
-        TODO("Not yet implemented")
+        val outputChunk = ByteArray(bufferChunkSize)
+        flushWbioToSink(wbio, sink, outputChunk)
+        sink.flush()
     }
 
     override fun close() {
-        TODO("Not yet implemented")
+        sink.close()
     }
 }

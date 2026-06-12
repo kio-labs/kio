@@ -13,16 +13,18 @@ import kotlinx.io.InternalIoApi
 import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
 import kotlinx.io.unsafe.withData
+import openssl.BIO
 import openssl.BIO_write
+import openssl.SSL
 import kotlin.math.min
 
 internal const val CHUNK_SIZE = 8192
 
 internal class SslSource(
-    private val rbio: CPointer<openssl.BIO>,
-    private val ssl: CPointer<openssl.SSL>,
+    private val rbio: CPointer<BIO>,
+    private val ssl: CPointer<SSL>,
     private val source: AsyncSource,
-    private val bufferChunkSize: Int = CHUNK_SIZE
+    private val bufferChunkSize: Int = CHUNK_SIZE,
 ) : AsyncRawSource {
 
     override suspend fun asyncReadAtMostTo(
@@ -46,7 +48,7 @@ internal class SslSource(
 
             when (val err = openssl.SSL_get_error(ssl, read)) {
                 openssl.SSL_ERROR_WANT_READ -> {
-                    if (!feedRbioFromSource(source)) {
+                    if (!feedRbioFromSource(rbio, source)) {
                         return -1L
                     }
                 }
@@ -66,33 +68,7 @@ internal class SslSource(
         }
     }
 
-    @OptIn(UnsafeIoApi::class, InternalIoApi::class)
-    private suspend fun feedRbioFromSource(source: AsyncSource): Boolean {
-        if (source.exhausted()) return false
-
-        var consumed = 0
-
-        UnsafeBufferOperations.readFromHead(source.buffer) { readContext, segment ->
-            readContext.withData(segment) { inputArray, pos, limit ->
-                inputArray.asUByteArray().usePinned { pinnedInput ->
-                    val len = limit - pos
-                    val written = BIO_write(rbio, pinnedInput.addressOf(pos), len)
-
-                    if (written <= 0) {
-                        throw kotlinx.io.IOException("BIO_write(rbio) failed")
-                    }
-
-                    consumed = written
-                }
-            }
-
-            consumed
-        }
-
-        return consumed > 0
-    }
-
     override fun close() {
-        TODO("Not yet implemented")
+        source.close()
     }
 }

@@ -15,8 +15,8 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            api(project(":kio-network"))
             implementation(project(":kio-async:core"))
-            implementation(project(":kio-network"))
             implementation(libs.kotlinx.io)
         }
 
