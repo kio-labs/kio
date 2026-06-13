@@ -2,7 +2,9 @@ package kio.http
 
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
 import kio.async.LimitedSource
+import kio.async.buffered
 import kio.async.limited
 import kio.network.AsyncConnection
 import kio.network.AsyncRawConnection
@@ -11,24 +13,29 @@ import kio.network.buffered
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
+import kotlinx.io.IOException
 
 suspend inline fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
     noinline connectionWrapper: AsyncRawConnection.() -> AsyncConnection = { buffered() },
-    crossinline block: RouteScope.() -> Unit
+    crossinline block: suspend RouteScope.() -> Unit
 ) {
     httpServer(serverSocket, connectionWrapper) { request ->
         val scope = RouteScope(request)
         scope.block()
-        scope.responseScope.response ?: error("No route to handle request ${request.head}")
+
+        if (!scope.requestHandled) {
+            scope.callContext.respond(HttpStatusCode.NotFound)
+        }
+        scope.callContext.buildResponse()
     }
 }
 
-inline fun RouteScope.get(uri: String, block: ResponseScope.() -> Unit) {
+suspend inline fun RouteScope.get(uri: String, crossinline block: suspend (CallContext) -> Unit) {
     handleRequest(HttpMethod.Get, uri, block)
 }
 
-inline fun RouteScope.post(uri: String, block: ResponseScope.() -> Unit) {
+suspend inline fun RouteScope.post(uri: String, crossinline block: suspend (CallContext) -> Unit) {
     handleRequest(HttpMethod.Post, uri, block)
 }
 
@@ -36,32 +43,38 @@ inline fun RouteScope.post(uri: String, block: ResponseScope.() -> Unit) {
 internal suspend fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection,
-    handler: (HttpRequest) -> HttpResponse
+    handler: suspend (HttpRequest) -> HttpResponse
 ) {
     while (true) {
         val raw = serverSocket.accept()
         val conn = raw.connectionWrapper()
 
         launch {
-            handleHttpConnection(conn, handler)
+            try {
+                handleHttpConnection(conn, handler)
+            } catch (e: IOException) {
+                println("exception when try to keep connection alive $e")
+            } finally {
+                conn.close()
+            }
         }
     }
 }
 
 @PublishedApi
-internal inline fun RouteScope.handleRequest(
+internal suspend inline fun RouteScope.handleRequest(
     method: HttpMethod,
     uri: String,
-    block: ResponseScope.() -> Unit
+    crossinline block: suspend  CallContext.() -> Unit
 ) {
     if (requestHandled) return
 
     val canHandle = this.method == method && this.uri == uri
     if (!canHandle) return
 
-    responseScope.apply {
+    callContext.apply {
         block()
-        buildResponse()
+        requestHandled = true
     }
 }
 
@@ -73,15 +86,15 @@ class RouteScope(val request: HttpRequest) {
     internal val uri = request.head.uri
 
     @PublishedApi
-    internal val responseScope = ResponseScope(this)
+    internal val callContext = CallContext(this)
 
     @PublishedApi
-    internal val requestHandled: Boolean
-        get() = responseScope.response != null
+    internal var requestHandled: Boolean = false
 }
 
-class ResponseScope(private val parent: RouteScope) {
-    val request = parent.request
+class CallContext(private val parent: RouteScope) {
+    val requestHead = parent.request.head
+    val requestBody = parent.request.body?.buffered()
 
     @PublishedApi
     internal val responseHeadBuilder = HttpResponseHead.Builder()
@@ -90,28 +103,24 @@ class ResponseScope(private val parent: RouteScope) {
     internal var responseBodySource: LimitedSource? = null
 
     @PublishedApi
-    internal fun buildResponse() {
+    internal fun buildResponse(): HttpResponse {
         if (responseHeadBuilder.version == null) {
-            responseHeadBuilder.version = request.head.version
+            responseHeadBuilder.version = parent.request.head.version
         }
 
-        response = HttpResponse(
+        return HttpResponse(
             responseHeadBuilder.build(),
             responseBodySource
         )
     }
-
-    @PublishedApi
-    internal var response: HttpResponse? = null
 }
 
 private suspend fun handleHttpConnection(
     conn: AsyncConnection,
-    handler: (HttpRequest) -> HttpResponse
+    handler: suspend (HttpRequest) -> HttpResponse
 ) {
     while (true) {
         val requestHead = conn.source.parseRequestHead()
-// TODO: handle exception on each request
         val contentLength =
             requestHead.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
 

@@ -13,7 +13,13 @@ import kio.async.asInMemoryAsyncBuffer
 import kotlinx.io.Buffer
 import kotlinx.io.writeString
 
-fun ResponseScope.respondText(
+fun CallContext.respond(
+    status: HttpStatusCode, message: String = ""
+) {
+    respondText(status = status, text = message)
+}
+
+fun CallContext.respondText(
     text: String,
     contentType: ContentType? = null,
     status: HttpStatusCode? = null,
@@ -24,12 +30,16 @@ fun ResponseScope.respondText(
         "Only support utf8, but get $charset."
     }
 
-    val source = textLimitedSource(text, charset)
+    val source = if (text.isNotEmpty()) {
+        textLimitedSource(text, charset)
+    } else {
+        null
+    }
     responseHeadBuilder.apply {
         configure()
         statusCode = status ?: HttpStatusCode.OK
         headers[HttpHeaders.ContentType] = defaultTextContentType(contentType).toString()
-        headers[HttpHeaders.ContentLength] = source.bytesRemaining.toString()
+        headers[HttpHeaders.ContentLength] = source?.bytesRemaining?.toString() ?: "0"
     }
     responseBodySource = source
 }
