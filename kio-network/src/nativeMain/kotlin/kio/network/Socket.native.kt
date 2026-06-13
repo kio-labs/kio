@@ -173,7 +173,7 @@ private class FdRawAsyncConnection(
             // drain source buffer
             val buf = Buffer()
             while (true) {
-                val read = source.asyncReadAtMostTo(buf, 1024)
+                val read = source.readAtMostTo(buf, 1024)
                 if (read == -1L) break
             }
         } catch (t: Throwable) {

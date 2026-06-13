@@ -281,9 +281,9 @@ private class ReadHookAsyncSource(
     private val delegate: AsyncRawSource
 ): AsyncRawSource by delegate {
 
-    override suspend fun asyncReadAtMostTo(sink: Buffer, byteCount: Long): Long {
+    override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
         onRead()
-        return delegate.asyncReadAtMostTo(sink, byteCount)
+        return delegate.readAtMostTo(sink, byteCount)
     }
 }
 

@@ -21,7 +21,7 @@ internal class SslSource(
     private val bufferChunkSize: Int = CHUNK_SIZE,
 ) : AsyncRawSource {
 
-    override suspend fun asyncReadAtMostTo(
+    override suspend fun readAtMostTo(
         sink: Buffer,
         byteCount: Long
     ): Long {
@@ -62,7 +62,7 @@ internal class SslSource(
         }
     }
 
-    override fun close() {
+    override suspend fun close() {
         source.close()
     }
 }

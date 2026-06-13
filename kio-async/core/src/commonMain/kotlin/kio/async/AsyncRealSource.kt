@@ -4,7 +4,6 @@ import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.InternalIoApi
 import kotlinx.io.RawSink
-import kotlin.jvm.JvmField
 
 @InternalIoApi
 public class AsyncRealSource(
@@ -17,12 +16,12 @@ public class AsyncRealSource(
     override val buffer: Buffer
         get() = bufferField
 
-    override suspend fun asyncReadAtMostTo(sink: Buffer, byteCount: Long): Long {
+    override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
         checkNotClosed()
         require(byteCount >= 0L) { "byteCount: $byteCount" }
 
         if (bufferField.size == 0L) {
-            val read = source.asyncReadAtMostTo(bufferField, SEGMENT_SIZE.toLong())
+            val read = source.readAtMostTo(bufferField, SEGMENT_SIZE.toLong())
             if (read == -1L) return -1L
         }
 
@@ -32,7 +31,7 @@ public class AsyncRealSource(
 
     override suspend fun exhausted(): Boolean {
         checkNotClosed()
-        return bufferField.exhausted() && source.asyncReadAtMostTo(bufferField, SEGMENT_SIZE.toLong()) == -1L
+        return bufferField.exhausted() && source.readAtMostTo(bufferField, SEGMENT_SIZE.toLong()) == -1L
     }
 
     override suspend fun require(byteCount: Long) {
@@ -43,7 +42,7 @@ public class AsyncRealSource(
         checkNotClosed()
         require(byteCount >= 0L) { "byteCount: $byteCount" }
         while (bufferField.size < byteCount) {
-            if (source.asyncReadAtMostTo(bufferField, SEGMENT_SIZE.toLong()) == -1L) return false
+            if (source.readAtMostTo(bufferField, SEGMENT_SIZE.toLong()) == -1L) return false
         }
         return true
     }
@@ -57,7 +56,7 @@ public class AsyncRealSource(
         checkBounds(sink.size, startIndex, endIndex)
 
         if (bufferField.size == 0L) {
-            val read = source.asyncReadAtMostTo(bufferField, SEGMENT_SIZE.toLong())
+            val read = source.readAtMostTo(bufferField, SEGMENT_SIZE.toLong())
             if (read == -1L) return -1
         }
         val toRead = minOf(endIndex - startIndex, bufferField.size).toInt()
@@ -77,7 +76,7 @@ public class AsyncRealSource(
 
     override suspend fun transferTo(sink: RawSink): Long {
         var totalBytesWritten: Long = 0
-        while (source.asyncReadAtMostTo(bufferField, SEGMENT_SIZE.toLong()) != -1L) {
+        while (source.readAtMostTo(bufferField, SEGMENT_SIZE.toLong()) != -1L) {
             val emitByteCount = bufferField.completeSegmentByteCount()
             if (emitByteCount > 0L) {
                 totalBytesWritten += emitByteCount
@@ -111,7 +110,7 @@ public class AsyncRealSource(
         require(byteCount >= 0) { "byteCount: $byteCount" }
         var remainingByteCount = byteCount
         while (remainingByteCount > 0) {
-            if (bufferField.size == 0L && source.asyncReadAtMostTo(bufferField, SEGMENT_SIZE.toLong()) == -1L) {
+            if (bufferField.size == 0L && source.readAtMostTo(bufferField, SEGMENT_SIZE.toLong()) == -1L) {
                 throw EOFException(
                     "Source exhausted before skipping $byteCount bytes " +
                             "(only ${remainingByteCount - byteCount} bytes were skipped)."
@@ -123,7 +122,7 @@ public class AsyncRealSource(
         }
     }
 
-    override fun close() {
+    override suspend fun close() {
         if (closed) return
         closed = true
         source.close()

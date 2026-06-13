@@ -148,7 +148,7 @@ private suspend fun LimitedSource.discardRemaining() {
     while (!source.exhausted) {
         buffer.clear()
 
-        val read = source.asyncReadAtMostTo(
+        val read = source.readAtMostTo(
             sink = buffer,
             byteCount = minOf(8192L, source.bytesRemaining)
         )

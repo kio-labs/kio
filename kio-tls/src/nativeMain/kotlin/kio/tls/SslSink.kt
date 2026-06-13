@@ -78,7 +78,7 @@ internal class SslSink(
         sink.flush()
     }
 
-    override fun close() {
+    override suspend fun close() {
         sink.close()
     }
 }
