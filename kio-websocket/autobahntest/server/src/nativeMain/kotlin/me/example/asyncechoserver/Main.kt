@@ -12,6 +12,7 @@ import platform.posix.*
 import kotlin.native.concurrent.ObsoleteWorkersApi
 import kotlin.native.concurrent.Worker
 import kio.async.poller.poll.PosixPoll
+import kio.network.buffered
 
 const val HOST_IP = "127.0.0.1"
 const val PORT = 7878
@@ -23,7 +24,7 @@ fun main(): Unit = runPollEventLoop(PosixPoll) {
     val server = tcpBind(HOST_IP, PORT)
 
     while (true) {
-        val conn = server.accept()
+        val conn = server.accept().buffered()
         launch {
             handleWebSocketConnection(conn)
         }

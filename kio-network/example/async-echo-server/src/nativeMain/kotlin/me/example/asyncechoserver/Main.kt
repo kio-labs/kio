@@ -2,6 +2,7 @@ package me.example.asyncechoserver
 
 import kio.async.poller.poll.PosixPoll
 import kio.async.runPollEventLoop
+import kio.network.buffered
 import kio.network.tcpBind
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.launch
@@ -20,7 +21,7 @@ fun main(): Unit = runPollEventLoop(PosixPoll) {
     println("INFO: server (${server}) is listening to , $HOST_IP, $PORT")
 
     while (true) {
-        val conn = server.accept()
+        val conn = server.accept().buffered()
 
         launch {
             val source = conn.source

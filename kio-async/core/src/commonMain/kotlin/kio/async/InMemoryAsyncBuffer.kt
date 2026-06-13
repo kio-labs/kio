@@ -5,14 +5,18 @@ import kotlinx.io.InternalIoApi
 import kotlinx.io.RawSink
 import kotlinx.io.RawSource
 
+fun Buffer.asInMemoryAsyncBuffer() = InMemoryAsyncBuffer(this)
+
 /**
  * An in-memory implementation of [AsyncSource] and [AsyncSink].
  *
  * This class stores all written bytes in an internal [Buffer], and reads consume
  * bytes from the same buffer.
  */
-class InMemoryAsyncBuffer : AsyncSink, AsyncSource {
-    private val internalBuffer = Buffer()
+class InMemoryAsyncBuffer internal constructor(
+    delegate: Buffer = Buffer()
+) : AsyncSink, AsyncSource {
+    private val internalBuffer = delegate
 
     @InternalIoApi
     override val buffer: Buffer = internalBuffer
@@ -27,6 +31,16 @@ class InMemoryAsyncBuffer : AsyncSink, AsyncSource {
 
     override suspend fun transferFrom(source: RawSource): Long {
         return internalBuffer.transferFrom(source)
+    }
+
+    override suspend fun transferFrom(source: AsyncRawSource): Long {
+        var totalBytesRead = 0L
+        while (true) {
+            val readCount: Long = source.asyncReadAtMostTo(internalBuffer, SEGMENT_SIZE.toLong())
+            if (readCount == -1L) break
+            totalBytesRead += readCount
+        }
+        return totalBytesRead
     }
 
     override suspend fun write(source: RawSource, byteCount: Long) {

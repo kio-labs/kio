@@ -1,39 +1,69 @@
 package kio.http
 
 import io.ktor.http.Headers
+import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.parsing.ParseException
 import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.HttpStatusCode
+import kio.async.AsyncSink
 import kio.async.AsyncSource
+import kio.async.LimitedSource
 import kio.async.indexOf
 import kio.async.readString
+import kio.async.writeString
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
 
-class HttpResponse internal constructor(
-    val version: HttpProtocolVersion,
-    val status: HttpStatusCode,
-    val statusText: String,
-    val headers: Headers,
+class HttpResponse(
+    val head: HttpResponseHead,
+    val body: LimitedSource?,
 )
 
-class HttpRequest internal constructor(
+class HttpRequest(
+    val head: HttpRequestHead,
+    val body: LimitedSource?,
+)
+
+class HttpResponseHead internal constructor(
+    val version: HttpProtocolVersion,
+    val status: Int,
+    val statusText: String,
+    val headers: Headers,
+) {
+    class Builder {
+        var version: HttpProtocolVersion? = null
+        var statusCode: HttpStatusCode? = null
+        var headers: HeadersBuilder = HeadersBuilder()
+
+        fun build(): HttpResponseHead {
+            val code = statusCode ?: error("TODO")
+            return HttpResponseHead(
+                version ?: error("TODO"),
+                code.value,
+                code.description,
+                headers.build(),
+            )
+        }
+    }
+}
+
+data class HttpRequestHead(
     val method: HttpMethod,
     val uri: String,
     val version: HttpProtocolVersion,
     val headers: Headers,
 )
 
-suspend fun AsyncSource.parseRequest(): HttpRequest {
+internal suspend fun AsyncSource.parseRequestHead(): HttpRequestHead {
     val httpMethod = parseHttpMethod(readStringUntilSpace())
     val url = readStringUntilSpace()
     val version = parseVersion(readCrlfLine())
 
     val headers = readHeaders()
 
-    return HttpRequest(
+    return HttpRequestHead(
         method = httpMethod,
         uri = url,
         version = version,
@@ -41,20 +71,42 @@ suspend fun AsyncSource.parseRequest(): HttpRequest {
     )
 }
 
-suspend fun AsyncSource.parseResponse(): HttpResponse {
+internal suspend fun AsyncSource.parseResponseHead(): HttpResponseHead {
     val version = parseVersion(readStringUntilSpace())
     val statusCode = parseStatusCode(readStringUntilSpace())
     val statusText = readCrlfLine()
 
     val headers = readHeaders()
 
-    return HttpResponse(
+    return HttpResponseHead(
         version = version,
         status = statusCode,
         statusText = statusText,
         headers = headers,
     )
 }
+
+internal suspend fun AsyncSink.writeResponseHead(head: HttpResponseHead) {
+    writeString(head.version.toString())
+    writeByte(' '.code.toByte())
+    writeString(head.status.toString())
+    writeByte(' '.code.toByte())
+    writeString(head.statusText)
+    writeString("\r\n")
+
+    head.headers.entries().forEach { (key, values) ->
+        for (value in values) {
+            writeString(key)
+            writeByte(':'.code.toByte())
+            writeByte(' '.code.toByte())
+            writeString(value)
+            writeString("\r\n")
+        }
+    }
+
+    writeString("\r\n")
+}
+
 
 internal suspend fun AsyncSource.readHeaders(): Headers = Headers.build {
     while (true) {
@@ -160,7 +212,7 @@ private fun parseVersion(text: String): HttpProtocolVersion {
     throw ParseException("Unsupported HTTP version: $text")
 }
 
-private fun parseStatusCode(statusCodeStr: String): HttpStatusCode {
+private fun parseStatusCode(statusCodeStr: String): Int {
     var statusCode = 0
     statusCodeStr.forEach { ch ->
         if (ch in '0'..'9') {
@@ -173,7 +225,7 @@ private fun parseStatusCode(statusCodeStr: String): HttpStatusCode {
     if (statusOutOfRange(statusCode)) {
         throw ParseException("Status-code must be 3-digit. Status received: $statusCode.")
     }
-    return HttpStatusCode.fromValue(statusCode)
+    return statusCode
 }
 
 private const val HTTP_STATUS_CODE_MIN_RANGE = 100

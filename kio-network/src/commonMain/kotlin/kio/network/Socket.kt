@@ -29,5 +29,5 @@ interface AsyncConnection: AsyncRawConnection {
 expect suspend fun openConnection(host: String, port: Int): AsyncConnection
 
 interface ServerSocket {
-    suspend fun accept(): AsyncConnection
+    suspend fun accept(): AsyncRawConnection
 }
