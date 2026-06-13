@@ -5,10 +5,11 @@ package kio.http
 
 import io.ktor.http.HttpMethod
 import io.ktor.http.parsing.ParseException
-import kio.async.InMemoryAsyncBuffer
-import kio.async.writeString
+import kio.async.asInMemoryAsyncBuffer
 import kotlinx.coroutines.test.runTest
+import kotlinx.io.Buffer
 import kotlinx.io.EOFException
+import kotlinx.io.writeString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
@@ -27,7 +28,7 @@ class HttpParserTest {
             "HTTP/1.1 999 OK\r\n\r\n",
         ).forEach {
             val buffer = inMemoryAsyncBuffer(it)
-            val response = buffer.parseResponse()
+            val response = buffer.parseResponseHead()
             assertEquals("OK", response.statusText)
         }
     }
@@ -35,20 +36,20 @@ class HttpParserTest {
     @Test
     fun parseStatusCodeShouldFailWhenOutOfRange() = runTest {
         assertFailsWith<ParseException> {
-            inMemoryAsyncBuffer("HTTP/1.1 0 OK\r\n\r\n").parseResponse()
+            inMemoryAsyncBuffer("HTTP/1.1 0 OK\r\n\r\n").parseResponseHead()
         }
         assertFailsWith<ParseException> {
-            inMemoryAsyncBuffer("HTTP/1.1 99 OK\r\n\r\n").parseResponse()
+            inMemoryAsyncBuffer("HTTP/1.1 99 OK\r\n\r\n").parseResponseHead()
         }
         assertFailsWith<ParseException> {
-            inMemoryAsyncBuffer("HTTP/1.1 1000 OK\r\n\r\n").parseResponse()
+            inMemoryAsyncBuffer("HTTP/1.1 1000 OK\r\n\r\n").parseResponseHead()
         }
     }
 
     @Test
     fun parseStatusCodeShouldFailWhenStatusCodeIsNegative() = runTest {
         assertFailsWith<NumberFormatException> {
-            inMemoryAsyncBuffer("HTTP/1.1 -100 OK\r\n\r\n").parseResponse()
+            inMemoryAsyncBuffer("HTTP/1.1 -100 OK\r\n\r\n").parseResponseHead()
         }
     }
 
@@ -58,7 +59,7 @@ class HttpParserTest {
 
         for (case in cases) {
             assertFailsWith<EOFException> {
-                inMemoryAsyncBuffer(case + "\r\n").parseResponse()
+                inMemoryAsyncBuffer(case + "\r\n").parseResponseHead()
             }
         }
     }
@@ -74,7 +75,7 @@ class HttpParserTest {
 
         for (case in cases) {
             assertFails {
-                println(inMemoryAsyncBuffer(case).parseRequest().version)
+                println(inMemoryAsyncBuffer(case).parseRequestHead().version)
             }
         }
     }
@@ -82,7 +83,7 @@ class HttpParserTest {
     @Test
     fun testParseGetRoot() = runTest {
         val requestText = "GET / HTTP/1.1\r\nHost:  localhost\r\nConnection:close\r\n\r\n"
-        val request = inMemoryAsyncBuffer(requestText).parseRequest()
+        val request = inMemoryAsyncBuffer(requestText).parseRequestHead()
         assertNotNull(request)
         assertEquals(HttpMethod.Get, request.method)
         assertEquals("/", request.uri)
@@ -292,5 +293,5 @@ class HttpParserTest {
     }
 }
 
-private suspend fun inMemoryAsyncBuffer(str: String) =
-    InMemoryAsyncBuffer().apply { writeString(str) }
+private fun inMemoryAsyncBuffer(str: String) =
+    Buffer().apply { writeString(str) }.asInMemoryAsyncBuffer()

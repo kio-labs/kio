@@ -136,7 +136,7 @@ private class FdServerSocket(
     private val serverFd: Int,
 ): ServerSocket {
     @OptIn(ExperimentalForeignApi::class)
-    override suspend fun accept(): AsyncConnection = memScoped {
+    override suspend fun accept(): AsyncRawConnection = memScoped {
         awaitReadIo(serverFd)
 
         val clientAddr = alloc<sockaddr_in> {}
@@ -153,7 +153,7 @@ private class FdServerSocket(
                 throw IOException("ERROR: could not set client socket non-blocking: ${errnoMessage()}\n")
             }
 
-            FdRawAsyncConnection(clientFd).buffered()
+            FdRawAsyncConnection(clientFd)
         } catch (t: Throwable) {
             close(clientFd)
             throw t

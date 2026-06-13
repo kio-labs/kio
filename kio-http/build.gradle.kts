@@ -4,13 +4,11 @@ plugins {
 
 kotlin {
     macosArm64()
-    jvm()
 
     sourceSets {
         commonMain.dependencies {
-            implementation(project(":kio-async:core"))
-            implementation(libs.kotlinx.io)
-            implementation(libs.ktor.http)
+            api(libs.ktor.http)
+            implementation(project(":kio-network"))
         }
 
         commonTest.dependencies {

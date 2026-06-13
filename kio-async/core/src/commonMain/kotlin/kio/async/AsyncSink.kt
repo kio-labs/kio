@@ -12,6 +12,8 @@ public sealed interface AsyncSink : AsyncRawSink {
 
     public suspend fun transferFrom(source: RawSource): Long
 
+    public suspend fun transferFrom(source: AsyncRawSource): Long
+
     public suspend fun write(source: RawSource, byteCount: Long)
 
     public suspend fun writeByte(byte: Byte)

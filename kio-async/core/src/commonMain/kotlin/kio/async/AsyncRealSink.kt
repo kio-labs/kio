@@ -41,6 +41,18 @@ public class AsyncRealSink(
         return totalBytesRead
     }
 
+    override suspend fun transferFrom(source: AsyncRawSource): Long {
+        checkNotClosed()
+        var totalBytesRead = 0L
+        while (true) {
+            val readCount: Long = source.asyncReadAtMostTo(bufferField, SEGMENT_SIZE.toLong())
+            if (readCount == -1L) break
+            totalBytesRead += readCount
+            hintEmit()
+        }
+        return totalBytesRead
+    }
+
     override suspend fun write(source: RawSource, byteCount: Long) {
         checkNotClosed()
         require(byteCount >= 0) { "byteCount: $byteCount" }
