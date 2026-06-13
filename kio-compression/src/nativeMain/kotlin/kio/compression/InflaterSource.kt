@@ -2,6 +2,8 @@
 
 package kio.compression
 
+import kio.async.AsyncRawSource
+import kio.async.AsyncSource
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
@@ -12,8 +14,6 @@ import kotlinx.cinterop.usePinned
 import kotlinx.io.Buffer
 import kotlinx.io.IOException
 import kotlinx.io.InternalIoApi
-import kotlinx.io.RawSource
-import kotlinx.io.Source
 import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
 import kotlinx.io.unsafe.withData
@@ -29,10 +29,10 @@ import platform.zlib.z_stream_s
 import kotlin.math.min
 
 internal class InflaterSource(
-    private val source: Source,
+    private val source: AsyncSource,
     private val windowBits: Int,
     private val bufferChunkSize: Int = CHUNK_SIZE
-) : RawSource {
+) : AsyncRawSource {
     private var finished: Boolean = false
     private var closed: Boolean = false
 
@@ -43,7 +43,7 @@ internal class InflaterSource(
         check(inflateInit2(strm = ptr, windowBits = windowBits) == Z_OK)
     }
 
-    override fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
+    override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
         require(byteCount >= 0L) { "byteCount < 0: $byteCount" }
 
         return readBytesToTarget(
@@ -53,7 +53,7 @@ internal class InflaterSource(
         )
     }
 
-    override fun close() {
+    override suspend fun close() {
         if (closed) return
 
         inflateEnd(zStream.ptr)
@@ -64,8 +64,8 @@ internal class InflaterSource(
     }
 
     @OptIn(UnsafeIoApi::class, InternalIoApi::class)
-    private fun readBytesToTarget(
-        source: Source,
+    private suspend fun readBytesToTarget(
+        source: AsyncSource,
         targetMaxByteCount: Long,
         target: Buffer,
     ): Long {

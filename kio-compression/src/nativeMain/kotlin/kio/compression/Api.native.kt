@@ -2,29 +2,29 @@
 
 package kio.compression
 
+import kio.async.AsyncRawSink
+import kio.async.AsyncRawSource
+import kio.async.AsyncSink
+import kio.async.AsyncSource
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.io.RawSink
-import kotlinx.io.RawSource
-import kotlinx.io.Sink
-import kotlinx.io.Source
 import platform.zlib.Z_DEFAULT_COMPRESSION
 
-actual fun Source.deflateSource(): RawSource =
+actual fun AsyncSource.deflateSource(): AsyncRawSource =
     InflaterSource(windowBits = WindowBits.RAW_DEFLATE, source = this)
 
-actual fun Sink.deflateSink(level: Int): RawSink =
+actual fun AsyncSink.deflateSink(level: Int): AsyncRawSink =
     DeflaterSink(windowBits = WindowBits.RAW_DEFLATE, level = level, sink = this)
 
-actual fun Source.zlibSource(): RawSource =
+actual fun AsyncSource.zlibSource(): AsyncRawSource =
     InflaterSource(windowBits = WindowBits.ZLIB, source = this)
 
-actual fun Sink.zlibSink(level: Int): RawSink =
+actual fun AsyncSink.zlibSink(level: Int): AsyncRawSink =
     DeflaterSink(windowBits = WindowBits.ZLIB, level = level, sink = this)
 
-actual fun Source.gzipSource(): RawSource =
+actual fun AsyncSource.gzipSource(): AsyncRawSource =
     InflaterSource(windowBits = WindowBits.GZIP, source = this)
 
-actual fun Sink.gzipSink(level: Int): RawSink =
+actual fun AsyncSink.gzipSink(level: Int): AsyncRawSink =
     DeflaterSink(windowBits = WindowBits.GZIP, level = level, sink = this)
 
 internal actual val DEFAULT_COMPRESSION: Int = Z_DEFAULT_COMPRESSION

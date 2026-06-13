@@ -3,6 +3,10 @@ package kio.async
 import kotlinx.io.InternalIoApi
 import kotlinx.io.readTo
 
+public suspend fun AsyncSource.readByteArray(): ByteArray {
+    return readByteArrayImpl(-1)
+}
+
 public suspend fun AsyncSource.readByteArray(byteCount: Int): ByteArray {
     checkByteCount(byteCount.toLong())
     return readByteArrayImpl(byteCount)
