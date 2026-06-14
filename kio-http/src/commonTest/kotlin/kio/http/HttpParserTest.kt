@@ -5,7 +5,7 @@ package kio.http
 
 import io.ktor.http.HttpMethod
 import io.ktor.http.parsing.ParseException
-import kio.async.asInMemoryAsyncBuffer
+import kio.async.inMemoryAsyncBuffer
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
@@ -294,4 +294,4 @@ class HttpParserTest {
 }
 
 private fun inMemoryAsyncBuffer(str: String) =
-    Buffer().apply { writeString(str) }.asInMemoryAsyncBuffer()
+    Buffer().apply { writeString(str) }.inMemoryAsyncBuffer()

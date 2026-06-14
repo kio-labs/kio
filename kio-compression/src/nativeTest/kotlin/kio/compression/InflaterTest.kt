@@ -1,6 +1,6 @@
 package kio.compression
 
-import kio.async.asInMemoryAsyncBuffer
+import kio.async.inMemoryAsyncBuffer
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.Buffer
 import kotlinx.io.readString
@@ -16,7 +16,7 @@ class InflaterNativeTest {
             Base64.decode("80jNycnXUfDOL8nJzFPwLc0pySzISSxJyy/KVVQISixXcElNA/JTFTKLFRLLU4vzc1P1AA==")
         val buffer = Buffer()
         val source = InflaterSource(
-            Buffer().asInMemoryAsyncBuffer().apply { write(sourceByteArray) },
+            Buffer().inMemoryAsyncBuffer().apply { write(sourceByteArray) },
             windowBits = WindowBits.RAW_DEFLATE,
             bufferChunkSize = 10
         )

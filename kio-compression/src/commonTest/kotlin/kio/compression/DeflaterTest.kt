@@ -1,15 +1,12 @@
 package kio.compression
 
-import kio.async.asInMemoryAsyncBuffer
+import kio.async.inMemoryAsyncBuffer
 import kio.async.buffered
 import kio.async.readByteString
 import kio.async.writeString
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.Buffer
-import kotlinx.io.buffered
 import kotlinx.io.bytestring.decodeToByteString
-import kotlinx.io.readByteString
-import kotlinx.io.writeString
 import kotlin.io.encoding.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -18,7 +15,7 @@ class DeflaterCommonTest {
     @Test
     fun deflaterTest_compress_wrap() = runTest {
         val content = "Hello, Kotlin Multiplatform! Raw Deflate is awesome."
-        val target = Buffer().asInMemoryAsyncBuffer()
+        val target = Buffer().inMemoryAsyncBuffer()
         val deflater = target.zlibSink(level = 8).buffered()
         deflater.writeString(content)
         deflater.close()
@@ -31,7 +28,7 @@ class DeflaterCommonTest {
     @Test
     fun deflaterTest_compress_no_wrap() = runTest {
         val content = "Hello, Kotlin Multiplatform! Raw Deflate is awesome."
-        val target = Buffer().asInMemoryAsyncBuffer()
+        val target = Buffer().inMemoryAsyncBuffer()
         val deflater = target.deflateSink(level = 8).buffered()
         deflater.writeString(content)
         deflater.close()
@@ -46,7 +43,7 @@ class DeflaterCommonTest {
         val contentA = "Hello, Kotlin Multiplat"
         val contentB = "form! Raw Deflate is awesome."
 
-        val target = Buffer().asInMemoryAsyncBuffer()
+        val target = Buffer().inMemoryAsyncBuffer()
         val deflater = target.zlibSink(level = 8).buffered()
         deflater.writeString(contentA)
         deflater.writeString(contentB)

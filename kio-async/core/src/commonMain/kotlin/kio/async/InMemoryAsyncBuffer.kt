@@ -5,7 +5,7 @@ import kotlinx.io.InternalIoApi
 import kotlinx.io.RawSink
 import kotlinx.io.RawSource
 
-fun Buffer.asInMemoryAsyncBuffer() = InMemoryAsyncBuffer(this)
+fun Buffer.inMemoryAsyncBuffer() = InMemoryAsyncBuffer(this)
 
 /**
  * An in-memory implementation of [AsyncSource] and [AsyncSink].
@@ -17,6 +17,9 @@ class InMemoryAsyncBuffer internal constructor(
     delegate: Buffer = Buffer()
 ) : AsyncSink, AsyncSource {
     private val internalBuffer = delegate
+
+    val size: Long
+        get() = internalBuffer.size
 
     @InternalIoApi
     override val buffer: Buffer = internalBuffer
@@ -122,6 +125,10 @@ class InMemoryAsyncBuffer internal constructor(
 
     override suspend fun transferTo(sink: RawSink): Long {
         return internalBuffer.transferTo(sink)
+    }
+
+    override suspend fun transferTo(sink: AsyncRawSink): Long {
+        TODO("Not yet implemented")
     }
 
     override suspend fun readAtMostTo(
