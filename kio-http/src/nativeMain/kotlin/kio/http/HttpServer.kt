@@ -2,97 +2,67 @@ package kio.http
 
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
-import io.ktor.http.HttpStatusCode
-import kio.async.LimitedSource
-import kio.async.buffered
+import io.ktor.http.parseHeaderValue
 import kio.async.limited
 import kio.network.AsyncConnection
 import kio.network.AsyncRawConnection
 import kio.network.ServerSocket
 import kio.network.buffered
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.io.Buffer
 import kotlinx.io.IOException
+import kotlin.experimental.ExperimentalNativeApi
 
 suspend fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection = { buffered() },
-    block: suspend RouteScope.() -> Unit
+    registerBlock: suspend RouteScope.() -> Unit
 ) {
     val scope = RouteScope()
-    scope.block()
+    scope.registerBlock()
 
-    httpServer(serverSocket, connectionWrapper) { request ->
-        val callContext = CallContext(request)
-        val handler = scope.getCallHandler(RouteScope.RouteKey(callContext.method, callContext.uri))
-        try {
-            handler?.invoke(callContext)
-        } catch (cancellation: CancellationException) {
-        } catch (t: Throwable) {
-            println("exception happened $t")
-            callContext.respond(HttpStatusCode.InternalServerError, t.toString())
-        } finally {
-            callContext.requestBody?.close()
-        }
-
-        if (!callContext.requestHandled) {
-            callContext.respond(HttpStatusCode.NotFound)
-        }
-        callContext.buildResponse()
-    }
-}
-
-
-typealias CallHandler = suspend CallContext.() -> Unit
-
-fun interface CallInterceptor {
-    suspend fun intercept(
-        context: CallContext,
-        proceed: CallHandler
+    startHttpServer(
+        scope,
+        serverSocket,
+        connectionWrapper,
     )
 }
 
-fun RouteScope.inject(interceptor: CallInterceptor, block: () -> Unit) {
-    interceptors.addLast(interceptor)
-    block()
-    interceptors.removeLast()
-}
+class RouteScope {
+    data class RouteKey(val method: HttpMethod, val uri: String)
 
-fun RouteScope.get(uri: String, block: suspend (CallContext) -> Unit) {
-    registerCall(HttpMethod.Get, uri, block)
-}
+    internal val httpCallInterceptors: ArrayDeque<CallInterceptor> = ArrayDeque()
 
-fun RouteScope.post(uri: String, block: suspend (CallContext) -> Unit) {
-    registerCall(HttpMethod.Post, uri, block)
-}
+    private val httpCallHandlers = mutableMapOf<RouteKey, CallHandler>()
 
-private fun RouteScope.registerCall(
-    method: HttpMethod,
-    uri: String,
-    block: CallHandler
-) {
-    val foldedCallHandler = foldCallInterceptor(interceptors, block)
+    internal fun registerCallHandler(key: RouteKey, handler: CallHandler) {
+        if (httpCallHandlers.contains(key)) error("route ($key) already registered.")
+        httpCallHandlers[key] = handler
+    }
 
-    registerCallHandler(RouteScope.RouteKey(method, uri), foldedCallHandler)
-}
+    internal fun getCallHandler(key: RouteKey): CallHandler? {
+        return httpCallHandlers[key]
+    }
 
-private fun foldCallInterceptor(
-    interceptors: List<CallInterceptor>,
-    handler: CallHandler
-): CallHandler {
-    return interceptors.foldRight(handler) { interceptor, next ->
-        {
-            interceptor.intercept(this, next)
-        }
+    internal val websocketHandlers = mutableMapOf<String, WebsocketHandler>()
+
+    internal fun registerWebsocketHandler(uri: String, handler: WebsocketHandler) {
+        val key = RouteKey(HttpMethod.Get, uri)
+        if (httpCallHandlers.contains(key)) error("route ($key) already registered.")
+
+        websocketHandlers[uri] = handler
+    }
+
+    internal fun getWebsocketHandler(uri: String): WebsocketHandler? {
+        return websocketHandlers[uri]
     }
 }
 
-private suspend fun CoroutineScope.httpServer(
+@OptIn(ExperimentalNativeApi::class)
+private suspend fun CoroutineScope.startHttpServer(
+    routeScope: RouteScope,
     serverSocket: ServerSocket,
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection,
-    handler: suspend (HttpRequest) -> HttpResponse
 ) {
     while (true) {
         val raw = serverSocket.accept()
@@ -100,8 +70,9 @@ private suspend fun CoroutineScope.httpServer(
 
         launch {
             try {
-                handleHttpConnection(conn, handler)
+                routeScope.handleConnection(conn)
             } catch (e: IOException) {
+                e.printStackTrace()
                 println("exception when try to keep connection alive $e")
             } finally {
                 conn.close()
@@ -110,90 +81,35 @@ private suspend fun CoroutineScope.httpServer(
     }
 }
 
-class RouteScope {
-    data class RouteKey(val method: HttpMethod, val uri: String)
-
-    internal val interceptors: ArrayDeque<CallInterceptor> = ArrayDeque()
-
-    private val registeredCallHandler = mutableMapOf<RouteKey, CallHandler>()
-
-    internal fun registerCallHandler(key: RouteKey, handler: CallHandler) {
-        if (registeredCallHandler.contains(key)) error("route ($key) already registered.")
-        registeredCallHandler[key] = handler
-    }
-
-    internal fun getCallHandler(key: RouteKey): CallHandler? {
-        return registeredCallHandler[key]
-    }
-}
-
-class CallContext(private val request: HttpRequest) {
-    val requestHead = request.head
-    var requestBody = request.body?.buffered()
-        internal set
-
-    internal val method = request.head.method
-
-    internal val uri = request.head.uri
-
-    internal var requestHandled: Boolean = false
-
-    internal val responseHeadBuilder = HttpResponseHead.Builder()
-
-    internal var responseBodySource: LimitedSource? = null
-
-    internal fun buildResponse(): HttpResponse {
-        if (responseHeadBuilder.version == null) {
-            responseHeadBuilder.version = request.head.version
-        }
-
-        return HttpResponse(
-            responseHeadBuilder.build(),
-            responseBodySource
-        )
-    }
-}
-
-private suspend fun handleHttpConnection(
-    conn: AsyncConnection,
-    handler: suspend (HttpRequest) -> HttpResponse
-) {
+private suspend fun RouteScope.handleConnection(conn: AsyncConnection) {
     while (true) {
         val requestHead = conn.source.parseRequestHead()
         val contentLength =
             requestHead.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
 
         val requestBodySource = conn.source.limited(contentLength)
-        val httpRequest = HttpRequest(
-            head = requestHead,
-            body = if (contentLength > 0) requestBodySource else null
-        )
+        val body = if (contentLength > 0) requestBodySource else null
 
-        val response = handler.invoke(httpRequest)
-        requestBodySource.discardRemaining()
+        when {
+            requestHead.isWebSocketUpgrade() -> {
+                handleWebsocketRequest(requestHead, conn)
+                // websocket closed, break the loop to close this connection.
+                break
+            }
 
-        conn.sink.writeResponseHead(response.head)
-        response.body?.let { conn.sink.transferFrom(it) }
-        conn.sink.flush()
+            // Fall back to normal http request handle
+            else -> handleHttpRequest(requestHead, body, conn)
+        }
     }
 }
 
-private suspend fun LimitedSource.discardRemaining() {
-    val source = this
-    if (source.exhausted) return
+private fun HttpRequestHead.isWebSocketUpgrade(): Boolean {
+    val connection = parseHeaderValue(headers[HttpHeaders.Connection])
+    val upgrade = headers[HttpHeaders.Upgrade]
 
-    val buffer = Buffer()
-
-    while (!source.exhausted) {
-        buffer.clear()
-
-        val read = source.readAtMostTo(
-            sink = buffer,
-            byteCount = minOf(8192L, source.bytesRemaining)
-        )
-
-        if (read == -1L) break
-
-        buffer.skip(read)
-    }
+    return method == HttpMethod.Get &&
+            connection.map { it.value.lowercase() }.contains("upgrade") &&
+            upgrade.equals("websocket", ignoreCase = true) &&
+            headers[HttpHeaders.SecWebSocketKey] != null &&
+            headers[HttpHeaders.SecWebSocketVersion] == "13"
 }

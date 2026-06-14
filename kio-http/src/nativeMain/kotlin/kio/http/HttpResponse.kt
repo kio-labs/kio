@@ -8,18 +8,36 @@ import io.ktor.http.charset
 import io.ktor.http.withCharset
 import io.ktor.utils.io.charsets.Charset
 import io.ktor.utils.io.charsets.Charsets
+import kio.async.AsyncSink
 import kio.async.LimitedSource
 import kio.async.inMemoryAsyncBuffer
 import kotlinx.io.Buffer
 import kotlinx.io.writeString
 
-fun CallContext.respond(
-    status: HttpStatusCode, message: String = ""
+internal class HttpResponse(
+    val head: HttpResponseHead,
+    val body: LimitedSource?,
 ) {
-    respondText(status = status, text = message)
+    internal class Builder {
+        val head = HttpResponseHead.Builder()
+        var body: LimitedSource? = null
+
+        fun build(): HttpResponse {
+            return HttpResponse(
+                head.build(),
+                body
+            )
+        }
+    }
 }
 
-fun CallContext.respondText(
+internal suspend fun HttpResponse.flushToConnectionSink(connSink: AsyncSink) {
+    connSink.writeResponseHead(head)
+    body?.let { connSink.transferFrom(it) }
+    connSink.flush()
+}
+
+internal fun HttpResponse.Builder.respondText(
     text: String,
     contentType: ContentType? = null,
     status: HttpStatusCode? = null,
@@ -35,29 +53,13 @@ fun CallContext.respondText(
     } else {
         null
     }
-    responseHeadBuilder.apply {
+    head.apply {
         configure()
         statusCode = status ?: HttpStatusCode.OK
         headers[HttpHeaders.ContentType] = defaultTextContentType(contentType).toString()
         headers[HttpHeaders.ContentLength] = source?.bytesRemaining?.toString() ?: "0"
     }
-    responseBodySource = source
-
-    requestHandled = true
-}
-
-private fun textLimitedSource(
-    text: String,
-    charset: Charset = Charsets.UTF_8,
-): LimitedSource {
-    require(charset == Charsets.UTF_8) {
-        "Only support utf8, but get $charset."
-    }
-    val buffer = Buffer().apply { writeString(text) }
-    return LimitedSource(
-        buffer.inMemoryAsyncBuffer(),
-        buffer.size
-    )
+    body = source
 }
 
 /**
@@ -71,7 +73,7 @@ private fun textLimitedSource(
  *
  * [Report a problem](https://ktor.io/feedback/?fqname=io.ktor.server.response.defaultTextContentType)
  */
-public fun HttpResponseHead.Builder.defaultTextContentType(contentType: ContentType?): ContentType {
+private fun HttpResponseHead.Builder.defaultTextContentType(contentType: ContentType?): ContentType {
     val result = when (contentType) {
         null -> {
             val headersContentType = headers[HttpHeaders.ContentType]
@@ -92,4 +94,19 @@ public fun HttpResponseHead.Builder.defaultTextContentType(contentType: ContentT
     } else {
         result
     }
+}
+
+
+private fun textLimitedSource(
+    text: String,
+    charset: Charset = Charsets.UTF_8,
+): LimitedSource {
+    require(charset == Charsets.UTF_8) {
+        "Only support utf8, but get $charset."
+    }
+    val buffer = Buffer().apply { writeString(text) }
+    return LimitedSource(
+        buffer.inMemoryAsyncBuffer(),
+        buffer.size
+    )
 }

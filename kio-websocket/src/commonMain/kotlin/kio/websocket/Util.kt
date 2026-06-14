@@ -27,10 +27,6 @@ import kotlinx.io.InternalIoApi
 import kotlinx.io.Source
 import org.kotlincrypto.hash.sha1.SHA1
 
-internal fun sha1(bytes: ByteArray): ByteArray {
-    return SHA1().digest(bytes)
-}
-
 internal class InvalidUtf8Exception(message: String) : IllegalStateException(message)
 
 @OptIn(InternalIoApi::class)

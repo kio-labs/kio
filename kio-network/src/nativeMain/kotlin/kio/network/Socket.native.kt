@@ -6,6 +6,7 @@ import kio.async.asyncFdRawSink
 import kio.async.asyncFdRawSource
 import kio.async.awaitReadIo
 import kio.async.awaitWriteIo
+import kotlinx.atomicfu.atomic
 import platform.posix.*
 import kotlinx.cinterop.*
 import kotlinx.io.Buffer
@@ -98,7 +99,14 @@ fun tcpBind(
     try {
         val yes = alloc<IntVar> { value = 1 }
 
-        if (setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, yes.ptr, sizeOf<IntVar>().convert()) < 0) {
+        if (setsockopt(
+                serverFd,
+                SOL_SOCKET,
+                SO_REUSEADDR,
+                yes.ptr,
+                sizeOf<IntVar>().convert()
+            ) < 0
+        ) {
             throw IOException("could not configure SO_REUSEADDR: ${errnoMessage()}")
         }
 
@@ -134,7 +142,7 @@ fun tcpBind(
 
 private class FdServerSocket(
     private val serverFd: Int,
-): ServerSocket {
+) : ServerSocket {
     @OptIn(ExperimentalForeignApi::class)
     override suspend fun accept(): AsyncRawConnection = memScoped {
         awaitReadIo(serverFd)
@@ -166,7 +174,11 @@ private class FdRawAsyncConnection(
     override val source: AsyncRawSource = asyncFdRawSource(fd),
     override val sink: AsyncRawSink = asyncFdRawSink(fd)
 ) : AsyncRawConnection {
+    private val closed = atomic(false)
+
     override suspend fun close() {
+        if (!closed.compareAndSet(expect = false, update = true)) return
+
         shutdown(fd, SHUT_WR)
 
         try {
@@ -176,8 +188,6 @@ private class FdRawAsyncConnection(
                 val read = source.readAtMostTo(buf, 1024)
                 if (read == -1L) break
             }
-        } catch (t: Throwable) {
-            // ignore exception because we are closing
         } finally {
             close(fd)
         }
@@ -208,7 +218,7 @@ private fun getSocketError(fd: Int): Int = memScoped {
     if (rc < 0) errno else error.value
 }
 
-private  fun htons(value: UShort): UShort {
+private fun htons(value: UShort): UShort {
     val v = value.toInt()
     return (((v and 0xFF) shl 8) or ((v ushr 8) and 0xFF)).toUShort()
 }
