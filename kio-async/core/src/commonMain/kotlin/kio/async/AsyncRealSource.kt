@@ -90,6 +90,22 @@ public class AsyncRealSource(
         return totalBytesWritten
     }
 
+    override suspend fun transferTo(sink: AsyncRawSink): Long {
+        var totalBytesWritten: Long = 0
+        while (source.readAtMostTo(bufferField, SEGMENT_SIZE.toLong()) != -1L) {
+            val emitByteCount = bufferField.completeSegmentByteCount()
+            if (emitByteCount > 0L) {
+                totalBytesWritten += emitByteCount
+                sink.write(bufferField, emitByteCount)
+            }
+        }
+        if (bufferField.size > 0L) {
+            totalBytesWritten += bufferField.size
+            sink.write(bufferField, bufferField.size)
+        }
+        return totalBytesWritten
+    }
+
     override suspend fun readShort(): Short {
         require(2)
         return bufferField.readShort()
