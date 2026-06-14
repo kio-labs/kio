@@ -16,47 +16,80 @@ import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
 import kotlinx.io.IOException
 
-suspend inline fun CoroutineScope.httpServer(
+suspend fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
-    noinline connectionWrapper: AsyncRawConnection.() -> AsyncConnection = { buffered() },
-    crossinline block: suspend RouteScope.() -> Unit
+    connectionWrapper: AsyncRawConnection.() -> AsyncConnection = { buffered() },
+    block: suspend RouteScope.() -> Unit
 ) {
-    httpServer(serverSocket, connectionWrapper) { request ->
-        val scope = RouteScope(request)
+    val scope = RouteScope()
+    scope.block()
 
+    httpServer(serverSocket, connectionWrapper) { request ->
+        val callContext = CallContext(request)
+        val handler = scope.getCallHandler(RouteScope.RouteKey(callContext.method, callContext.uri))
         try {
-            scope.block()
+            handler?.invoke(callContext)
         } catch (cancellation: CancellationException) {
         } catch (t: Throwable) {
             println("exception happened $t")
-            scope.callContext.respond(HttpStatusCode.InternalServerError, t.toString())
+            callContext.respond(HttpStatusCode.InternalServerError, t.toString())
         } finally {
-            scope.callContext.requestBody?.close()
+            callContext.requestBody?.close()
         }
 
-        if (!scope.callContext.requestHandled) {
-            scope.callContext.respond(HttpStatusCode.NotFound)
+        if (!callContext.requestHandled) {
+            callContext.respond(HttpStatusCode.NotFound)
         }
-        scope.callContext.buildResponse()
+        callContext.buildResponse()
     }
 }
 
-inline fun RouteScope.inject(noinline interceptor: CallInterceptor, block: () -> Unit) {
+
+typealias CallHandler = suspend CallContext.() -> Unit
+
+fun interface CallInterceptor {
+    suspend fun intercept(
+        context: CallContext,
+        proceed: CallHandler
+    )
+}
+
+fun RouteScope.inject(interceptor: CallInterceptor, block: () -> Unit) {
     interceptors.addLast(interceptor)
     block()
     interceptors.removeLast()
 }
 
-suspend inline fun RouteScope.get(uri: String, crossinline block: suspend (CallContext) -> Unit) {
-    handleRequest(HttpMethod.Get, uri, block)
+fun RouteScope.get(uri: String, block: suspend (CallContext) -> Unit) {
+    registerCall(HttpMethod.Get, uri, block)
 }
 
-suspend inline fun RouteScope.post(uri: String, crossinline block: suspend (CallContext) -> Unit) {
-    handleRequest(HttpMethod.Post, uri, block)
+fun RouteScope.post(uri: String, block: suspend (CallContext) -> Unit) {
+    registerCall(HttpMethod.Post, uri, block)
 }
 
-@PublishedApi
-internal suspend fun CoroutineScope.httpServer(
+private fun RouteScope.registerCall(
+    method: HttpMethod,
+    uri: String,
+    block: CallHandler
+) {
+    val foldedCallHandler = foldCallInterceptor(interceptors, block)
+
+    registerCallHandler(RouteScope.RouteKey(method, uri), foldedCallHandler)
+}
+
+private fun foldCallInterceptor(
+    interceptors: List<CallInterceptor>,
+    handler: CallHandler
+): CallHandler {
+    return interceptors.foldRight(handler) { interceptor, next ->
+        {
+            interceptor.intercept(this, next)
+        }
+    }
+}
+
+private suspend fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection,
     handler: suspend (HttpRequest) -> HttpResponse
@@ -77,65 +110,38 @@ internal suspend fun CoroutineScope.httpServer(
     }
 }
 
-@PublishedApi
-internal suspend inline fun RouteScope.handleRequest(
-    method: HttpMethod,
-    uri: String,
-    crossinline block: suspend CallContext.() -> Unit
-) {
-    if (callContext.requestHandled) return
+class RouteScope {
+    data class RouteKey(val method: HttpMethod, val uri: String)
 
-    val canHandle = this.method == method && this.uri == uri
-    if (!canHandle) return
-
-    val handler: suspend CallContext.() -> Unit = {
-        block()
-    }
-    foldCallInterceptor(interceptors, handler).invoke(callContext)
-}
-
-typealias CallInterceptor = suspend CallContext.(proceed: suspend CallContext.() -> Unit) -> Unit
-
-@PublishedApi
-internal fun foldCallInterceptor(
-    interceptors: List<CallInterceptor>,
-    handler: suspend CallContext.() -> Unit
-): suspend CallContext.() -> Unit {
-    return interceptors.foldRight(handler) { interceptor, next ->
-        {
-            interceptor(next)
-        }
-    }
-}
-
-class RouteScope(request: HttpRequest) {
-    @PublishedApi
     internal val interceptors: ArrayDeque<CallInterceptor> = ArrayDeque()
 
-    @PublishedApi
-    internal val method = request.head.method
+    private val registeredCallHandler = mutableMapOf<RouteKey, CallHandler>()
 
-    @PublishedApi
-    internal val uri = request.head.uri
+    internal fun registerCallHandler(key: RouteKey, handler: CallHandler) {
+        if (registeredCallHandler.contains(key)) error("route ($key) already registered.")
+        registeredCallHandler[key] = handler
+    }
 
-    @PublishedApi
-    internal val callContext = CallContext(request)
+    internal fun getCallHandler(key: RouteKey): CallHandler? {
+        return registeredCallHandler[key]
+    }
 }
 
 class CallContext(private val request: HttpRequest) {
     val requestHead = request.head
     var requestBody = request.body?.buffered()
+        internal set
 
-    @PublishedApi
+    internal val method = request.head.method
+
+    internal val uri = request.head.uri
+
     internal var requestHandled: Boolean = false
 
-    @PublishedApi
     internal val responseHeadBuilder = HttpResponseHead.Builder()
 
-    @PublishedApi
     internal var responseBodySource: LimitedSource? = null
 
-    @PublishedApi
     internal fun buildResponse(): HttpResponse {
         if (responseHeadBuilder.version == null) {
             responseHeadBuilder.version = request.head.version
