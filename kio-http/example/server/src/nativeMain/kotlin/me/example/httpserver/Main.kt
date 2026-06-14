@@ -10,9 +10,15 @@ import kio.http.httpServer
 import kio.http.inject
 import kio.http.post
 import kio.http.respondText
+import kio.http.sendBinary
+import kio.http.sendText
+import kio.http.websocket
 import kio.network.tcpBind
+import kio.websocket.WebSocketEvent
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.coroutines.delay
 import platform.posix.*
+import kotlin.time.Duration.Companion.seconds
 
 const val HOST_IP = "127.0.0.1"
 const val PORT = 7878
@@ -35,6 +41,15 @@ fun main(): Unit = runPollEventLoop(PosixPoll) {
                 post("/hello") { call ->
                     val requestBody = call.requestBody?.readString() ?: "no data"
                     call.respondText("hello back. requestBody: $requestBody")
+                }
+
+                websocket("/") { webSocket ->
+                    for (msg in webSocket.incoming) {
+                        when (msg) {
+                            is WebSocketEvent.Binary -> webSocket.sendBinary(buffer = msg.buffer)
+                            is WebSocketEvent.Text -> webSocket.sendText(msg.text)
+                        }
+                    }
                 }
             }
         }

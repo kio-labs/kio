@@ -3,20 +3,21 @@ package kio.websocket
 import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.readByteArray
-import kio.async.readLine
-import kio.async.writeString
 import kio.network.AsyncConnection
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
-import kotlinx.io.Sink
 import kotlinx.io.Source
+import kotlinx.io.readString
 import kotlinx.io.readUShort
 import kotlinx.io.writeString
 import kotlinx.io.writeUShort
 import kotlin.experimental.and
 import kotlin.experimental.xor
-import kotlin.io.encoding.Base64
+
+fun AsyncConnection.upgradeToWsConnection(): WsConnection = InternalWebSocket(false, this)
+
+fun AsyncConnection.asWsClientConnection(): WsConnection = InternalWebSocket(true, this)
 
 class ProtocolException(val closeCode: CloseCode, message: String) : IOException(message)
 
@@ -40,13 +41,24 @@ enum class CloseCode(val code: Int) {
     BAD_GATEWAY(1014),
 }
 
-enum class MessageType {
+internal enum class MessageType {
     TEXT,
     BIN,
 }
 
+internal fun Message(messageType: MessageType, buffer: Buffer): WebSocketEvent.Message {
+    return when (messageType) {
+        MessageType.TEXT -> WebSocketEvent.Text(buffer.readString())
+        MessageType.BIN -> WebSocketEvent.Binary(buffer)
+    }
+}
+
 sealed interface WebSocketEvent {
-    data class Message(val type: MessageType) : WebSocketEvent
+    sealed interface Message : WebSocketEvent
+    data class Text(val text: String) : Message
+
+    class Binary(val buffer: Buffer) : Message
+
     data object Close : WebSocketEvent
 }
 
@@ -54,15 +66,7 @@ sealed interface WebSocketEvent {
 interface WsConnection {
     suspend fun close()
 
-    suspend fun serverHandShake(): Result<Unit>
-
-    suspend fun clientHandShake(
-        path: String,
-        host: String,
-        clientSecKey: String = CLIENT_SEC_KEY
-    ): Result<Unit>
-
-    suspend fun readMessage(sink: Sink): Result<WebSocketEvent>
+    suspend fun readMessage(): WebSocketEvent
 
     suspend fun sendTextMessage(source: Source, chunkSize: Long = CHUNK_SIZE)
 
@@ -93,33 +97,12 @@ internal class InternalWebSocket(
         sendMessage(MessageType.TEXT, payload = source, chunkSize)
     }
 
-    override suspend fun readMessage(sink: Sink): Result<WebSocketEvent> =
-        runCatching {
-            readMessageTo(
-                target = sink,
-                isClient = isClient,
-            )
-        }
-
-    override suspend fun clientHandShake(
-        path: String,
-        host: String,
-        clientSecKey: String
-    ): Result<Unit> = runCatching {
-        doClientHandShake(
-            path = path,
-            host = host,
-            clientSecKey = clientSecKey,
-        )
-    }
-
-    override suspend fun serverHandShake() = runCatching {
-        doServerHandShake()
-    }
+    override suspend fun readMessage(): WebSocketEvent = readMessage(isClient = isClient)
 
     override suspend fun close() {
         try {
             if (needSendCloseEvent) sendClose(CloseCode.NORMAL, "Normal close")
+            needSendCloseEvent = false
         } catch (t: Throwable) {
             // ignore exception because in close
             println("exception when sendCloseEventIfNeeded $t")
@@ -208,8 +191,6 @@ internal interface KWebSocket {
 
 internal const val CHUNK_SIZE = 8192L
 internal const val MAX_CONTROL_FRAME_PAYLOAD_LENGTH = 125U
-internal const val CLIENT_SEC_KEY = "dGhlIHNhbXBsZSBub25jZQ=="
-internal const val SEC_MAGIC_KEY = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 internal data class FrameResult(
     val isFin: Boolean,
@@ -240,9 +221,6 @@ internal fun MessageType.toOpcode() = when (this) {
     MessageType.TEXT -> Opcode.TEXT
     MessageType.BIN -> Opcode.BIN
 }
-
-internal fun calculateServerAcceptKey(key: String) =
-    Base64.encode(sha1((key + SEC_MAGIC_KEY).encodeToByteArray()))
 
 internal fun Source.checkUtf8Payload() {
     // verify utf8
@@ -311,72 +289,6 @@ private fun isValidReceivedCloseCode(code: Int): Boolean {
     }
 }
 
-internal suspend fun InternalWebSocket.doServerHandShake() {
-    val headers = conn.source.parseHeaders()
-    val secWebsocketKey = headers["Sec-WebSocket-Key"]
-        ?: throw IOException("Sec-WebSocket-Key is not set by client")
-
-    val handShake = buildString {
-        append("HTTP/1.1 101 Switching Protocols\r\n")
-        append("Upgrade: websocket\r\n")
-        append("Connection: Upgrade\r\n")
-        append("Sec-WebSocket-Accept: ${calculateServerAcceptKey(secWebsocketKey)}\r\n")
-        append("\r\n")
-    }
-
-    conn.sink.writeString(handShake, 0, handShake.length)
-    conn.sink.flush()
-}
-
-private suspend fun InternalWebSocket.doClientHandShake(
-    path: String,
-    host: String,
-    clientSecKey: String = CLIENT_SEC_KEY,
-) {
-    val handShake = buildString {
-        append("GET $path HTTP/1.1\r\n")
-        append("Host: ${host}\r\n")
-        append("Upgrade: websocket\r\n")
-        append("Connection: Upgrade\r\n")
-        append("Sec-WebSocket-Key: ${clientSecKey}\r\n")
-        append("Sec-WebSocket-Version: 13\r\n")
-        append("\r\n")
-    }
-
-    conn.sink.writeString(handShake, 0, handShake.length)
-    conn.sink.flush()
-
-    val headers = conn.source.parseHeaders()
-    for ((key, value) in headers.entries) {
-        when (key) {
-            "Sec-WebSocket-Accept" -> {
-                if (calculateServerAcceptKey(clientSecKey) != value) {
-                    throw IOException("Header value of Sec-WebSocket-Accept(${value}) is not matched to ${clientSecKey}.")
-                }
-            }
-            // If there are other headers to verify...
-        }
-    }
-}
-
-// TODO: Support Http response info parsing
-internal suspend fun AsyncSource.parseHeaders(): Map<String, String> {
-    return buildMap {
-        while (!exhausted()) {
-            val line = readLine()
-            println("http res :: $line")
-            if (line.isNullOrEmpty()) break
-            if (!line.contains(':')) {
-                // not header, continue
-                continue
-            }
-
-            val (key, value) = line.split(':')
-            val headerValue = value.trim()
-            put(key, headerValue)
-        }
-    }
-}
 
 @OptIn(ExperimentalUnsignedTypes::class)
 internal suspend fun AsyncSink.sendFrame(
@@ -459,8 +371,7 @@ internal suspend fun InternalWebSocket.doSendClose(
     needSendCloseEvent = false
 }
 
-internal suspend fun InternalWebSocket.readMessageTo(
-    target: Sink,
+internal suspend fun InternalWebSocket.readMessage(
     isClient: Boolean,
 ): WebSocketEvent {
     var messageType: MessageType? = null
@@ -531,8 +442,7 @@ internal suspend fun InternalWebSocket.readMessageTo(
         buffer.peek().checkUtf8Payload()
     }
 
-    buffer.transferTo(target)
-    return WebSocketEvent.Message(messageType)
+    return Message(messageType, buffer)
 }
 
 internal suspend fun InternalWebSocket.sendMessage(

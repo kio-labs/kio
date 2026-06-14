@@ -16,16 +16,6 @@ import kio.async.writeString
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
 
-class HttpResponse(
-    val head: HttpResponseHead,
-    val body: LimitedSource?,
-)
-
-class HttpRequest(
-    val head: HttpRequestHead,
-    val body: LimitedSource?,
-)
-
 class HttpResponseHead internal constructor(
     val version: HttpProtocolVersion,
     val status: Int,
@@ -33,17 +23,17 @@ class HttpResponseHead internal constructor(
     val headers: Headers,
 ) {
     class Builder {
-        var version: HttpProtocolVersion? = null
-        var statusCode: HttpStatusCode? = null
+// TODO: only support http 1.1 now
+        var version: HttpProtocolVersion = HttpProtocolVersion.HTTP_1_1
+        var statusCode: HttpStatusCode = HttpStatusCode.NotFound
         var headers: HeadersBuilder = HeadersBuilder()
 
         fun build(): HttpResponseHead {
-            val code = statusCode ?: error("TODO")
             return HttpResponseHead(
-                version ?: error("TODO"),
-                code.value,
-                code.description,
-                headers.build(),
+                version = version,
+                status = statusCode.value,
+                statusText = statusCode.description,
+                headers = headers.build(),
             )
         }
     }

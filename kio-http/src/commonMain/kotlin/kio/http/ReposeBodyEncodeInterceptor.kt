@@ -52,7 +52,7 @@ private suspend fun CallContext.encodeResponseBodyIfNeeded() {
 
     val encoder = encoders.first()
 
-    val originalSource = responseBodySource ?: return
+    val originalSource = responseBuilder.body ?: return
 
 // TODO: write http chunk for compressed response
     val buffer = Buffer().inMemoryAsyncBuffer()
@@ -62,7 +62,7 @@ private suspend fun CallContext.encodeResponseBodyIfNeeded() {
     encoderSink.flush()
     encoderSink.close()
 
-    responseHeadBuilder.headers[HttpHeaders.ContentEncoding] = encoder.name
-    responseHeadBuilder.headers[HttpHeaders.ContentLength] = buffer.size.toString()
-    responseBodySource = buffer.limited(buffer.size)
+    responseBuilder.head.headers[HttpHeaders.ContentEncoding] = encoder.name
+    responseBuilder.head.headers[HttpHeaders.ContentLength] = buffer.size.toString()
+    responseBuilder.body = buffer.limited(buffer.size)
 }
