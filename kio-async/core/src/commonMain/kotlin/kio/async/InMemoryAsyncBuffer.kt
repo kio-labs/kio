@@ -36,7 +36,7 @@ class InMemoryAsyncBuffer internal constructor(
     override suspend fun transferFrom(source: AsyncRawSource): Long {
         var totalBytesRead = 0L
         while (true) {
-            val readCount: Long = source.asyncReadAtMostTo(internalBuffer, SEGMENT_SIZE.toLong())
+            val readCount: Long = source.readAtMostTo(internalBuffer, SEGMENT_SIZE.toLong())
             if (readCount == -1L) break
             totalBytesRead += readCount
         }
@@ -74,7 +74,7 @@ class InMemoryAsyncBuffer internal constructor(
         internalBuffer.write(source, byteCount)
     }
 
-    override fun close() = Unit
+    override suspend fun close() = Unit
 
     override suspend fun exhausted(): Boolean {
         return internalBuffer.exhausted()
@@ -124,7 +124,7 @@ class InMemoryAsyncBuffer internal constructor(
         return internalBuffer.transferTo(sink)
     }
 
-    override suspend fun asyncReadAtMostTo(
+    override suspend fun readAtMostTo(
         sink: Buffer,
         byteCount: Long,
     ): Long {

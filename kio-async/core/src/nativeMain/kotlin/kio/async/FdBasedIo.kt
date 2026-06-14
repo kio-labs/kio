@@ -50,7 +50,7 @@ private class AsyncFdRawSink(
         // No-op
     }
 
-    override fun close() {
+    override suspend fun close() {
         close(fd)
     }
 }
@@ -111,13 +111,13 @@ private class AsyncFdRawSource(
     private val fd: Int,
 ) : AsyncRawSource {
     @OptIn(UnsafeIoApi::class, ExperimentalForeignApi::class)
-    override suspend fun asyncReadAtMostTo(sink: Buffer, byteCount: Long): Long {
+    override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
         return doRead(fd, sink, byteCount) { fd, bytes, nbytes ->
             suspendRead(fd, bytes, nbytes)
         }
     }
 
-    override fun close() {
+    override suspend fun close() {
         close(fd)
     }
 }

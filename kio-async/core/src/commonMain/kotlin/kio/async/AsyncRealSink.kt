@@ -45,7 +45,7 @@ public class AsyncRealSink(
         checkNotClosed()
         var totalBytesRead = 0L
         while (true) {
-            val readCount: Long = source.asyncReadAtMostTo(bufferField, SEGMENT_SIZE.toLong())
+            val readCount: Long = source.readAtMostTo(bufferField, SEGMENT_SIZE.toLong())
             if (readCount == -1L) break
             totalBytesRead += readCount
             hintEmit()
@@ -115,21 +115,20 @@ public class AsyncRealSink(
         sink.flush()
     }
 
-    override fun close() {
+    override suspend fun close() {
         if (closed) return
 
         // Emit buffered data to the underlying sink. If this fails, we still need
         // to close the sink; otherwise we risk leaking resources.
         var thrown: Throwable? = null
 
-// TODO: can not support flush when close.
-//        try {
-//            if (bufferField.size > 0) {
-//                sink.write(bufferField, bufferField.size)
-//            }
-//        } catch (e: Throwable) {
-//            thrown = e
-//        }
+        try {
+            if (bufferField.size > 0) {
+                sink.write(bufferField, bufferField.size)
+            }
+        } catch (e: Throwable) {
+            thrown = e
+        }
 
         try {
             sink.close()

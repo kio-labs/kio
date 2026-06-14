@@ -9,6 +9,7 @@ kotlin {
         commonMain.dependencies {
             api(libs.ktor.http)
             implementation(project(":kio-network"))
+            implementation(project(":kio-compression"))
         }
 
         commonTest.dependencies {

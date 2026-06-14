@@ -2,6 +2,8 @@
 
 package kio.compression
 
+import kio.async.AsyncRawSink
+import kio.async.AsyncSink
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
@@ -10,8 +12,6 @@ import kotlinx.cinterop.nativeHeap
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.usePinned
 import kotlinx.io.Buffer
-import kotlinx.io.RawSink
-import kotlinx.io.Sink
 import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
 import platform.zlib.Z_DEFAULT_STRATEGY
@@ -28,11 +28,11 @@ import platform.zlib.deflateInit2
 import platform.zlib.z_stream_s
 
 internal class DeflaterSink(
-    private val sink: Sink,
+    private val sink: AsyncSink,
     private val level: Int,
     private val windowBits: Int,
     private val bufferChunkSize: Int = CHUNK_SIZE
-) : RawSink {
+) : AsyncRawSink {
     private var closed: Boolean = false
     private var finished: Boolean = false
 
@@ -52,17 +52,17 @@ internal class DeflaterSink(
         )
     }
 
-    override fun write(source: Buffer, byteCount: Long) {
+    override suspend fun write(source: Buffer, byteCount: Long) {
         writeBytesFromSource(source, byteCount, sink)
     }
 
-    override fun flush() {
+    override suspend fun flush() {
         check(!closed) { "closed" }
         doFlush(sink, Z_SYNC_FLUSH)
         sink.flush()
     }
 
-    override fun close() {
+    override suspend fun close() {
         if (closed) return
 
         // We must close the deflater and the target, even if flushing fails. Otherwise, we'll leak
@@ -89,10 +89,10 @@ internal class DeflaterSink(
     }
 
     @OptIn(UnsafeIoApi::class)
-    private fun writeBytesFromSource(
+    private suspend fun writeBytesFromSource(
         source: Buffer,
         sourceExactByteCount: Long,
-        target: Sink,
+        target: AsyncSink,
     ) {
         check(!closed) { "closed" }
 
@@ -139,7 +139,7 @@ internal class DeflaterSink(
         }
     }
 
-    private fun doFlush(target: Sink, flushType: Int) {
+    private suspend fun doFlush(target: AsyncSink, flushType: Int) {
         val outputChunk = ByteArray(bufferChunkSize)
         val targetByteCount = bufferChunkSize
         var targetWrite = 0

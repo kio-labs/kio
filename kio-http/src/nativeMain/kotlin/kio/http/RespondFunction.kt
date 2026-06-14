@@ -42,6 +42,8 @@ fun CallContext.respondText(
         headers[HttpHeaders.ContentLength] = source?.bytesRemaining?.toString() ?: "0"
     }
     responseBodySource = source
+
+    requestHandled = true
 }
 
 private fun textLimitedSource(

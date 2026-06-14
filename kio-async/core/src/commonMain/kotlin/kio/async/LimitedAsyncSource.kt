@@ -15,11 +15,11 @@ class LimitedSource(
     val bytesRemaining: Long
         get() = remaining
 
-    override suspend fun asyncReadAtMostTo(sink: Buffer, byteCount: Long): Long {
+    override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
         if (remaining == 0L) return -1L
 
         val toRead = minOf(byteCount, remaining)
-        val read = upstream.asyncReadAtMostTo(sink, toRead)
+        val read = upstream.readAtMostTo(sink, toRead)
 
         if (read == -1L) {
             throw EOFException("Unexpected EOF while reading request body")
@@ -29,5 +29,5 @@ class LimitedSource(
         return read
     }
 
-    override fun close() {}
+    override suspend fun close() {}
 }
