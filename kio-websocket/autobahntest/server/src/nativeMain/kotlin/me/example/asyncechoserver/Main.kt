@@ -38,7 +38,7 @@ fun main(): Unit = runPollEventLoop(PosixPoll) {
 @OptIn(ObsoleteWorkersApi::class)
 private suspend fun handleWebSocketConnection(conn: AsyncConnection) {
     println("INFO: webSocket Start.. ${Worker.current.name}")
-    val webSocketClient = KioWsConnection(conn, false)
+    val webSocketClient = conn.upgradeToWsConnection()
     try {
         conn.doServerHandShake()
 

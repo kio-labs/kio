@@ -16,11 +16,6 @@ import kio.async.writeString
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
 
-class HttpRequest(
-    val head: HttpRequestHead,
-    val body: LimitedSource?,
-)
-
 class HttpResponseHead internal constructor(
     val version: HttpProtocolVersion,
     val status: Int,

@@ -15,6 +15,10 @@ import kotlinx.io.writeUShort
 import kotlin.experimental.and
 import kotlin.experimental.xor
 
+fun AsyncConnection.upgradeToWsConnection(): WsConnection = InternalWebSocket(false, this)
+
+fun AsyncConnection.asWsClientConnection(): WsConnection = InternalWebSocket(true, this)
+
 class ProtocolException(val closeCode: CloseCode, message: String) : IOException(message)
 
 // https://datatracker.ietf.org/doc/html/rfc6455#section-7.4.1

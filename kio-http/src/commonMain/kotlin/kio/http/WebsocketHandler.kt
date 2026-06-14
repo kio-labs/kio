@@ -10,7 +10,7 @@ import kio.websocket.ProtocolException
 import kio.websocket.WebSocketEvent
 import kio.websocket.WsConnection
 import kio.websocket.sendTextMessage
-import kio.websocket.upgradeToWebsocket
+import kio.websocket.upgradeToWsConnection
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.SendChannel
@@ -72,7 +72,7 @@ internal suspend fun RouteScope.handleWebsocketRequest(
 
     responseBuilder.build().flushToConnectionSink(conn.sink)
 
-    val wsConnection = conn.upgradeToWebsocket()
+    val wsConnection = conn.upgradeToWsConnection()
     val context = WebsocketContext()
 
     doWebsocketConnection(wsConnection, context, handler)

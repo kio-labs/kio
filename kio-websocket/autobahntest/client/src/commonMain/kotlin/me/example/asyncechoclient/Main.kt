@@ -3,16 +3,15 @@ package me.example.asyncechoclient
 import kio.async.AsyncSource
 import kio.async.runPollEventLoop
 import kio.network.openConnection
-import kio.websocket.KioWsConnection
 import kio.websocket.ProtocolException
 import kio.websocket.WebSocketEvent
-import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
 import kio.async.poller.poll.PosixPoll
 import kio.async.readLine
 import kio.async.writeString
 import kio.network.AsyncConnection
+import kio.websocket.asWsClientConnection
 import kio.websocket.sendTextMessage
 import org.kotlincrypto.hash.sha1.SHA1
 import kotlin.io.encoding.Base64
@@ -33,7 +32,7 @@ fun main(): Unit = runPollEventLoop(PosixPoll) {
 
 private suspend fun runCase(caseId: String) {
     val conn = openConnection(HOST, PORT)
-    val ws = KioWsConnection(conn, isClient = true)
+    val ws = conn.asWsClientConnection()
 
     println("running case $caseId")
 
@@ -85,7 +84,7 @@ private suspend fun runCase(caseId: String) {
 
 private suspend fun updateReports() {
     val conn = openConnection(HOST, PORT)
-    val ws = KioWsConnection(conn, isClient = true)
+    val ws = conn.asWsClientConnection()
 
     println("updating reports")
 
@@ -114,7 +113,7 @@ private suspend fun updateReports() {
 
 private suspend fun getCaseCount(): Int {
     val conn = openConnection(HOST, PORT)
-    val ws = KioWsConnection(conn, isClient = true)
+    val ws = conn.asWsClientConnection()
 
     try {
         conn.doClientHandShake(
