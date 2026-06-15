@@ -73,6 +73,7 @@ internal suspend fun RouteScope.handleHttpRequest(
     try {
         handler?.invoke(callContext)
     } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (t: Throwable) {
         println("exception happened $t")
         callContext.respond(HttpStatusCode.InternalServerError, t.toString())
@@ -84,8 +85,7 @@ internal suspend fun RouteScope.handleHttpRequest(
     body?.discardRemaining()
 
     // write response
-    val response = callContext.responseBuilder.build()
-    response.flushToConnectionSink(conn.sink)
+    callContext.responseBuilder.build().flushToConnectionSink(conn.sink)
 }
 
 private fun RouteScope.registerCall(
