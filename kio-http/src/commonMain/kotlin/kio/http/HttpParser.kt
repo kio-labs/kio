@@ -9,7 +9,6 @@ import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.HttpStatusCode
 import kio.async.AsyncSink
 import kio.async.AsyncSource
-import kio.async.LimitedSource
 import kio.async.indexOf
 import kio.async.readString
 import kio.async.writeString
@@ -246,7 +245,7 @@ private suspend fun AsyncSource.readStringUntilSpace(): String {
     }
 }
 
-private suspend fun AsyncSource.readCrlfLine(): String {
+internal suspend fun AsyncSource.readCrlfLine(): String {
     while (true) {
         val lfIndex = indexOf('\n'.code.toByte())
 

@@ -1,13 +1,14 @@
 package kio.http
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
-import kio.async.LimitedSource
+import kio.async.AsyncRawSource
 import kio.async.buffered
+import kio.http.internal.Drainable
 import kio.network.AsyncConnection
 import kotlinx.coroutines.CancellationException
-import kotlinx.io.Buffer
 
 typealias CallHandler = suspend CallContext.() -> Unit
 
@@ -32,9 +33,9 @@ fun RouteScope.post(uri: String, block: suspend (CallContext) -> Unit) {
     registerCall(HttpMethod.Post, uri, block)
 }
 
-class CallContext(
+class CallContext internal constructor(
     val requestHead: HttpRequestHead,
-    body: LimitedSource?,
+    body: AsyncRawSource?,
 ) {
     var requestBody = body?.buffered()
         internal set
@@ -59,20 +60,33 @@ fun CallContext.respondText(
 
 internal suspend fun RouteScope.handleHttpRequest(
     head: HttpRequestHead,
-    body: LimitedSource?,
-    conn: AsyncConnection
+    conn: AsyncConnection,
 ) {
+    val handler = getCallHandler(RouteScope.RouteKey(head.method, head.uri))
+
+    doHandleHttpRequest(head, conn, handler).flushToConnectionSink(conn.sink)
+}
+
+internal suspend fun doHandleHttpRequest(
+    head: HttpRequestHead,
+    conn: AsyncConnection,
+    handler: CallHandler?,
+): HttpResponse {
+    val contentLength = head.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
+    val encoding = head.headers[HttpHeaders.TransferEncoding]
+
+    val body = when {
+        encoding == "chunked" -> conn.source.chunked()
+        contentLength > 0 -> conn.source.limited(contentLength)
+        else -> null
+    }
+
     val callContext = CallContext(head, body)
-    val handler = getCallHandler(
-        RouteScope.RouteKey(
-            callContext.requestHead.method,
-            callContext.requestHead.uri
-        )
-    )
 
     try {
         handler?.invoke(callContext)
     } catch (cancellation: CancellationException) {
+        throw cancellation
     } catch (t: Throwable) {
         println("exception happened $t")
         callContext.respond(HttpStatusCode.InternalServerError, t.toString())
@@ -81,11 +95,10 @@ internal suspend fun RouteScope.handleHttpRequest(
     }
 
     // discard unread request body source.
-    body?.discardRemaining()
+    (body as Drainable).drain()
 
     // write response
-    val response = callContext.responseBuilder.build()
-    response.flushToConnectionSink(conn.sink)
+    return callContext.responseBuilder.build()
 }
 
 private fun RouteScope.registerCall(
@@ -106,25 +119,5 @@ private fun foldCallInterceptor(
         {
             interceptor.intercept(this, next)
         }
-    }
-}
-
-private suspend fun LimitedSource.discardRemaining() {
-    val source = this
-    if (source.exhausted) return
-
-    val buffer = Buffer()
-
-    while (!source.exhausted) {
-        buffer.clear()
-
-        val read = source.readAtMostTo(
-            sink = buffer,
-            byteCount = minOf(8192L, source.bytesRemaining)
-        )
-
-        if (read == -1L) break
-
-        buffer.skip(read)
     }
 }

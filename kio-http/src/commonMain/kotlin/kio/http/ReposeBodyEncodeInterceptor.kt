@@ -5,7 +5,6 @@ import io.ktor.http.parseHeaderValue
 import kio.async.AsyncSink
 import kio.async.inMemoryAsyncBuffer
 import kio.async.buffered
-import kio.async.limited
 import kio.compression.gzipSink
 import kio.compression.zlibSink
 import kotlinx.io.Buffer

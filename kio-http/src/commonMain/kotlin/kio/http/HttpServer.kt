@@ -3,7 +3,6 @@ package kio.http
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.parseHeaderValue
-import kio.async.limited
 import kio.network.AsyncConnection
 import kio.network.AsyncRawConnection
 import kio.network.ServerSocket
@@ -84,11 +83,6 @@ private suspend fun CoroutineScope.startHttpServer(
 private suspend fun RouteScope.handleConnection(conn: AsyncConnection) {
     while (true) {
         val requestHead = conn.source.parseRequestHead()
-        val contentLength =
-            requestHead.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
-
-        val requestBodySource = conn.source.limited(contentLength)
-        val body = if (contentLength > 0) requestBodySource else null
 
         when {
             requestHead.isWebSocketUpgrade() -> {
@@ -98,7 +92,7 @@ private suspend fun RouteScope.handleConnection(conn: AsyncConnection) {
             }
 
             // Fall back to normal http request handle
-            else -> handleHttpRequest(requestHead, body, conn)
+            else -> handleHttpRequest(requestHead, conn)
         }
     }
 }

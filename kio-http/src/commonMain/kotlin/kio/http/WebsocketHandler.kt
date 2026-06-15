@@ -58,6 +58,10 @@ internal suspend fun RouteScope.handleWebsocketRequest(
     }
 
     val key = head.headers[HttpHeaders.SecWebSocketKey]
+    if (key == null) {
+        TODO("send Status code 400 Bad Request")
+        return
+    }
 
     // Do handshake
     responseBuilder.head.apply {
@@ -65,9 +69,7 @@ internal suspend fun RouteScope.handleWebsocketRequest(
         statusCode = HttpStatusCode.SwitchingProtocols
         headers[HttpHeaders.Upgrade] = "websocket"
         headers[HttpHeaders.Connection] = "Upgrade"
-        if (key != null) {
-            headers[HttpHeaders.SecWebSocketAccept] = websocketServerAccept(key)
-        }
+        headers[HttpHeaders.SecWebSocketAccept] = websocketServerAccept(key)
     }
 
     responseBuilder.build().flushToConnectionSink(conn.sink)
@@ -82,47 +84,46 @@ private suspend fun doWebsocketConnection(
     wsConnection: WsConnection,
     context: WebsocketContext,
     handler: WebsocketHandler
-) =
-    coroutineScope {
-        val handlerJob = launch {
-            handler(context)
-            wsConnection.sendClose(CloseCode.NORMAL)
-        }
+) = coroutineScope {
+    val handlerJob = launch {
+        handler(context)
+        wsConnection.sendClose(CloseCode.NORMAL)
+    }
 
-        val receiveJob = launch {
-            try {
-                while (true) {
-                    when (val event = wsConnection.readMessage()) {
-                        WebSocketEvent.Close -> {
-                            break
-                        }
+    val receiveJob = launch {
+        try {
+            while (true) {
+                when (val event = wsConnection.readMessage()) {
+                    WebSocketEvent.Close -> {
+                        break
+                    }
 
-                        is WebSocketEvent.Message -> {
-                            context.receiveChannel.send(event)
-                        }
+                    is WebSocketEvent.Message -> {
+                        context.receiveChannel.send(event)
                     }
                 }
-            } catch (t: ProtocolException) {
-                wsConnection.sendClose(t.closeCode, t.message)
             }
-        }
-
-        val sendJob = launch {
-            for (message in context.sendChannel) {
-                when (message) {
-                    is WebSocketEvent.Binary -> wsConnection.sendBinMessage(message.buffer)
-                    is WebSocketEvent.Text -> wsConnection.sendTextMessage(message.text)
-                }
-            }
-        }
-
-        receiveJob.invokeOnCompletion {
-            handlerJob.cancel()
-            sendJob.cancel()
-        }
-
-        handlerJob.invokeOnCompletion {
-            receiveJob.cancel()
-            sendJob.cancel()
+        } catch (t: ProtocolException) {
+            wsConnection.sendClose(t.closeCode, t.message)
         }
     }
+
+    val sendJob = launch {
+        for (message in context.sendChannel) {
+            when (message) {
+                is WebSocketEvent.Binary -> wsConnection.sendBinMessage(message.buffer)
+                is WebSocketEvent.Text -> wsConnection.sendTextMessage(message.text)
+            }
+        }
+    }
+
+    receiveJob.invokeOnCompletion {
+        handlerJob.cancel()
+        sendJob.cancel()
+    }
+
+    handlerJob.invokeOnCompletion {
+        receiveJob.cancel()
+        sendJob.cancel()
+    }
+}
