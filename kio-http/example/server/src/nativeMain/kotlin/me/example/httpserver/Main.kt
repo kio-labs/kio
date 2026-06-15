@@ -43,6 +43,10 @@ fun main(): Unit = runPollEventLoop(PosixPoll) {
                     call.respondText("hello back. requestBody: $requestBody")
                 }
 
+                post("/chunk") { call ->
+                    call.respondText("response: ${call.requestBody?.readString()}")
+                }
+
                 websocket("/") { webSocket ->
                     for (msg in webSocket.incoming) {
                         when (msg) {

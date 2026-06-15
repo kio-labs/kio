@@ -1,14 +1,16 @@
-package kio.async
+package kio.http
 
+import kio.async.AsyncRawSource
+import kio.http.internal.Drainable
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 
-fun AsyncRawSource.limited(limit: Long): LimitedSource = LimitedSource(this, limit)
+internal fun AsyncRawSource.limited(limit: Long): LimitedSource = LimitedSource(this, limit)
 
-class LimitedSource(
+internal class LimitedSource(
     private val upstream: AsyncRawSource,
     private var remaining: Long,
-) : AsyncRawSource {
+) : AsyncRawSource, Drainable {
     val exhausted: Boolean
         get() = remaining == 0L
 
@@ -30,4 +32,24 @@ class LimitedSource(
     }
 
     override suspend fun close() {}
+
+    override suspend fun drain() {
+        val source = this
+        if (source.exhausted) return
+
+        val buffer = Buffer()
+
+        while (!source.exhausted) {
+            buffer.clear()
+
+            val read = source.readAtMostTo(
+                sink = buffer,
+                byteCount = minOf(8192L, source.bytesRemaining)
+            )
+
+            if (read == -1L) break
+
+            buffer.skip(read)
+        }
+    }
 }

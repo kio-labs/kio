@@ -3,11 +3,11 @@ package kio.http
 import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
-import kio.async.LimitedSource
+import kio.async.AsyncRawSource
 import kio.async.buffered
+import kio.http.internal.Drainable
 import kio.network.AsyncConnection
 import kotlinx.coroutines.CancellationException
-import kotlinx.io.Buffer
 
 typealias CallHandler = suspend CallContext.() -> Unit
 
@@ -32,9 +32,9 @@ fun RouteScope.post(uri: String, block: suspend (CallContext) -> Unit) {
     registerCall(HttpMethod.Post, uri, block)
 }
 
-class CallContext(
+class CallContext internal constructor(
     val requestHead: HttpRequestHead,
-    body: LimitedSource?,
+    body: AsyncRawSource?,
 ) {
     var requestBody = body?.buffered()
         internal set
@@ -59,7 +59,7 @@ fun CallContext.respondText(
 
 internal suspend fun RouteScope.handleHttpRequest(
     head: HttpRequestHead,
-    body: LimitedSource?,
+    body: AsyncRawSource?,
     conn: AsyncConnection
 ) {
     val callContext = CallContext(head, body)
@@ -70,6 +70,7 @@ internal suspend fun RouteScope.handleHttpRequest(
         )
     )
 
+    println("handler before $handler")
     try {
         handler?.invoke(callContext)
     } catch (cancellation: CancellationException) {
@@ -80,9 +81,10 @@ internal suspend fun RouteScope.handleHttpRequest(
     } finally {
         callContext.requestBody?.close()
     }
+    println("handler after")
 
     // discard unread request body source.
-    body?.discardRemaining()
+    (body as Drainable).drain()
 
     // write response
     callContext.responseBuilder.build().flushToConnectionSink(conn.sink)
@@ -106,25 +108,5 @@ private fun foldCallInterceptor(
         {
             interceptor.intercept(this, next)
         }
-    }
-}
-
-private suspend fun LimitedSource.discardRemaining() {
-    val source = this
-    if (source.exhausted) return
-
-    val buffer = Buffer()
-
-    while (!source.exhausted) {
-        buffer.clear()
-
-        val read = source.readAtMostTo(
-            sink = buffer,
-            byteCount = minOf(8192L, source.bytesRemaining)
-        )
-
-        if (read == -1L) break
-
-        buffer.skip(read)
     }
 }
