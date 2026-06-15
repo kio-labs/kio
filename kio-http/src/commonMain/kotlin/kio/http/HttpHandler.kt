@@ -1,6 +1,7 @@
 package kio.http
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import kio.async.AsyncRawSource
@@ -59,18 +60,29 @@ fun CallContext.respondText(
 
 internal suspend fun RouteScope.handleHttpRequest(
     head: HttpRequestHead,
-    body: AsyncRawSource?,
-    conn: AsyncConnection
+    conn: AsyncConnection,
 ) {
-    val callContext = CallContext(head, body)
-    val handler = getCallHandler(
-        RouteScope.RouteKey(
-            callContext.requestHead.method,
-            callContext.requestHead.uri
-        )
-    )
+    val handler = getCallHandler(RouteScope.RouteKey(head.method, head.uri))
 
-    println("handler before $handler")
+    doHandleHttpRequest(head, conn, handler).flushToConnectionSink(conn.sink)
+}
+
+internal suspend fun doHandleHttpRequest(
+    head: HttpRequestHead,
+    conn: AsyncConnection,
+    handler: CallHandler?,
+): HttpResponse {
+    val contentLength = head.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
+    val encoding = head.headers[HttpHeaders.TransferEncoding]
+
+    val body = when {
+        encoding == "chunked" -> conn.source.chunked()
+        contentLength > 0 -> conn.source.limited(contentLength)
+        else -> null
+    }
+
+    val callContext = CallContext(head, body)
+
     try {
         handler?.invoke(callContext)
     } catch (cancellation: CancellationException) {
@@ -81,13 +93,12 @@ internal suspend fun RouteScope.handleHttpRequest(
     } finally {
         callContext.requestBody?.close()
     }
-    println("handler after")
 
     // discard unread request body source.
     (body as Drainable).drain()
 
     // write response
-    callContext.responseBuilder.build().flushToConnectionSink(conn.sink)
+    return callContext.responseBuilder.build()
 }
 
 private fun RouteScope.registerCall(

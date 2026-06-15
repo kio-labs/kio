@@ -92,18 +92,7 @@ private suspend fun RouteScope.handleConnection(conn: AsyncConnection) {
             }
 
             // Fall back to normal http request handle
-            else -> {
-                val contentLength =
-                    requestHead.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
-                val encoding = requestHead.headers[HttpHeaders.TransferEncoding]
-
-                val body = when {
-                    encoding == "chunked" -> conn.source.chunked()
-                    contentLength > 0 -> conn.source.limited(contentLength)
-                    else -> null
-                }
-                handleHttpRequest(requestHead, body, conn)
-            }
+            else -> handleHttpRequest(requestHead, conn)
         }
     }
 }
