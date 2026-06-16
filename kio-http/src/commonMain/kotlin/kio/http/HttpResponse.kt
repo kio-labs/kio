@@ -13,53 +13,6 @@ import kio.async.inMemoryAsyncBuffer
 import kotlinx.io.Buffer
 import kotlinx.io.writeString
 
-internal class HttpResponse(
-    val head: HttpResponseHead,
-    val body: LimitedSource?,
-) {
-    internal class Builder {
-        val head = HttpResponseHead.Builder()
-        var body: LimitedSource? = null
-
-        fun build(): HttpResponse {
-            return HttpResponse(
-                head.build(),
-                body
-            )
-        }
-    }
-}
-
-internal suspend fun HttpResponse.flushToConnectionSink(connSink: AsyncSink) {
-    connSink.writeResponseHead(head)
-    body?.let { connSink.transferFrom(it) }
-    connSink.flush()
-}
-
-internal fun HttpResponse.Builder.respondText(
-    text: String,
-    contentType: ContentType? = null,
-    status: HttpStatusCode? = null,
-    configure: HttpResponseHead.Builder.() -> Unit = {}
-) {
-    val charset = contentType?.charset() ?: Charsets.UTF_8
-    require(charset == Charsets.UTF_8) {
-        "Only support utf8, but get $charset."
-    }
-
-    val source = if (text.isNotEmpty()) {
-        textLimitedSource(text, charset)
-    } else {
-        null
-    }
-    head.apply {
-        configure()
-        statusCode = status ?: HttpStatusCode.OK
-        headers[HttpHeaders.ContentType] = defaultTextContentType(contentType).toString()
-        headers[HttpHeaders.ContentLength] = source?.bytesRemaining?.toString() ?: "0"
-    }
-    body = source
-}
 
 /**
  * Creates a default [ContentType] based on the given [contentType] and current call.
@@ -72,10 +25,10 @@ internal fun HttpResponse.Builder.respondText(
  *
  * [Report a problem](https://ktor.io/feedback/?fqname=io.ktor.server.response.defaultTextContentType)
  */
-private fun HttpResponseHead.Builder.defaultTextContentType(contentType: ContentType?): ContentType {
+internal fun CallContext.defaultTextContentType(contentType: ContentType?): ContentType {
     val result = when (contentType) {
         null -> {
-            val headersContentType = headers[HttpHeaders.ContentType]
+            val headersContentType = responseHead.headers[HttpHeaders.ContentType]
             headersContentType?.let {
                 try {
                     ContentType.parse(headersContentType)
@@ -93,19 +46,4 @@ private fun HttpResponseHead.Builder.defaultTextContentType(contentType: Content
     } else {
         result
     }
-}
-
-
-private fun textLimitedSource(
-    text: String,
-    charset: Charset = Charsets.UTF_8,
-): LimitedSource {
-    require(charset == Charsets.UTF_8) {
-        "Only support utf8, but get $charset."
-    }
-    val buffer = Buffer().apply { writeString(text) }
-    return LimitedSource(
-        buffer.inMemoryAsyncBuffer(),
-        buffer.size
-    )
 }
