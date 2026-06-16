@@ -91,10 +91,12 @@ internal suspend fun doHandleHttpRequest(
     head: HttpRequestHead,
     conn: AsyncConnection,
     handler: CallHandler?,
+    isTest: Boolean = false
 ) {
     val contentLength = head.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
     val encoding = head.headers[HttpHeaders.TransferEncoding]
 
+// TODO: do wrap source in CallInterceptor.
     val body = when {
         encoding == "chunked" -> conn.source.chunked()
         contentLength > 0 -> conn.source.limited(contentLength)
@@ -108,6 +110,7 @@ internal suspend fun doHandleHttpRequest(
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (t: Throwable) {
+        if (isTest) throw t
         println("exception happened $t")
         callContext.respond(HttpStatusCode.InternalServerError, t.toString())
     } finally {
@@ -131,7 +134,7 @@ private fun RouteScope.registerCall(
     registerCallHandler(RouteScope.RouteKey(method, uri), foldedCallHandler)
 }
 
-private fun foldCallInterceptor(
+internal fun foldCallInterceptor(
     interceptors: List<CallInterceptor>,
     handler: CallHandler
 ): CallHandler {

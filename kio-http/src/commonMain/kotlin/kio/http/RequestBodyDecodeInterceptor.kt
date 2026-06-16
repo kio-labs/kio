@@ -27,7 +27,7 @@ private fun CallContext.decodeRequestBodyIfNeeded() {
 
     val encoding = parseHeaderValue(encodingRaw)
     val decoders = encoding.map { encoding ->
-        supportDecoder[encoding.value]
+        supportDecoder[encoding.value.lowercase()]
             ?: error("Unsupported Content-Encoding: ${encoding.value}")
     }
 
