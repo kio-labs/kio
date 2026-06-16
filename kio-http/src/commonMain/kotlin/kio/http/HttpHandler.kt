@@ -4,9 +4,14 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.charset
+import io.ktor.utils.io.charsets.Charsets
 import kio.async.AsyncRawSource
+import kio.async.AsyncSink
 import kio.async.buffered
+import kio.async.writeString
 import kio.http.internal.Drainable
+import kio.http.internal.httpResponseSink
 import kio.network.AsyncConnection
 import kotlinx.coroutines.CancellationException
 
@@ -36,26 +41,41 @@ fun RouteScope.post(uri: String, block: suspend (CallContext) -> Unit) {
 class CallContext internal constructor(
     val requestHead: HttpRequestHead,
     body: AsyncRawSource?,
+    connSink: AsyncSink
 ) {
     var requestBody = body?.buffered()
         internal set
 
-    internal val responseBuilder = HttpResponse.Builder()
+    internal val responseHead = HttpResponseHead.Builder()
+
+    internal val responseSink = connSink.httpResponseSink(responseHead).buffered()
 }
 
-fun CallContext.respond(
+suspend fun CallContext.respond(
     status: HttpStatusCode, message: String = ""
 ) {
     respondText(status = status, text = message)
 }
 
-fun CallContext.respondText(
+suspend fun CallContext.respondText(
     text: String,
     contentType: ContentType? = null,
     status: HttpStatusCode? = null,
     configure: HttpResponseHead.Builder.() -> Unit = {}
 ) {
-    responseBuilder.respondText(text, contentType, status, configure)
+    val charset = contentType?.charset() ?: Charsets.UTF_8
+    require(charset == Charsets.UTF_8) {
+        "Only support utf8, but get $charset."
+    }
+
+    responseHead.apply {
+        configure()
+        statusCode = status ?: HttpStatusCode.OK
+        headers[HttpHeaders.ContentType] = defaultTextContentType(contentType).toString()
+        headers[HttpHeaders.ContentLength] = text.length.toString()
+    }
+
+    responseSink.writeString(text)
 }
 
 internal suspend fun RouteScope.handleHttpRequest(
@@ -64,14 +84,14 @@ internal suspend fun RouteScope.handleHttpRequest(
 ) {
     val handler = getCallHandler(RouteScope.RouteKey(head.method, head.uri))
 
-    doHandleHttpRequest(head, conn, handler).flushToConnectionSink(conn.sink)
+    doHandleHttpRequest(head, conn, handler)
 }
 
 internal suspend fun doHandleHttpRequest(
     head: HttpRequestHead,
     conn: AsyncConnection,
     handler: CallHandler?,
-): HttpResponse {
+) {
     val contentLength = head.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
     val encoding = head.headers[HttpHeaders.TransferEncoding]
 
@@ -81,7 +101,7 @@ internal suspend fun doHandleHttpRequest(
         else -> null
     }
 
-    val callContext = CallContext(head, body)
+    val callContext = CallContext(head, body, conn.sink)
 
     try {
         handler?.invoke(callContext)
@@ -98,7 +118,7 @@ internal suspend fun doHandleHttpRequest(
     (body as? Drainable)?.drain()
 
     // write response
-    return callContext.responseBuilder.build()
+    callContext.responseSink.flush()
 }
 
 private fun RouteScope.registerCall(

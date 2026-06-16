@@ -4,6 +4,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.websocket.websocketServerAccept
+import kio.async.buffered
+import kio.http.internal.httpResponseSink
 import kio.network.AsyncConnection
 import kio.websocket.CloseCode
 import kio.websocket.ProtocolException
@@ -44,27 +46,26 @@ internal suspend fun RouteScope.handleWebsocketRequest(
     head: HttpRequestHead,
     conn: AsyncConnection
 ) {
-    val responseBuilder = HttpResponse.Builder()
+    val responseHead = HttpResponseHead.Builder()
+    val sink = conn.sink.httpResponseSink(responseHead).buffered()
 
     val handler = getWebsocketHandler(head.uri)
     if (handler == null) {
 // TODO: Is it correct to send Status code 404?
-        responseBuilder.respondText(
-            HttpStatusCode.NotFound.description,
-            status = HttpStatusCode.NotFound
-        )
-        responseBuilder.build().flushToConnectionSink(conn.sink)
+        responseHead.statusCode = HttpStatusCode.NotFound
+        sink.flush()
         return
     }
 
     val key = head.headers[HttpHeaders.SecWebSocketKey]
     if (key == null) {
-        TODO("send Status code 400 Bad Request")
+        responseHead.statusCode = HttpStatusCode.BadRequest
+        sink.flush()
         return
     }
 
     // Do handshake
-    responseBuilder.head.apply {
+    responseHead.apply {
         version = HttpProtocolVersion.HTTP_1_1
         statusCode = HttpStatusCode.SwitchingProtocols
         headers[HttpHeaders.Upgrade] = "websocket"
@@ -72,7 +73,7 @@ internal suspend fun RouteScope.handleWebsocketRequest(
         headers[HttpHeaders.SecWebSocketAccept] = websocketServerAccept(key)
     }
 
-    responseBuilder.build().flushToConnectionSink(conn.sink)
+    sink.flush()
 
     val wsConnection = conn.upgradeToWsConnection()
     val context = WebsocketContext()
