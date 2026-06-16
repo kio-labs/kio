@@ -95,7 +95,7 @@ internal suspend fun doHandleHttpRequest(
     }
 
     // discard unread request body source.
-    (body as Drainable).drain()
+    (body as? Drainable)?.drain()
 
     // write response
     return callContext.responseBuilder.build()
