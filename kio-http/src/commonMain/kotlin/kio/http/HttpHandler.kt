@@ -1,11 +1,13 @@
 package kio.http
 
 import io.ktor.http.ContentType
+import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.charset
 import io.ktor.utils.io.charsets.Charsets
+import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.AsyncSink
 import kio.async.buffered
@@ -14,6 +16,7 @@ import kio.http.internal.Drainable
 import kio.http.internal.httpResponseSink
 import kio.network.AsyncConnection
 import kotlinx.coroutines.CancellationException
+import kotlin.text.equals
 
 typealias CallHandler = suspend CallContext.() -> Unit
 
@@ -48,7 +51,12 @@ class CallContext internal constructor(
 
     internal val responseHead = HttpResponseHead.Builder()
 
-    internal val responseSink = connSink.httpResponseSink(responseHead).buffered()
+    internal var responseSink: AsyncSink = connSink.httpResponseSink(responseHead).buffered()
+        private set
+
+    internal fun wrapResponseSink(block: AsyncSink.() -> AsyncSink) {
+        responseSink = block(responseSink)
+    }
 }
 
 suspend fun CallContext.respond(
@@ -72,10 +80,16 @@ suspend fun CallContext.respondText(
         configure()
         statusCode = status ?: HttpStatusCode.OK
         headers[HttpHeaders.ContentType] = defaultTextContentType(contentType).toString()
-        headers[HttpHeaders.ContentLength] = text.length.toString()
+        if (headers.canWriteContentLength()) {
+            headers[HttpHeaders.ContentLength] = text.length.toString()
+        }
     }
 
     responseSink.writeString(text)
+}
+
+private fun HeadersBuilder.canWriteContentLength(): Boolean {
+    return !this[HttpHeaders.TransferEncoding].equals("chunked", ignoreCase = true)
 }
 
 internal suspend fun RouteScope.handleHttpRequest(
@@ -122,6 +136,7 @@ internal suspend fun doHandleHttpRequest(
 
     // write response
     callContext.responseSink.flush()
+    callContext.responseSink.close()
 }
 
 private fun RouteScope.registerCall(

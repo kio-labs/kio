@@ -3,15 +3,14 @@ package kio.http
 import io.ktor.http.HttpHeaders
 import io.ktor.http.parseHeaderValue
 import kio.async.AsyncSink
-import kio.async.inMemoryAsyncBuffer
 import kio.async.buffered
 import kio.compression.gzipSink
 import kio.compression.zlibSink
-import kotlinx.io.Buffer
+import kio.http.internal.chunked
 
 val RespondedBodyEncodeInterceptor = CallInterceptor { context, proceed ->
-    proceed(context)
     context.encodeResponseBodyIfNeeded()
+    proceed(context)
 }
 
 private interface Encoder {
@@ -22,12 +21,12 @@ private interface Encoder {
 private val GzipEncoder: Encoder = object : Encoder {
     override val name: String = "gzip"
 
-    override fun encode(source: AsyncSink): AsyncSink =source.gzipSink().buffered()
+    override fun encode(source: AsyncSink): AsyncSink = source.gzipSink().buffered()
 }
 private val DeflateEncoder: Encoder = object : Encoder {
     override val name: String = "deflate"
 
-    override fun encode(source: AsyncSink): AsyncSink =  source.zlibSink().buffered()
+    override fun encode(source: AsyncSink): AsyncSink = source.zlibSink().buffered()
 }
 
 private val supportedEncoders = mapOf(
@@ -35,14 +34,14 @@ private val supportedEncoders = mapOf(
     "deflate" to DeflateEncoder,
 )
 
-private suspend fun CallContext.encodeResponseBodyIfNeeded() {
+private fun CallContext.encodeResponseBodyIfNeeded() {
     val acceptEncodingRaw = requestHead.headers[HttpHeaders.AcceptEncoding] ?: return
     val encoders = parseHeaderValue(acceptEncodingRaw)
-        .filter { it.value == "*" || it.value in supportedEncoders }
+        .filter { it.value == "*" || it.value.lowercase() in supportedEncoders }
         .flatMap { header ->
             when (header.value) {
                 "*" -> supportedEncoders.values.map { it to header }
-                else -> supportedEncoders[header.value]?.let { listOf(it to header) } ?: emptyList()
+                else -> supportedEncoders[header.value.lowercase()]?.let { listOf(it to header) } ?: emptyList()
             }
         }
         .map { it.first }
@@ -51,18 +50,10 @@ private suspend fun CallContext.encodeResponseBodyIfNeeded() {
 
     val encoder = encoders.first()
 
-// TODO: write chunked response for http 1
-//    val originalSource = responseBuilder.body ?: return
-//
-//// TODO: write http chunk for compressed response
-//    val buffer = Buffer().inMemoryAsyncBuffer()
-//    val encoderSink = encoder.encode(buffer)
-//
-//    originalSource.buffered().transferTo(encoderSink)
-//    encoderSink.flush()
-//    encoderSink.close()
-//
-//    responseBuilder.head.headers[HttpHeaders.ContentEncoding] = encoder.name
-//    responseBuilder.head.headers[HttpHeaders.ContentLength] = buffer.size.toString()
-//    responseBuilder.body = buffer.limited(buffer.size)
+    // Always write compressed data by chunk in HTTP/1
+    responseHead.headers.remove(HttpHeaders.ContentLength)
+    responseHead.headers[HttpHeaders.TransferEncoding] = "chunked"
+    wrapResponseSink { chunked().buffered()}
+    responseHead.headers[HttpHeaders.ContentEncoding] = encoder.name
+    wrapResponseSink { encoder.encode(this) }
 }
