@@ -3,6 +3,8 @@ package kio.http
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.parseHeaderValue
+import kio.http.internal.HttpRequestHead
+import kio.http.internal.http1.parseRequestHead
 import kio.network.AsyncConnection
 import kio.network.AsyncRawConnection
 import kio.network.ServerSocket

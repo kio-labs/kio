@@ -19,13 +19,12 @@
  * limitations under the License.
  */
 
-package kio.websocket
+package kio.http.internal.ws
 
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.InternalIoApi
 import kotlinx.io.Source
-import org.kotlincrypto.hash.sha1.SHA1
 
 internal class InvalidUtf8Exception(message: String) : IllegalStateException(message)
 

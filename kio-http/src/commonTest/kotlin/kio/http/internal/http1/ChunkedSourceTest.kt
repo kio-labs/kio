@@ -1,9 +1,8 @@
-package kio.http.internal
+package kio.http.internal.http1
 
 import kio.async.buffered
 import kio.async.inMemoryAsyncBuffer
 import kio.async.readString
-import kio.http.ChunkedSource
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.Buffer
 import kotlinx.io.writeString

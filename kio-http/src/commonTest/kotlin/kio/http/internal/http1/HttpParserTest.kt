@@ -1,7 +1,7 @@
 /*
  * Copyright 2014-2022 JetBrains s.r.o and contributors. Use of this source code is governed by the Apache 2.0 license.
  */
-package kio.http
+package kio.http.internal.http1
 
 import io.ktor.http.HttpMethod
 import io.ktor.http.parsing.ParseException

@@ -1,4 +1,4 @@
-package kio.http
+package kio.http.internal.http1
 
 import kio.async.AsyncRawSource
 import kio.async.AsyncSource

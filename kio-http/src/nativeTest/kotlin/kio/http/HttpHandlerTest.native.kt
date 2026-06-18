@@ -2,9 +2,9 @@ package kio.http
 
 import io.ktor.http.HttpHeaders
 import kio.async.buffered
-import kio.async.readByteArray
 import kio.async.readString
 import kio.compression.gzipSource
+import kio.http.internal.http1.chunked
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.Buffer
 import kotlin.test.Test

@@ -3,6 +3,8 @@ package kio.websocket
 import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.readByteArray
+import kio.http.internal.ws.InvalidUtf8Exception
+import kio.http.internal.ws.readCodePointValueOrThrow
 import kio.network.AsyncConnection
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
@@ -15,7 +17,7 @@ import kotlinx.io.writeUShort
 import kotlin.experimental.and
 import kotlin.experimental.xor
 
-fun AsyncConnection.upgradeToWsConnection(): WsConnection = InternalWebSocket(false, this)
+internal fun AsyncConnection.upgradeToWsConnection(): WsConnection = InternalWebSocket(false, this)
 
 fun AsyncConnection.asWsClientConnection(): WsConnection = InternalWebSocket(true, this)
 
@@ -352,7 +354,6 @@ internal suspend fun InternalWebSocket.doSendClose(
     code: CloseCode,
     reason: String? = null,
 ) {
-// TODO: remove all requested fd when close.
     if (!needSendCloseEvent) throw IOException("already send close event.")
 
     val payload = Buffer().apply {

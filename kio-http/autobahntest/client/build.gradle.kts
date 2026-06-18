@@ -10,15 +10,16 @@ kotlin {
     macosArm64 {
         binaries {
             executable {
-                entryPoint("me.example.asyncechoserver.main")
+                entryPoint("me.example.asyncechoclient.main")
             }
         }
     }
 
     sourceSets {
         nativeMain.dependencies {
-            implementation(project(":kio-websocket"))
+            implementation(project(":kio-http"))
             implementation(project(":kio-async:poller-poll"))
+            implementation(libs.hash.sha1)
         }
     }
 }
