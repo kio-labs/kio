@@ -6,7 +6,7 @@ import kio.async.AsyncSink
 import kio.async.buffered
 import kio.compression.gzipSink
 import kio.compression.zlibSink
-import kio.http.internal.chunked
+import kio.http.internal.http1.chunked
 
 val RespondedBodyEncodeInterceptor = CallInterceptor { context, proceed ->
     context.encodeResponseBodyIfNeeded()
@@ -35,7 +35,7 @@ private val supportedEncoders = mapOf(
 )
 
 private fun CallContext.encodeResponseBodyIfNeeded() {
-    val acceptEncodingRaw = requestHead.headers[HttpHeaders.AcceptEncoding] ?: return
+    val acceptEncodingRaw = requestHeaders[HttpHeaders.AcceptEncoding] ?: return
     val encoders = parseHeaderValue(acceptEncodingRaw)
         .filter { it.value == "*" || it.value.lowercase() in supportedEncoders }
         .flatMap { header ->

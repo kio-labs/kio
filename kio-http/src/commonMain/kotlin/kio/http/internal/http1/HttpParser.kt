@@ -1,49 +1,19 @@
-package kio.http
+package kio.http.internal.http1
 
 import io.ktor.http.Headers
-import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.parsing.ParseException
 import io.ktor.http.HttpProtocolVersion
-import io.ktor.http.HttpStatusCode
 import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.indexOf
 import kio.async.readString
 import kio.async.writeString
+import kio.http.internal.HttpRequestHead
+import kio.http.internal.HttpResponseHead
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
-
-class HttpResponseHead internal constructor(
-    val version: HttpProtocolVersion,
-    val status: Int,
-    val statusText: String,
-    val headers: Headers,
-) {
-    class Builder {
-// TODO: only support http 1.1 now
-        var version: HttpProtocolVersion = HttpProtocolVersion.HTTP_1_1
-        var statusCode: HttpStatusCode = HttpStatusCode.NotFound
-        var headers: HeadersBuilder = HeadersBuilder()
-
-        fun build(): HttpResponseHead {
-            return HttpResponseHead(
-                version = version,
-                status = statusCode.value,
-                statusText = statusCode.description,
-                headers = headers.build(),
-            )
-        }
-    }
-}
-
-data class HttpRequestHead(
-    val method: HttpMethod,
-    val uri: String,
-    val version: HttpProtocolVersion,
-    val headers: Headers,
-)
 
 internal suspend fun AsyncSource.parseRequestHead(): HttpRequestHead {
     val httpMethod = parseHttpMethod(readStringUntilSpace())

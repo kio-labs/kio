@@ -11,7 +11,6 @@ kotlin {
             api(libs.ktor.http)
             implementation(project(":kio-network"))
             implementation(project(":kio-compression"))
-            implementation(project(":kio-websocket"))
         }
 
         commonTest.dependencies {

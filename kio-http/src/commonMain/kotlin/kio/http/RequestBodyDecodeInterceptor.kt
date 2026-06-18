@@ -23,7 +23,7 @@ private val supportDecoder = mapOf(
 )
 
 private fun CallContext.decodeRequestBodyIfNeeded() {
-    val encodingRaw = requestHead.headers[HttpHeaders.ContentEncoding] ?: return
+    val encodingRaw = requestHeaders[HttpHeaders.ContentEncoding] ?: return
 
     val encoding = parseHeaderValue(encodingRaw)
     val decoders = encoding.map { encoding ->

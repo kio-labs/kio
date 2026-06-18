@@ -1,7 +1,6 @@
-package kio.http
+package kio.http.internal
 
 import kio.async.AsyncRawSource
-import kio.http.internal.Drainable
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 
