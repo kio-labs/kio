@@ -9,7 +9,7 @@ import kotlinx.io.Buffer
 fun AsyncSink.httpResponseSink(head: HttpResponseHead.Builder): AsyncRawSink =
     HttpResponseSink(head, this)
 
-private class HttpResponseSink(
+internal class HttpResponseSink(
     private val head: HttpResponseHead.Builder,
     private val sink: AsyncSink,
 ) : AsyncRawSink {
