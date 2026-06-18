@@ -7,6 +7,9 @@ kotlin {
     macosArm64()
 
     sourceSets {
+        compilerOptions {
+            freeCompilerArgs.set(listOf("-Xcontext-parameters"))
+        }
         commonMain.dependencies {
             api(libs.ktor.http)
             implementation(project(":kio-network"))

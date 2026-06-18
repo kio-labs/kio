@@ -3,8 +3,20 @@ package kio.http
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.parseHeaderValue
+import kio.async.readByteArray
+import kio.async.readByteString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.http1.parseRequestHead
+import kio.http.internal.http2.ContinuationSource
+import kio.http.internal.http2.Hpack
+import kio.http.internal.http2.Http2
+import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
+import kio.http.internal.http2.Http2.frameLog
+import kio.http.internal.http2.and
+import kio.http.internal.http2.nextFrame
+import kio.http.internal.http2.readMedium
+import kio.http.internal.http2.readPreface
+import kio.http.internal.http2.readSetting
 import kio.network.AsyncConnection
 import kio.network.AsyncRawConnection
 import kio.network.ServerSocket
@@ -12,7 +24,10 @@ import kio.network.buffered
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.io.IOException
+import kotlinx.io.bytestring.ByteString
+import kotlinx.io.bytestring.decodeToString
 import kotlin.experimental.ExperimentalNativeApi
+import kotlin.text.compareTo
 
 suspend fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
@@ -71,9 +86,8 @@ private suspend fun CoroutineScope.startHttpServer(
 
         launch {
             try {
-                routeScope.handleConnection(conn)
+                routeScope.handleHttp2Connection(conn)
             } catch (e: IOException) {
-                e.printStackTrace()
                 println("exception when try to keep connection alive $e")
             } finally {
                 conn.close()
@@ -82,7 +96,23 @@ private suspend fun CoroutineScope.startHttpServer(
     }
 }
 
-private suspend fun RouteScope.handleConnection(conn: AsyncConnection) {
+private suspend fun RouteScope.handleHttp2Connection(conn: AsyncConnection) {
+    conn.source.readPreface()
+
+    val continuation = ContinuationSource(conn.source)
+    val hpackReader: Hpack.Reader =
+        Hpack.Reader(
+            source = continuation,
+            headerTableSizeSetting = 4096,
+        )
+    context(hpackReader, continuation) {
+        while (true) {
+            conn.source.nextFrame()
+        }
+    }
+}
+
+private suspend fun RouteScope.handleHttp1Connection(conn: AsyncConnection) {
     while (true) {
         val requestHead = conn.source.parseRequestHead()
 
