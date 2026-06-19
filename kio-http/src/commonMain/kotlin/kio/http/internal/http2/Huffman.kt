@@ -18,7 +18,6 @@ package kio.http.internal.http2
 import kio.async.AsyncSource
 import kotlinx.io.IOException
 import kotlinx.io.Sink
-import kotlinx.io.Source
 import kotlinx.io.bytestring.ByteString
 
 /**

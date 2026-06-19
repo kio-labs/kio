@@ -15,43 +15,76 @@
  */
 package kio.http.internal.http2
 
+import io.ktor.http.Headers
+import io.ktor.http.HeadersBuilder
+import io.ktor.http.HttpMethod
+import io.ktor.http.HttpProtocolVersion
+import kio.http.internal.HttpRequestHead
 import kotlinx.io.bytestring.ByteString
+import kotlinx.io.bytestring.decodeToString
 import kotlinx.io.bytestring.encodeToByteString
 
 /** HTTP header: the name is an ASCII string, but the value can be UTF-8. */
 data class Header(
-  /** Name in case-insensitive ASCII encoding. */
-  val name: ByteString,
-  /** Value in UTF-8 encoding. */
-  val value: ByteString,
+    /** Name in case-insensitive ASCII encoding. */
+    val name: ByteString,
+    /** Value in UTF-8 encoding. */
+    val value: ByteString,
 ) {
-  val hpackSize = 32 + name.size + value.size
+    val hpackSize = 32 + name.size + value.size
 
-  // TODO: search for toLowerCase and consider moving logic here.
-  constructor(name: String, value: String) : this(name.encodeToByteString(), value.encodeToByteString())
+    // TODO: search for toLowerCase and consider moving logic here.
+    constructor(name: String, value: String) : this(
+        name.encodeToByteString(),
+        value.encodeToByteString()
+    )
 
-  constructor(name: ByteString, value: String) : this(name, value.encodeToByteString())
+    constructor(name: ByteString, value: String) : this(name, value.encodeToByteString())
 
-  override fun toString(): String = "${name.toByteArray().decodeToString()}: ${value.toByteArray().decodeToString()}"
+    override fun toString(): String =
+        "${name.toByteArray().decodeToString()}: ${value.toByteArray().decodeToString()}"
 
-  companion object {
-    // Special header names defined in HTTP/2 spec.
-    val PSEUDO_PREFIX: ByteString = ":".encodeToByteString()
+    companion object {
+        // Special header names defined in HTTP/2 spec.
+        val PSEUDO_PREFIX: ByteString = ":".encodeToByteString()
 
-    const val RESPONSE_STATUS_UTF8 = ":status"
-    const val TARGET_METHOD_UTF8 = ":method"
-    const val TARGET_PATH_UTF8 = ":path"
-    const val TARGET_SCHEME_UTF8 = ":scheme"
-    const val TARGET_AUTHORITY_UTF8 = ":authority"
+        const val RESPONSE_STATUS_UTF8 = ":status"
+        const val TARGET_METHOD_UTF8 = ":method"
+        const val TARGET_PATH_UTF8 = ":path"
+        const val TARGET_SCHEME_UTF8 = ":scheme"
+        const val TARGET_AUTHORITY_UTF8 = ":authority"
 
-    val RESPONSE_STATUS: ByteString = RESPONSE_STATUS_UTF8.encodeToByteString()
+        val RESPONSE_STATUS: ByteString = RESPONSE_STATUS_UTF8.encodeToByteString()
 
-    val TARGET_METHOD: ByteString = TARGET_METHOD_UTF8.encodeToByteString()
+        val TARGET_METHOD: ByteString = TARGET_METHOD_UTF8.encodeToByteString()
 
-    val TARGET_PATH: ByteString = TARGET_PATH_UTF8.encodeToByteString()
+        val TARGET_PATH: ByteString = TARGET_PATH_UTF8.encodeToByteString()
 
-    val TARGET_SCHEME: ByteString = TARGET_SCHEME_UTF8.encodeToByteString()
+        val TARGET_SCHEME: ByteString = TARGET_SCHEME_UTF8.encodeToByteString()
 
-    val TARGET_AUTHORITY: ByteString = TARGET_AUTHORITY_UTF8.encodeToByteString()
-  }
+        val TARGET_AUTHORITY: ByteString = TARGET_AUTHORITY_UTF8.encodeToByteString()
+    }
+}
+
+internal fun List<Header>.toHttpRequestHead(): HttpRequestHead {
+    var method: HttpMethod? = null
+    var uri: String? = null
+
+    val headersBuilder = HeadersBuilder()
+    for ((name, value) in this) {
+        when (name) {
+            Header.TARGET_METHOD -> method = HttpMethod.parse(value.decodeToString())
+            Header.TARGET_PATH -> uri = value.decodeToString()
+            Header.TARGET_SCHEME -> {}
+            Header.TARGET_AUTHORITY -> {}
+            else -> headersBuilder.set(name.decodeToString(), value.decodeToString())
+        }
+    }
+
+    return HttpRequestHead(
+        method ?: error("no http method"),
+        uri ?: error("no uri"),
+        version = HttpProtocolVersion.HTTP_2_0,
+        headers = headersBuilder.build()
+    )
 }

@@ -3,20 +3,17 @@ package kio.http
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.parseHeaderValue
-import kio.async.readByteArray
-import kio.async.readByteString
+import kio.async.buffered
+import kio.async.readString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.http1.parseRequestHead
 import kio.http.internal.http2.ContinuationSource
+import kio.http.internal.http2.Frame
 import kio.http.internal.http2.Hpack
-import kio.http.internal.http2.Http2
-import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
-import kio.http.internal.http2.Http2.frameLog
-import kio.http.internal.http2.and
+import kio.http.internal.http2.Http2Stream
 import kio.http.internal.http2.nextFrame
-import kio.http.internal.http2.readMedium
 import kio.http.internal.http2.readPreface
-import kio.http.internal.http2.readSetting
+import kio.http.internal.http2.toHttpRequestHead
 import kio.network.AsyncConnection
 import kio.network.AsyncRawConnection
 import kio.network.ServerSocket
@@ -24,10 +21,7 @@ import kio.network.buffered
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.io.IOException
-import kotlinx.io.bytestring.ByteString
-import kotlinx.io.bytestring.decodeToString
 import kotlin.experimental.ExperimentalNativeApi
-import kotlin.text.compareTo
 
 suspend fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
@@ -105,9 +99,29 @@ private suspend fun RouteScope.handleHttp2Connection(conn: AsyncConnection) {
             source = continuation,
             headerTableSizeSetting = 4096,
         )
+    val streams = mutableMapOf<Int, Http2Stream>()
     context(hpackReader, continuation) {
         while (true) {
-            conn.source.nextFrame()
+            when (val frame = conn.source.nextFrame()) {
+                is Frame.Headers -> {
+                    streams[frame.streamId] = Http2Stream(
+                        streamId = frame.streamId,
+                        requestHeader = frame.headerBlock.toHttpRequestHead()
+                    )
+                }
+                is Frame.Data -> {
+                    val dataStream = streams[frame.streamId]
+                    if (dataStream == null ) {
+                        conn.source.skip(frame.length)
+                        return
+                    }
+                    dataStream.receiveData(conn.source, frame.length, frame.inFinished)
+                }
+
+                Frame.AckSettings -> {}
+                is Frame.Setting -> {}
+                is Frame.WindowUpdate -> {}
+            }
         }
     }
 }

@@ -15,7 +15,6 @@
  */
 package kio.http.internal.http2
 
-import io.ktor.http.Headers
 import kio.async.AsyncRawSource
 import kio.async.AsyncSource
 import kio.async.readByteArray
@@ -34,8 +33,31 @@ internal suspend fun AsyncSource.readPreface() {
     }
 }
 
+sealed interface Frame {
+    class Headers(
+        val streamId: Int,
+        val inFinished: Boolean,
+        val headerBlock: List<Header>,
+    ) : Frame
+
+    class Data(
+        val inFinished: Boolean,
+        val streamId: Int,
+        val length: Long,
+    ): Frame
+
+    class Setting(val settings: Settings) : Frame
+
+    data object AckSettings : Frame
+
+    class WindowUpdate(
+        streamId: Int,
+        windowSizeIncrement: Long,
+    ): Frame
+}
+
 context(_: Hpack.Reader, _: ContinuationSource)
-internal suspend fun AsyncSource.nextFrame() {
+internal suspend fun AsyncSource.nextFrame(): Frame {
     // Frame header size.
     require(9)
 
@@ -64,12 +86,12 @@ internal suspend fun AsyncSource.nextFrame() {
         println(frameLog(true, streamId, length, type, flags))
     }
 
-    when (type) {
-        Http2.TYPE_DATA -> TODO("TYPE_DATA")
+    return when (type) {
+        Http2.TYPE_DATA -> readData(length, flags, streamId)
         Http2.TYPE_HEADERS -> readHeaders(length, flags, streamId)
         Http2.TYPE_PRIORITY -> TODO("TYPE_PRIORITY")
         Http2.TYPE_RST_STREAM -> TODO("TYPE_RST_STREAM")
-        Http2.TYPE_SETTINGS -> readSetting(length, flags, streamId)
+        Http2.TYPE_SETTINGS -> readSettings(length, flags, streamId)
         Http2.TYPE_PUSH_PROMISE -> TODO("TYPE_PUSH_PROMISE")
         Http2.TYPE_PING -> TODO("TYPE_PING")
         Http2.TYPE_GOAWAY -> TODO("TYPE_GOAWAY")
@@ -79,17 +101,15 @@ internal suspend fun AsyncSource.nextFrame() {
 }
 
 context(_: Hpack.Reader)
-internal suspend fun AsyncSource.readSetting(
-//    handler: Handler,
+internal suspend fun AsyncSource.readSettings(
     length: Int,
     flags: Int,
     streamId: Int,
-) {
+): Frame {
     if (streamId != 0) throw IOException("TYPE_SETTINGS streamId != 0")
     if (flags and Http2.FLAG_ACK != 0) {
         if (length != 0) throw IOException("FRAME_SIZE_ERROR ack frame should be empty!")
-//        handler.ackSettings()
-        return
+        return Frame.AckSettings
     }
 
     if (length % 6 != 0) throw IOException("TYPE_SETTINGS length % 6 != 0: $length")
@@ -138,15 +158,15 @@ internal suspend fun AsyncSource.readSetting(
         }
         settings[id] = value
     }
-//    handler.settings(false, settings)
+
+    return Frame.Setting(settings)
 }
 
 private suspend fun AsyncSource.readWindowUpdate(
-//    handler: Handler,
     length: Int,
     flags: Int,
     streamId: Int,
-) {
+): Frame.WindowUpdate {
     val increment: Long
     try {
         if (length != 4) throw IOException("TYPE_WINDOW_UPDATE length !=4: $length")
@@ -164,16 +184,15 @@ private suspend fun AsyncSource.readWindowUpdate(
             windowSizeIncrement = increment,
         )
     )
-//    handler.windowUpdate(streamId, increment)
+    return Frame.WindowUpdate(streamId, increment)
 }
 
 context(_: Hpack.Reader, _: ContinuationSource)
 private suspend fun AsyncSource.readHeaders(
-//    handler: Handler,
     length: Int,
     flags: Int,
     streamId: Int,
-) {
+): Frame.Headers {
     if (streamId == 0) throw IOException("PROTOCOL_ERROR: TYPE_HEADERS streamId == 0")
 
     val endStream = (flags and Http2.FLAG_END_STREAM) != 0
@@ -187,7 +206,7 @@ private suspend fun AsyncSource.readHeaders(
     headerBlockLength = lengthWithoutPadding(headerBlockLength, flags, padding)
     val headerBlock = readHeaderBlock(headerBlockLength, padding, flags, streamId)
 
-//    handler.headers(endStream, streamId, -1, headerBlock)
+    return Frame.Headers(streamId, endStream, headerBlock)
 }
 
 context(hpackReader: Hpack.Reader, continuation: ContinuationSource)
@@ -196,7 +215,7 @@ private suspend fun readHeaderBlock(
     padding: Int,
     flags: Int,
     streamId: Int,
-) {
+): List<Header> {
     continuation.left = length
     continuation.padding = padding
     continuation.flags = flags
@@ -205,21 +224,7 @@ private suspend fun readHeaderBlock(
 //    // TODO: Concat multi-value headers with 0x0, except COOKIE, which uses 0x3B, 0x20.
 //    // http://tools.ietf.org/html/draft-ietf-httpbis-http2-17#section-8.1.2.5
     hpackReader.readHeaders()
-    val headers = hpackReader.getAndResetHeaderList()
-}
-
-private fun lengthWithoutPadding(
-    length: Int,
-    flags: Int,
-    padding: Int,
-): Int {
-    var result = length
-    if (flags and Http2.FLAG_PADDED != 0) result-- // Account for reading the padding length.
-    if (padding > result) {
-        throw IOException("PROTOCOL_ERROR padding $padding > remaining length $result")
-    }
-    result -= padding
-    return result
+    return hpackReader.getAndResetHeaderList()
 }
 
 private suspend fun AsyncSource.readPriority(
@@ -246,7 +251,7 @@ internal class ContinuationSource(
     var left: Int = 0
     var padding: Int = 0
 
-    override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long{
+    override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
         while (left == 0) {
             source.skip(padding.toLong())
             padding = 0
@@ -275,4 +280,38 @@ internal class ContinuationSource(
     }
 
     override suspend fun close() = Unit
+}
+
+private suspend fun AsyncSource.readData(
+    length: Int,
+    flags: Int,
+    streamId: Int,
+): Frame.Data {
+    if (streamId == 0) throw IOException("PROTOCOL_ERROR: TYPE_DATA streamId == 0")
+
+    // TODO: checkState open or half-closed (local) or raise STREAM_CLOSED
+    val inFinished = flags and Http2.FLAG_END_STREAM != 0
+    val gzipped = flags and Http2.FLAG_COMPRESSED != 0
+    if (gzipped) {
+        throw IOException("PROTOCOL_ERROR: FLAG_COMPRESSED without SETTINGS_COMPRESS_DATA")
+    }
+
+    val padding = if (flags and Http2.FLAG_PADDED != 0) readByte() and 0xff else 0
+    val dataLength = lengthWithoutPadding(length, flags, padding)
+    skip(padding.toLong())
+    return Frame.Data(inFinished, streamId, dataLength.toLong())
+}
+
+private fun lengthWithoutPadding(
+    length: Int,
+    flags: Int,
+    padding: Int,
+): Int {
+    var result = length
+    if (flags and Http2.FLAG_PADDED != 0) result-- // Account for reading the padding length.
+    if (padding > result) {
+        throw IOException("PROTOCOL_ERROR padding $padding > remaining length $result")
+    }
+    result -= padding
+    return result
 }
