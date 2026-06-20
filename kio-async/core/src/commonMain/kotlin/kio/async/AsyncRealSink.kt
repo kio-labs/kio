@@ -1,16 +1,17 @@
 package kio.async
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
-import kotlinx.io.InternalIoApi
 import kotlinx.io.RawSource
 
-@OptIn(InternalIoApi::class)
-public class AsyncRealSink(
+internal class AsyncRealSink(
     public val sink: AsyncRawSink
 ) : AsyncSink {
     public var closed: Boolean = false
     private val bufferField = Buffer()
+    private val mutex = Mutex()
 
     override val buffer: Buffer
         get() = bufferField
@@ -30,18 +31,6 @@ public class AsyncRealSink(
     }
 
     override suspend fun transferFrom(source: RawSource): Long {
-        checkNotClosed()
-        var totalBytesRead = 0L
-        while (true) {
-            val readCount: Long = source.readAtMostTo(bufferField, SEGMENT_SIZE.toLong())
-            if (readCount == -1L) break
-            totalBytesRead += readCount
-            hintEmit()
-        }
-        return totalBytesRead
-    }
-
-    override suspend fun transferFrom(source: AsyncRawSource): Long {
         checkNotClosed()
         var totalBytesRead = 0L
         while (true) {
@@ -94,20 +83,19 @@ public class AsyncRealSink(
         hintEmit()
     }
 
-    @InternalIoApi
-    override suspend fun hintEmit() {
+    override suspend fun hintEmit() = mutex.withLock {
         checkNotClosed()
         val byteCount = bufferField.completeSegmentByteCount()
         if (byteCount > 0L) sink.write(bufferField, byteCount)
     }
 
-    override suspend fun emit() {
+    override suspend fun emit() = mutex.withLock {
         checkNotClosed()
         val byteCount = bufferField.size
         if (byteCount > 0L) sink.write(bufferField, byteCount)
     }
 
-    override suspend fun flush() {
+    override suspend fun flush() = mutex.withLock {
         checkNotClosed()
         if (bufferField.size > 0L) {
             sink.write(bufferField, bufferField.size)
@@ -115,8 +103,8 @@ public class AsyncRealSink(
         sink.flush()
     }
 
-    override suspend fun close() {
-        if (closed) return
+    override suspend fun close() = mutex.withLock {
+        if (closed) return@withLock
 
         // Emit buffered data to the underlying sink. If this fails, we still need
         // to close the sink; otherwise we risk leaking resources.

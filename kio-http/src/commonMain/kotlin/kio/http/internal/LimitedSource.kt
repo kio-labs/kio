@@ -9,7 +9,7 @@ internal fun AsyncRawSource.limited(limit: Long): LimitedSource = LimitedSource(
 internal class LimitedSource(
     private val upstream: AsyncRawSource,
     private var remaining: Long,
-) : AsyncRawSource, Drainable {
+) : AsyncRawSource {
     val exhausted: Boolean
         get() = remaining == 0L
 
@@ -30,9 +30,7 @@ internal class LimitedSource(
         return read
     }
 
-    override suspend fun close() {}
-
-    override suspend fun drain() {
+    override suspend fun close() {
         val source = this
         if (source.exhausted) return
 

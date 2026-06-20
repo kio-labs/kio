@@ -2,7 +2,6 @@ package kio.http.internal.http1
 
 import kio.async.AsyncRawSource
 import kio.async.AsyncSource
-import kio.http.internal.Drainable
 import kotlinx.io.Buffer
 import kotlinx.io.IOException
 
@@ -10,7 +9,7 @@ internal fun AsyncSource.chunked(): AsyncRawSource = ChunkedSource(this)
 
 internal class ChunkedSource(
     val source: AsyncSource
-) : AsyncRawSource, Drainable {
+) : AsyncRawSource {
     private val buffer = Buffer()
     internal var sourceChunkExhausted = false
         private set
@@ -33,10 +32,7 @@ internal class ChunkedSource(
         return buffer.readAtMostTo(sink, byteCount)
     }
 
-    override suspend fun close() {}
-
-
-    override suspend fun drain() {
+    override suspend fun close() {
         if (!sourceChunkExhausted) {
             while (true) {
                 val count = readChunkToBuffer(source, buffer)

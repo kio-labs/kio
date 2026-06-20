@@ -56,7 +56,7 @@ class ChunkedSourceTest {
         val sink = Buffer()
         source.readAtMostTo(sink, 1)
         assertEquals('h'.code.toByte(), sink.readByte())
-        source.drain()
+        source.close()
         assertEquals(-1, source.readAtMostTo(sink, 1))
     }
 }

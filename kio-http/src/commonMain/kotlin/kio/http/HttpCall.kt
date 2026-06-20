@@ -16,9 +16,8 @@ import kio.async.buffered
 import kio.async.writeString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
-import kio.http.internal.Drainable
-import kio.http.internal.http1.httpResponseSink
 import kio.http.internal.http1.chunked
+import kio.http.internal.http1.http1ResponseSink
 import kio.http.internal.limited
 import kio.network.AsyncConnection
 import kotlinx.coroutines.CancellationException
@@ -50,7 +49,7 @@ fun RouteScope.post(uri: String, block: suspend (CallContext) -> Unit) {
 class CallContext internal constructor(
     requestHead: HttpRequestHead,
     body: AsyncRawSource?,
-    connSink: AsyncSink
+    responseSink: (HttpResponseHead.Builder) -> AsyncSink
 ) {
     val requestHeaders: Headers = requestHead.headers
     var requestBody = body?.buffered()
@@ -58,7 +57,7 @@ class CallContext internal constructor(
 
     internal val responseHead = HttpResponseHead.Builder()
 
-    internal var responseSink: AsyncSink = connSink.httpResponseSink(responseHead).buffered()
+    internal var responseSink: AsyncSink = responseSink(responseHead)
         private set
 
     internal fun wrapResponseSink(block: AsyncSink.() -> AsyncSink) {
@@ -95,53 +94,6 @@ suspend fun CallContext.respondText(
 
 private fun HeadersBuilder.canWriteContentLength(): Boolean {
     return !this[HttpHeaders.TransferEncoding].equals("chunked", ignoreCase = true)
-}
-
-internal suspend fun RouteScope.handleHttpRequest(
-    head: HttpRequestHead,
-    conn: AsyncConnection,
-) {
-    val handler = getCallHandler(RouteScope.RouteKey(head.method, head.uri))
-
-    doHandleHttpRequest(head, conn, handler)
-}
-
-internal suspend fun doHandleHttpRequest(
-    head: HttpRequestHead,
-    conn: AsyncConnection,
-    handler: CallHandler?,
-    isTest: Boolean = false
-) {
-    val contentLength = head.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
-    val encoding = head.headers[HttpHeaders.TransferEncoding]
-
-// TODO: do wrap source in CallInterceptor.
-    val body = when {
-        encoding == "chunked" -> conn.source.chunked()
-        contentLength > 0 -> conn.source.limited(contentLength)
-        else -> null
-    }
-
-    val callContext = CallContext(head, body, conn.sink)
-
-    try {
-        handler?.invoke(callContext)
-    } catch (cancellation: CancellationException) {
-        throw cancellation
-    } catch (t: Throwable) {
-        if (isTest) throw t
-        println("exception happened $t")
-        callContext.respond(HttpStatusCode.InternalServerError, t.toString())
-    } finally {
-        callContext.requestBody?.close()
-    }
-
-    // discard unread request body source.
-    (body as? Drainable)?.drain()
-
-    // write response
-    callContext.responseSink.flush()
-    callContext.responseSink.close()
 }
 
 private fun RouteScope.registerCall(

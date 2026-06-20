@@ -1,18 +1,14 @@
 package kio.async
 
 import kotlinx.io.Buffer
-import kotlinx.io.InternalIoApi
 import kotlinx.io.RawSource
 
 public sealed interface AsyncSink : AsyncRawSink {
-    @InternalIoApi
     public val buffer: Buffer
 
     public suspend fun write(source: ByteArray, startIndex: Int = 0, endIndex: Int = source.size)
 
     public suspend fun transferFrom(source: RawSource): Long
-
-    public suspend fun transferFrom(source: AsyncRawSource): Long
 
     public suspend fun write(source: RawSource, byteCount: Long)
 
@@ -28,6 +24,5 @@ public sealed interface AsyncSink : AsyncRawSink {
 
     public suspend fun emit()
 
-    @InternalIoApi
     public suspend fun hintEmit()
 }

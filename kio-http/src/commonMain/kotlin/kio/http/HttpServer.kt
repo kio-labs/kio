@@ -1,10 +1,8 @@
 package kio.http
 
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
-import io.ktor.http.parseHeaderValue
-import kio.http.internal.HttpRequestHead
-import kio.http.internal.http1.parseRequestHead
+import kio.http.internal.http1.handleHttp1Connection
+import kio.http.internal.http2.handleHttp2Connection
 import kio.network.AsyncConnection
 import kio.network.AsyncRawConnection
 import kio.network.ServerSocket
@@ -68,44 +66,16 @@ private suspend fun CoroutineScope.startHttpServer(
     while (true) {
         val raw = serverSocket.accept()
         val conn = raw.connectionWrapper()
-
         launch {
             try {
-                routeScope.handleConnection(conn)
+// TODO: check current protocol?
+//                routeScope.handleHttp1Connection(conn)
+                routeScope.handleHttp2Connection(conn)
             } catch (e: IOException) {
-                e.printStackTrace()
                 println("exception when try to keep connection alive $e")
             } finally {
                 conn.close()
             }
         }
     }
-}
-
-private suspend fun RouteScope.handleConnection(conn: AsyncConnection) {
-    while (true) {
-        val requestHead = conn.source.parseRequestHead()
-
-        when {
-            requestHead.isWebSocketUpgrade() -> {
-                handleWebsocketRequest(requestHead, conn)
-                // websocket closed, break the loop to close this connection.
-                break
-            }
-
-            // Fall back to normal http request handle
-            else -> handleHttpRequest(requestHead, conn)
-        }
-    }
-}
-
-private fun HttpRequestHead.isWebSocketUpgrade(): Boolean {
-    val connection = parseHeaderValue(headers[HttpHeaders.Connection])
-    val upgrade = headers[HttpHeaders.Upgrade]
-
-    return method == HttpMethod.Get &&
-            connection.map { it.value.lowercase() }.contains("upgrade") &&
-            upgrade.equals("websocket", ignoreCase = true) &&
-            headers[HttpHeaders.SecWebSocketKey] != null &&
-            headers[HttpHeaders.SecWebSocketVersion] == "13"
 }
