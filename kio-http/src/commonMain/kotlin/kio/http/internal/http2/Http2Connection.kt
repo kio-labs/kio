@@ -70,7 +70,11 @@ internal class Http2Connection(
     fun openStream(streamId: Int, isSourceFinished: Boolean, headers: HttpRequestHead) {
         val stream = Http2Stream(streamId, headers, isSourceFinished, writerMutex, socketConn.sink)
         streams[streamId] = stream
-        val job = connectionHandleScope.launch { handleStreamConnection(stream) }
+        val job = connectionHandleScope.launch {
+            handleStreamConnection(stream)
+        }.invokeOnCompletion {
+// TODO: remove stream from map
+        }
     }
 
     fun getStream(streamId: Int): Http2Stream? {
