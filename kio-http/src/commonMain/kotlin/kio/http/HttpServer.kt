@@ -1,6 +1,7 @@
 package kio.http
 
 import io.ktor.http.HttpMethod
+import kio.http.internal.http1.handleHttp1Connection
 import kio.http.internal.http2.handleHttp2Connection
 import kio.network.AsyncConnection
 import kio.network.AsyncRawConnection

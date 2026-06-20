@@ -16,7 +16,6 @@ import kio.async.buffered
 import kio.async.writeString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
-import kio.http.internal.Drainable
 import kio.http.internal.httpResponseSink
 import kio.http.internal.http1.chunked
 import kio.http.internal.limited
@@ -135,9 +134,6 @@ internal suspend fun doHandleHttpRequest(
     } finally {
         callContext.requestBody?.close()
     }
-
-    // discard unread request body source.
-    (body as? Drainable)?.drain()
 
     // write response
     callContext.responseSink.flush()
