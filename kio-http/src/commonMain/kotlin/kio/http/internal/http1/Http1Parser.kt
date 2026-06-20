@@ -38,34 +38,11 @@ internal suspend fun AsyncSource.parseResponseHead(): HttpResponseHead {
     val headers = readHeaders()
 
     return HttpResponseHead(
-        version = version,
         status = statusCode,
         statusText = statusText,
         headers = headers,
     )
 }
-
-internal suspend fun AsyncSink.writeResponseHead(head: HttpResponseHead) {
-    writeString(head.version.toString())
-    writeByte(' '.code.toByte())
-    writeString(head.status.toString())
-    writeByte(' '.code.toByte())
-    writeString(head.statusText)
-    writeString("\r\n")
-
-    head.headers.entries().forEach { (key, values) ->
-        for (value in values) {
-            writeString(key)
-            writeByte(':'.code.toByte())
-            writeByte(' '.code.toByte())
-            writeString(value)
-            writeString("\r\n")
-        }
-    }
-
-    writeString("\r\n")
-}
-
 
 internal suspend fun AsyncSource.readHeaders(): Headers = Headers.build {
     while (true) {

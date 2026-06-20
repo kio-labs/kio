@@ -14,15 +14,14 @@ internal class Http2Stream(
     val streamId: Int,
     val requestHead: HttpRequestHead,
     sourceFinished: Boolean
-): AsyncRawConnection {
-    private val readableSignal = Channel<Unit>(Channel.CONFLATED)
+) : AsyncRawConnection {
 
-    private val framingSource = FramingSource(readableSignal, sourceFinished)
+    private val framingSource = FramingSource(sourceFinished)
+    private val frameSink = FramingSink()
 
     override val source: AsyncRawSource = framingSource
 
-    override val sink: AsyncRawSink
-        get() = TODO("Not yet implemented")
+    override val sink: AsyncRawSink = frameSink
 
     suspend fun receiveData(
         source: AsyncSource,
@@ -37,14 +36,26 @@ internal class Http2Stream(
     }
 }
 
+private class FramingSink() : AsyncRawSink {
+    override suspend fun write(source: Buffer, byteCount: Long) {
+    }
+
+    override suspend fun flush() {
+    }
+
+    override suspend fun close() {
+    }
+}
+
 private class FramingSource(
-    val readableSignal: Channel<Unit>,
     /**
      * True if either side has cleanly shut down this stream. We will receive no more bytes beyond
      * those already in the buffer.
      */
     var finished: Boolean = false
 ) : AsyncRawSource {
+    private val readableSignal = Channel<Unit>(Channel.CONFLATED)
+
     /** Buffer to receive data from the network into. */
     val receiveBuffer = Buffer()
 
@@ -65,7 +76,8 @@ private class FramingSource(
             if (closed) {
                 throw IOException("stream closed")
             } else if (readBuffer.size > 0L) {
-                readBytesDelivered = readBuffer.readAtMostTo(sink, minOf(byteCount, readBuffer.size))
+                readBytesDelivered =
+                    readBuffer.readAtMostTo(sink, minOf(byteCount, readBuffer.size))
             } else if (!finished) {
                 readableSignal.receive()
                 tryAgain = true

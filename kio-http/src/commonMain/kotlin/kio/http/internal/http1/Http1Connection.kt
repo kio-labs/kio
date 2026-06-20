@@ -4,7 +4,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.parseHeaderValue
 import kio.http.RouteScope
-import kio.http.handleHttpRequest
+import kio.http.handleHttp1Request
 import kio.http.handleWebsocketRequest
 import kio.http.internal.HttpRequestHead
 import kio.network.AsyncConnection
@@ -22,7 +22,7 @@ internal suspend fun RouteScope.handleHttp1Connection(conn: AsyncConnection) {
             }
 
             // Fall back to normal http request handle
-            else -> handleHttpRequest(requestHead, conn)
+            else -> handleHttp1Request(requestHead, conn)
         }
     }
 }

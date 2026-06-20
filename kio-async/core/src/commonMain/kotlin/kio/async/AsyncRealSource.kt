@@ -5,14 +5,12 @@ import kotlinx.io.EOFException
 import kotlinx.io.InternalIoApi
 import kotlinx.io.RawSink
 
-@InternalIoApi
-public class AsyncRealSource(
+internal class AsyncRealSource(
     public val source: AsyncRawSource
 ) : AsyncSource {
     public var closed: Boolean = false
     private val bufferField = Buffer()
 
-    @InternalIoApi
     override val buffer: Buffer
         get() = bufferField
 

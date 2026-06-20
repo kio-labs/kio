@@ -7,7 +7,7 @@ import io.ktor.http.websocket.websocketServerAccept
 import kio.async.buffered
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
-import kio.http.internal.httpResponseSink
+import kio.http.internal.http1.http1ResponseSink
 import kio.network.AsyncConnection
 import kio.websocket.CloseCode
 import kio.websocket.ProtocolException
@@ -49,7 +49,7 @@ internal suspend fun RouteScope.handleWebsocketRequest(
     conn: AsyncConnection
 ) {
     val responseHead = HttpResponseHead.Builder()
-    val sink = conn.sink.httpResponseSink(responseHead).buffered()
+    val sink = conn.sink.http1ResponseSink(responseHead).buffered()
 
     val handler = getWebsocketHandler(head.uri)
     if (handler == null) {
@@ -68,7 +68,6 @@ internal suspend fun RouteScope.handleWebsocketRequest(
 
     // Do handshake
     responseHead.apply {
-        version = HttpProtocolVersion.HTTP_1_1
         statusCode = HttpStatusCode.SwitchingProtocols
         headers[HttpHeaders.Upgrade] = "websocket"
         headers[HttpHeaders.Connection] = "Upgrade"

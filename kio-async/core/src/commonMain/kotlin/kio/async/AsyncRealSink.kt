@@ -5,8 +5,7 @@ import kotlinx.io.EOFException
 import kotlinx.io.InternalIoApi
 import kotlinx.io.RawSource
 
-@OptIn(InternalIoApi::class)
-public class AsyncRealSink(
+internal class AsyncRealSink(
     public val sink: AsyncRawSink
 ) : AsyncSink {
     public var closed: Boolean = false
@@ -30,18 +29,6 @@ public class AsyncRealSink(
     }
 
     override suspend fun transferFrom(source: RawSource): Long {
-        checkNotClosed()
-        var totalBytesRead = 0L
-        while (true) {
-            val readCount: Long = source.readAtMostTo(bufferField, SEGMENT_SIZE.toLong())
-            if (readCount == -1L) break
-            totalBytesRead += readCount
-            hintEmit()
-        }
-        return totalBytesRead
-    }
-
-    override suspend fun transferFrom(source: AsyncRawSource): Long {
         checkNotClosed()
         var totalBytesRead = 0L
         while (true) {
@@ -94,7 +81,6 @@ public class AsyncRealSink(
         hintEmit()
     }
 
-    @InternalIoApi
     override suspend fun hintEmit() {
         checkNotClosed()
         val byteCount = bufferField.completeSegmentByteCount()

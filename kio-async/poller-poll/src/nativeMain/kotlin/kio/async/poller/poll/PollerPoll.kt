@@ -34,7 +34,6 @@ private class NativePoller : Poller {
             Poller.EventType.WRITE -> PollFdRequest(fd, POLLWRNORM)
         }
 
-        println("registerFd $fd, $event")
         if (pollFdRequestMap.values.contains(fdRequest)) throw IllegalStateException("$fd already sleep.")
         pollFdRequestMap[fd to event] = fdRequest
     }
@@ -47,7 +46,6 @@ private class NativePoller : Poller {
         timeoutMillis: Long,
         block: Poller.PollScope.() -> Unit
     ) {
-        println("poll timeoutMillis $timeoutMillis")
         nativePoll(pollFdRequestMap.values.toList(), timeoutMillis)
         block(scope)
     }

@@ -15,13 +15,7 @@
  */
 package kio.http.internal.http2
 
-import io.ktor.http.Headers
-import io.ktor.http.HeadersBuilder
-import io.ktor.http.HttpMethod
-import io.ktor.http.HttpProtocolVersion
-import kio.http.internal.HttpRequestHead
 import kotlinx.io.bytestring.ByteString
-import kotlinx.io.bytestring.decodeToString
 import kotlinx.io.bytestring.encodeToByteString
 
 /** HTTP header: the name is an ASCII string, but the value can be UTF-8. */
@@ -64,27 +58,4 @@ data class Header(
 
         val TARGET_AUTHORITY: ByteString = TARGET_AUTHORITY_UTF8.encodeToByteString()
     }
-}
-
-internal fun List<Header>.toHttpRequestHead(): HttpRequestHead {
-    var method: HttpMethod? = null
-    var uri: String? = null
-
-    val headersBuilder = HeadersBuilder()
-    for ((name, value) in this) {
-        when (name) {
-            Header.TARGET_METHOD -> method = HttpMethod.parse(value.decodeToString())
-            Header.TARGET_PATH -> uri = value.decodeToString()
-            Header.TARGET_SCHEME -> {}
-            Header.TARGET_AUTHORITY -> {}
-            else -> headersBuilder.set(name.decodeToString(), value.decodeToString())
-        }
-    }
-
-    return HttpRequestHead(
-        method ?: error("no http method"),
-        uri ?: error("no uri"),
-        version = HttpProtocolVersion.HTTP_2_0,
-        headers = headersBuilder.build()
-    )
 }

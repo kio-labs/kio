@@ -99,7 +99,7 @@ internal suspend fun request(
     val conn = MockConnection(requestBody)
     val bufferedConn = conn.buffered()
 
-    doHandleHttpRequest(
+    doHandleHttp1Request(
         head = requestHead,
         conn = bufferedConn,
         handler = handler?.let { foldCallInterceptor(interceptors, it) },
