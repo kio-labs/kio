@@ -12,11 +12,12 @@ import kotlinx.io.IOException
 
 internal class Http2Stream(
     val streamId: Int,
-    val requestHeader: HttpRequestHead
+    val requestHead: HttpRequestHead,
+    sourceFinished: Boolean
 ): AsyncRawConnection {
     private val readableSignal = Channel<Unit>(Channel.CONFLATED)
 
-    private val framingSource = FramingSource(readableSignal)
+    private val framingSource = FramingSource(readableSignal, sourceFinished)
 
     override val source: AsyncRawSource = framingSource
 
@@ -37,7 +38,12 @@ internal class Http2Stream(
 }
 
 private class FramingSource(
-    val readableSignal: Channel<Unit>
+    val readableSignal: Channel<Unit>,
+    /**
+     * True if either side has cleanly shut down this stream. We will receive no more bytes beyond
+     * those already in the buffer.
+     */
+    var finished: Boolean = false
 ) : AsyncRawSource {
     /** Buffer to receive data from the network into. */
     val receiveBuffer = Buffer()
@@ -47,12 +53,6 @@ private class FramingSource(
 
     /** True if the caller has closed this stream. */
     var closed: Boolean = false
-
-    /**
-     * True if either side has cleanly shut down this stream. We will receive no more bytes beyond
-     * those already in the buffer.
-     */
-    var finished: Boolean = false
 
     override suspend fun readAtMostTo(
         sink: Buffer,

@@ -1,19 +1,7 @@
 package kio.http
 
-import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
-import io.ktor.http.parseHeaderValue
-import kio.async.buffered
-import kio.async.readString
-import kio.http.internal.HttpRequestHead
-import kio.http.internal.http1.parseRequestHead
-import kio.http.internal.http2.ContinuationSource
-import kio.http.internal.http2.Frame
-import kio.http.internal.http2.Hpack
-import kio.http.internal.http2.Http2Stream
-import kio.http.internal.http2.nextFrame
-import kio.http.internal.http2.readPreface
-import kio.http.internal.http2.toHttpRequestHead
+import kio.http.internal.http2.handleHttp2Connection
 import kio.network.AsyncConnection
 import kio.network.AsyncRawConnection
 import kio.network.ServerSocket
@@ -88,68 +76,4 @@ private suspend fun CoroutineScope.startHttpServer(
             }
         }
     }
-}
-
-private suspend fun RouteScope.handleHttp2Connection(conn: AsyncConnection) {
-    conn.source.readPreface()
-
-    val continuation = ContinuationSource(conn.source)
-    val hpackReader: Hpack.Reader =
-        Hpack.Reader(
-            source = continuation,
-            headerTableSizeSetting = 4096,
-        )
-    val streams = mutableMapOf<Int, Http2Stream>()
-    context(hpackReader, continuation) {
-        while (true) {
-            when (val frame = conn.source.nextFrame()) {
-                is Frame.Headers -> {
-                    streams[frame.streamId] = Http2Stream(
-                        streamId = frame.streamId,
-                        requestHeader = frame.headerBlock.toHttpRequestHead()
-                    )
-                }
-                is Frame.Data -> {
-                    val dataStream = streams[frame.streamId]
-                    if (dataStream == null ) {
-                        conn.source.skip(frame.length)
-                        return
-                    }
-                    dataStream.receiveData(conn.source, frame.length, frame.inFinished)
-                }
-
-                Frame.AckSettings -> {}
-                is Frame.Setting -> {}
-                is Frame.WindowUpdate -> {}
-            }
-        }
-    }
-}
-
-private suspend fun RouteScope.handleHttp1Connection(conn: AsyncConnection) {
-    while (true) {
-        val requestHead = conn.source.parseRequestHead()
-
-        when {
-            requestHead.isWebSocketUpgrade() -> {
-                handleWebsocketRequest(requestHead, conn)
-                // websocket closed, break the loop to close this connection.
-                break
-            }
-
-            // Fall back to normal http request handle
-            else -> handleHttpRequest(requestHead, conn)
-        }
-    }
-}
-
-private fun HttpRequestHead.isWebSocketUpgrade(): Boolean {
-    val connection = parseHeaderValue(headers[HttpHeaders.Connection])
-    val upgrade = headers[HttpHeaders.Upgrade]
-
-    return method == HttpMethod.Get &&
-            connection.map { it.value.lowercase() }.contains("upgrade") &&
-            upgrade.equals("websocket", ignoreCase = true) &&
-            headers[HttpHeaders.SecWebSocketKey] != null &&
-            headers[HttpHeaders.SecWebSocketVersion] == "13"
 }

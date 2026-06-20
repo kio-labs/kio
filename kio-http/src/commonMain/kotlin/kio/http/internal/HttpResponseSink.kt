@@ -1,8 +1,8 @@
-package kio.http.internal.http1
+package kio.http.internal
 
 import kio.async.AsyncRawSink
 import kio.async.AsyncSink
-import kio.http.internal.HttpResponseHead
+import kio.http.internal.http1.writeResponseHead
 import kotlinx.io.Buffer
 
 internal fun AsyncSink.httpResponseSink(head: HttpResponseHead.Builder): AsyncRawSink =

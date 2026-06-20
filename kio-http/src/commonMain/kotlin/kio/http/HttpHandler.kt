@@ -17,7 +17,7 @@ import kio.async.writeString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
 import kio.http.internal.Drainable
-import kio.http.internal.http1.httpResponseSink
+import kio.http.internal.httpResponseSink
 import kio.http.internal.http1.chunked
 import kio.http.internal.limited
 import kio.network.AsyncConnection
@@ -119,7 +119,7 @@ internal suspend fun doHandleHttpRequest(
     val body = when {
         encoding == "chunked" -> conn.source.chunked()
         contentLength > 0 -> conn.source.limited(contentLength)
-        else -> null
+        else -> conn.source
     }
 
     val callContext = CallContext(head, body, conn.sink)
