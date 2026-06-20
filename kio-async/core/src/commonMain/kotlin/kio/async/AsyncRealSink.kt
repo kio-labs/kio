@@ -1,8 +1,9 @@
 package kio.async
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
-import kotlinx.io.InternalIoApi
 import kotlinx.io.RawSource
 
 internal class AsyncRealSink(
@@ -10,6 +11,7 @@ internal class AsyncRealSink(
 ) : AsyncSink {
     public var closed: Boolean = false
     private val bufferField = Buffer()
+    private val mutex = Mutex()
 
     override val buffer: Buffer
         get() = bufferField
@@ -81,19 +83,19 @@ internal class AsyncRealSink(
         hintEmit()
     }
 
-    override suspend fun hintEmit() {
+    override suspend fun hintEmit() = mutex.withLock {
         checkNotClosed()
         val byteCount = bufferField.completeSegmentByteCount()
         if (byteCount > 0L) sink.write(bufferField, byteCount)
     }
 
-    override suspend fun emit() {
+    override suspend fun emit() = mutex.withLock {
         checkNotClosed()
         val byteCount = bufferField.size
         if (byteCount > 0L) sink.write(bufferField, byteCount)
     }
 
-    override suspend fun flush() {
+    override suspend fun flush() = mutex.withLock {
         checkNotClosed()
         if (bufferField.size > 0L) {
             sink.write(bufferField, bufferField.size)
@@ -101,8 +103,8 @@ internal class AsyncRealSink(
         sink.flush()
     }
 
-    override suspend fun close() {
-        if (closed) return
+    override suspend fun close() = mutex.withLock {
+        if (closed) return@withLock
 
         // Emit buffered data to the underlying sink. If this fails, we still need
         // to close the sink; otherwise we risk leaking resources.
