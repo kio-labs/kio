@@ -2,10 +2,13 @@ package kio.http.internal.http2
 
 import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
+import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.http.internal.HttpRequestHead
+import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.network.AsyncRawConnection
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
@@ -13,11 +16,13 @@ import kotlinx.io.IOException
 internal class Http2Stream(
     val streamId: Int,
     val requestHead: HttpRequestHead,
-    sourceFinished: Boolean
+    sourceFinished: Boolean,
+    writerMutex: Mutex,
+    socketSink: AsyncSink
 ) : AsyncRawConnection {
 
     private val framingSource = FramingSource(sourceFinished)
-    private val frameSink = FramingSink()
+    private val frameSink = FramingSink(streamId, socketSink, writerMutex)
 
     override val source: AsyncRawSource = framingSource
 
@@ -36,14 +41,67 @@ internal class Http2Stream(
     }
 }
 
-private class FramingSink() : AsyncRawSink {
+private class FramingSink(
+    val streamId: Int,
+    val socketSink: AsyncSink,
+    val writerMutex: Mutex,
+) : AsyncRawSink {
+    /**
+     * Buffer of outgoing data. This batches writes of small writes into this sink as larges frames
+     * written to the outgoing connection. Batching saves the (small) framing overhead.
+     */
+    private val sendBuffer = Buffer()
+
     override suspend fun write(source: Buffer, byteCount: Long) {
+        sendBuffer.write(source, byteCount)
+
+        while (sendBuffer.size >= EMIT_BUFFER_SIZE) {
+            emitFrame(false)
+        }
+    }
+
+    /**
+     * Emit a single data frame to the connection. The frame's size be limited by this stream's
+     * write window. This method will block until the write window is nonempty.
+     */
+    private suspend fun emitFrame(outFinishedOnLastFrame: Boolean) {
+        with(writerMutex) {
+            // TODO: await io if no more WINDOW_SIZE
+            val toWrite = minOf(sendBuffer.size, INITIAL_MAX_FRAME_SIZE.toLong())
+            val outFinished = outFinishedOnLastFrame && toWrite == sendBuffer.size
+            socketSink.writeData(streamId, outFinished, sendBuffer, toWrite)
+        }
     }
 
     override suspend fun flush() {
+        while (sendBuffer.size > 0L) {
+            emitFrame(false)
+        }
+        socketSink.flush()
     }
 
     override suspend fun close() {
+        val hasData = sendBuffer.size > 0
+        when {
+            hasData -> {
+                while (sendBuffer.size > 0L) {
+                    emitFrame(true)
+                }
+            }
+
+            else -> {
+                with (writerMutex) {
+                    socketSink.writeData(streamId, true, null, 0L)
+                }
+            }
+        }
+        socketSink.flush()
+
+        // TODO: close stream??
+    }
+
+    companion object {
+        const val EMIT_BUFFER_SIZE = 16384L
     }
 }
 

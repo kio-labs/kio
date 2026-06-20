@@ -66,9 +66,10 @@ private suspend fun CoroutineScope.startHttpServer(
     while (true) {
         val raw = serverSocket.accept()
         val conn = raw.connectionWrapper()
-
         launch {
             try {
+// TODO: check current protocol?
+//                routeScope.handleHttp1Connection(conn)
                 routeScope.handleHttp2Connection(conn)
             } catch (e: IOException) {
                 println("exception when try to keep connection alive $e")

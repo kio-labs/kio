@@ -29,7 +29,7 @@ internal suspend fun RouteScope.handleHttp2Connection(conn: AsyncConnection) = c
 
     val http2Connection = Http2Connection(
         socketConn = conn,
-        scope = this,
+        scope = this@coroutineScope,
         handleStreamConnection = { stream ->
             val requestHead = stream.requestHead
             handleHttp2Request(stream.streamId, requestHead, stream.buffered())
@@ -42,17 +42,12 @@ internal class Http2Connection(
     val scope: CoroutineScope,
     val handleStreamConnection: suspend Http2Connection.(Http2Stream) -> Unit
 ) {
-    val hpackBuffer = Buffer()
-    val hpackWriter: Hpack.Writer = Hpack.Writer(out = hpackBuffer)
-
     /**
      * Serializes writes to the connection sink.
      *
-     * Each HTTP/2 frame must be written atomically:
-     * frame header and payload must not be interleaved with frames
-     * from other streams.
+     * Each HTTP/2 frame must be written atomically.
      */
-    val frameSinkMutex = Mutex()
+    val writerMutex = Mutex()
 
     private val streams = mutableMapOf<Int, Http2Stream>()
 
@@ -64,13 +59,16 @@ internal class Http2Connection(
      */
     private val controlFrameWriterScope = scope + Job()
 
+    val hpackBuffer = Buffer()
+    val hpackWriter: Hpack.Writer = Hpack.Writer(out = hpackBuffer)
+
     init {
         scope.launch { frameReadLoop() }
             .invokeOnCompletion { connectionHandleScope.cancel() }
     }
 
-    fun openStream(streamId: Int, inFinished: Boolean, headers: HttpRequestHead) {
-        val stream = Http2Stream(streamId, headers, inFinished)
+    fun openStream(streamId: Int, isSourceFinished: Boolean, headers: HttpRequestHead) {
+        val stream = Http2Stream(streamId, headers, isSourceFinished, writerMutex, socketConn.sink)
         streams[streamId] = stream
         val job = connectionHandleScope.launch { handleStreamConnection(stream) }
     }
@@ -83,7 +81,7 @@ internal class Http2Connection(
         controlFrameWriterScope.launch {
             // TODO: apply setting.
 
-            frameSinkMutex.withLock {
+            writerMutex.withLock {
                 socketConn.sink.frameHeader(
                     streamId = 0,
                     length = 0,

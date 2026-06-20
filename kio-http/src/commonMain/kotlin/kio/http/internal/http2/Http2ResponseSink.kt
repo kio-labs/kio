@@ -12,7 +12,7 @@ internal class Http2ResponseSink(
     private val streamId: Int,
     private val head: HttpResponseHead.Builder,
     private val socketConnSink: AsyncSink,
-    private val frameSinkMutex: Mutex,
+    private val writerMutex: Mutex,
     private val streamingSink: AsyncSink,
     private val hpackBuffer: Buffer,
     private val hpackWriter: Hpack.Writer,
@@ -22,10 +22,10 @@ internal class Http2ResponseSink(
     private suspend fun writeHeadIfNeeded() {
         if (!headCommitted) {
             headCommitted = true
-            frameSinkMutex.withLock {
-                val headers = head.build()
+            val headers = head.build()
+            with(writerMutex) {
                 socketConnSink.writeHeaders(
-                    outFinished = true,
+                    outFinished = false,
                     streamId,
                     headers.toHeaders(),
                     hpackBuffer,

@@ -1,15 +1,20 @@
 package kio.http.internal.http2
 
 import kio.async.AsyncSink
+import kio.http.internal.http2.Http2.FLAG_END_STREAM
 import kio.http.internal.http2.Http2.FLAG_NONE
 import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
+import kio.http.internal.http2.Http2.TYPE_DATA
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Http2.frameLog
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.io.Buffer
 
 // TODO: move this field to Http2Connection
 private var maxFrameSize: Int = INITIAL_MAX_FRAME_SIZE
 
+context(writerMutex: Mutex)
 internal suspend fun AsyncSink.writeHeaders(
     outFinished: Boolean,
     streamId: Int,
@@ -23,17 +28,20 @@ internal suspend fun AsyncSink.writeHeaders(
     val length = minOf(maxFrameSize.toLong(), byteCount)
     var flags = if (byteCount == length) Http2.FLAG_END_HEADERS else 0
     if (outFinished) flags = flags or Http2.FLAG_END_STREAM
-    frameHeader(
-        streamId = streamId,
-        length = length.toInt(),
-        type = Http2.TYPE_HEADERS,
-        flags = flags,
-    )
-    write(hpackBuffer, length)
+    writerMutex.withLock {
+        frameHeader(
+            streamId = streamId,
+            length = length.toInt(),
+            type = Http2.TYPE_HEADERS,
+            flags = flags,
+        )
+        write(hpackBuffer, length)
+    }
 
     if (byteCount > length) writeContinuationFrames(streamId, byteCount - length, hpackBuffer)
 }
 
+context(writerMutex: Mutex)
 private suspend fun AsyncSink.writeContinuationFrames(
     streamId: Int,
     byteCount: Long,
@@ -43,13 +51,16 @@ private suspend fun AsyncSink.writeContinuationFrames(
     while (byteCount > 0L) {
         val length = minOf(maxFrameSize.toLong(), byteCount)
         byteCount -= length
-        frameHeader(
-            streamId = streamId,
-            length = length.toInt(),
-            type = Http2.TYPE_CONTINUATION,
-            flags = if (byteCount == 0L) Http2.FLAG_END_HEADERS else 0,
-        )
-        write(hpackBuffer, length)
+
+        writerMutex.withLock {
+            frameHeader(
+                streamId = streamId,
+                length = length.toInt(),
+                type = Http2.TYPE_CONTINUATION,
+                flags = if (byteCount == 0L) Http2.FLAG_END_HEADERS else 0,
+            )
+            write(hpackBuffer, length)
+        }
     }
 }
 
@@ -85,6 +96,60 @@ internal suspend fun AsyncSink.frameHeader(
     writeByte((type and 0xff).toByte())
     writeByte((flags and 0xff).toByte())
     writeInt(streamId and 0x7fffffff)
+}
+
+context(_: Mutex)
+internal suspend fun AsyncSink.writeData(
+    streamId: Int,
+    outFinished: Boolean,
+    buffer: Buffer?,
+    byteCount: Long,
+) {
+    if (byteCount == 0L) {
+        data(outFinished, streamId, buffer, 0)
+        return
+    }
+
+    var byteCount = byteCount
+    while (byteCount > 0L) {
+        // TODO: await io if no more WINDOW_SIZE
+        val toWrite: Int = minOf(INITIAL_MAX_FRAME_SIZE, byteCount.toInt())
+
+        byteCount -= toWrite.toLong()
+        data(outFinished && byteCount == 0L, streamId, buffer, toWrite)
+    }
+}
+
+
+context(writeMutex: Mutex)
+private suspend fun AsyncSink.data(
+    outFinished: Boolean,
+    streamId: Int,
+    source: Buffer?,
+    byteCount: Int,
+) {
+    writeMutex.withLock {
+        var flags = FLAG_NONE
+        if (outFinished) flags = flags or FLAG_END_STREAM
+        dataFrame(streamId, flags, source, byteCount)
+    }
+}
+
+private suspend fun AsyncSink.dataFrame(
+    streamId: Int,
+    flags: Int,
+    buffer: Buffer?,
+    byteCount: Int,
+) {
+    frameHeader(
+        streamId = streamId,
+        length = byteCount,
+        type = TYPE_DATA,
+        flags = flags,
+    )
+    if (byteCount > 0) {
+        write(buffer!!, byteCount.toLong())
+    }
 }
 
 private suspend fun AsyncSink.writeMedium(medium: Int) {
