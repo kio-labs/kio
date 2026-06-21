@@ -52,7 +52,11 @@ private class FramingSink(
      */
     private val sendBuffer = Buffer()
 
+    private var closed: Boolean = false
+
     override suspend fun write(source: Buffer, byteCount: Long) {
+        if (closed) throw IOException("stream closed")
+
         sendBuffer.write(source, byteCount)
 
         while (sendBuffer.size >= EMIT_BUFFER_SIZE) {
@@ -97,7 +101,7 @@ private class FramingSink(
         }
         socketSink.flush()
 
-        // TODO: close stream??
+        closed = true
     }
 
     companion object {
@@ -154,7 +158,7 @@ private class FramingSource(
     }
 
     override suspend fun close() {
-// TODO: skip unread request body?
+        readBuffer.clear()
         closed = true
     }
 

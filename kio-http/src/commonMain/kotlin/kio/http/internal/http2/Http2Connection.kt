@@ -69,7 +69,7 @@ internal class Http2Connection(
         scope.launch {
             handleStreamConnection(stream)
         }.invokeOnCompletion {
-            streams.remove(streamId) ?: error("try to remove stream but Stream[$streamId] not exist.")
+            val stream = streams.remove(streamId) ?: error("try to remove stream but Stream[$streamId] not exist.")
             println("Stream[$streamId] closed. exception=$it")
         }
     }
