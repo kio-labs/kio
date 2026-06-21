@@ -20,8 +20,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.bytestring.decodeToString
 
 internal suspend fun RouteScope.handleHttp2Connection(conn: AsyncConnection) {
+    val writerMutex = Mutex()
+
     conn.source.readPreface()
-    conn.sink.writeSetting(Settings())
+    with(writerMutex) { conn.sink.writeSetting(Settings()) }
     conn.sink.flush()
 
     // Uncaught exceptions from stream coroutines are reported here.
@@ -31,13 +33,14 @@ internal suspend fun RouteScope.handleHttp2Connection(conn: AsyncConnection) {
         println("streamExceptionHandler $t")
     }
     withContext(streamExceptionHandler) {
-        runHttp2Connection(conn)
+        runHttp2Connection(conn, writerMutex)
     }
 }
 
-private suspend fun RouteScope.runHttp2Connection(conn: AsyncConnection) = supervisorScope {
+private suspend fun RouteScope.runHttp2Connection(conn: AsyncConnection, writerMutex: Mutex) = supervisorScope {
     val http2Connection = Http2Connection(
         socketConn = conn,
+        writerMutex = writerMutex,
         scope = this,
         handleStreamConnection = { stream ->
             // handle http2 stream in a launched coroutine.
@@ -50,16 +53,15 @@ private suspend fun RouteScope.runHttp2Connection(conn: AsyncConnection) = super
 
 internal class Http2Connection(
     val socketConn: AsyncConnection,
-    val scope: CoroutineScope,
-    val handleStreamConnection: suspend Http2Connection.(Http2Stream) -> Unit
-) {
     /**
      * Serializes writes to the connection sink.
      *
      * Each HTTP/2 frame must be written atomically.
      */
-    val writerMutex = Mutex()
-
+    val writerMutex: Mutex,
+    val scope: CoroutineScope,
+    val handleStreamConnection: suspend Http2Connection.(Http2Stream) -> Unit
+) {
     private val streams = mutableMapOf<Int, Http2Stream>()
 
     fun openStream(streamId: Int, isSourceFinished: Boolean, headers: HttpRequestHead) {
@@ -69,7 +71,8 @@ internal class Http2Connection(
         scope.launch {
             handleStreamConnection(stream)
         }.invokeOnCompletion {
-            val stream = streams.remove(streamId) ?: error("try to remove stream but Stream[$streamId] not exist.")
+            val stream = streams.remove(streamId)
+                ?: error("try to remove stream but Stream[$streamId] not exist.")
             println("Stream[$streamId] closed. exception=$it")
         }
     }
@@ -95,7 +98,7 @@ internal class Http2Connection(
     }
 }
 
-private suspend fun Http2Connection.frameReadLoop() {
+internal suspend fun Http2Connection.frameReadLoop() {
     val http2Connection = this
     val source = http2Connection.socketConn.source
     val continuation = ContinuationSource(source)
@@ -152,8 +155,8 @@ private fun List<Header>.toHttpRequestHead(): HttpRequestHead {
     }
 
     return HttpRequestHead(
-        method ?: error("no http method"),
-        uri ?: error("no uri"),
+        method ?: HttpMethod.Get,
+        uri ?: "/",
         version = HttpProtocolVersion.HTTP_2_0,
         headers = headersBuilder.build()
     )

@@ -17,6 +17,7 @@ kotlin {
         }
 
         commonTest.dependencies {
+            implementation(project(":kio-async:poller-poll"))
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }

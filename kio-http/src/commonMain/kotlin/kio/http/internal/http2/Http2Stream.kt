@@ -13,7 +13,7 @@ import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
 
-internal class Http2Stream(
+internal class Http2Stream constructor(
     val streamId: Int,
     val requestHead: HttpRequestHead,
     sourceFinished: Boolean,

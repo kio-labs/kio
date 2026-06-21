@@ -64,9 +64,10 @@ private suspend fun AsyncSink.writeContinuationFrames(
     }
 }
 
+context(writerMutex: Mutex)
 internal suspend fun AsyncSink.writeSetting(
     settings: Settings
-) {
+) = writerMutex.withLock {
     frameHeader(
         streamId = 0,
         length = settings.size() * 6,
