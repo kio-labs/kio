@@ -1,10 +1,12 @@
 package kio.http.internal.http2
 
 import kio.async.AsyncSink
+import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.FLAG_END_STREAM
 import kio.http.internal.http2.Http2.FLAG_NONE
 import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.http.internal.http2.Http2.TYPE_DATA
+import kio.http.internal.http2.Http2.TYPE_PING
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Http2.frameLog
 import kotlinx.coroutines.sync.Mutex
@@ -81,6 +83,21 @@ internal suspend fun AsyncSink.writeSetting(
     }
 }
 
+context(writerMutex: Mutex)
+internal suspend fun AsyncSink.writePing(
+    ack: Boolean,
+    payload1: Int,
+    payload2: Int,
+) = writerMutex.withLock {
+    frameHeader(
+        streamId = 0,
+        length = 8,
+        type = TYPE_PING,
+        flags = if (ack) FLAG_ACK else FLAG_NONE,
+    )
+    writeInt(payload1)
+    writeInt(payload2)
+}
 
 internal suspend fun AsyncSink.frameHeader(
     streamId: Int,

@@ -96,6 +96,15 @@ internal class Http2Connection(
             socketConn.sink.flush()
         }
     }
+
+    fun ackPing(payload1: Int, payload2: Int) {
+        scope.launch {
+            with(writerMutex) {
+                socketConn.sink.writePing(true, payload1, payload2)
+            }
+            socketConn.sink.flush()
+        }
+    }
 }
 
 internal suspend fun Http2Connection.frameReadLoop() {
@@ -132,8 +141,12 @@ internal suspend fun Http2Connection.frameReadLoop() {
                     http2Connection.applyAndAckSettings(frame.settings)
                 }
 
-                Frame.AckSettings -> {}
                 is Frame.WindowUpdate -> {}
+                is Frame.Ping -> {
+                    http2Connection.ackPing(frame.payload1, frame.payload2)
+                }
+                Frame.SettingsAck -> {}
+                is Frame.PingAck -> {}
             }
         }
     }

@@ -25,9 +25,19 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class Http2ConnectionTest {
     @Test
+    fun serverCanAckPing() = withHttp2Test {
+        clientPing(4, 23)
+        takeServerFrame {
+            assertIs<Frame.PingAck>(this)
+            assertEquals(4, payload1)
+            assertEquals(23,payload2)
+        }
+    }
+
+    @Test
     fun serverCanSendAckSettingFrameWhenReceiveSettingFrame() = withHttp2Test {
         clientSetting(Settings())
-        takeServerFrame { assertIs<Frame.AckSettings>(this) }
+        takeServerFrame { assertIs<Frame.SettingsAck>(this) }
     }
 
     @Test
@@ -71,6 +81,11 @@ private class Http2TestScope(
     private val clientMutex = Mutex()
     private val clientPpackBuffer = Buffer()
     private val clientPpackWriter: Hpack.Writer = Hpack.Writer(out = clientPpackBuffer)
+
+    suspend fun clientPing(payload1: Int, payload2: Int) = with(clientMutex) {
+        mockConn.clientSink.writePing(false, payload1, payload2)
+        mockConn.clientSink.flush()
+    }
 
     suspend fun clientSetting(
         settings: Settings
