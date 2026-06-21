@@ -59,9 +59,6 @@ internal class Http2Connection(
      */
     private val controlFrameWriterScope = scope + Job()
 
-    val hpackBuffer = Buffer()
-    val hpackWriter: Hpack.Writer = Hpack.Writer(out = hpackBuffer)
-
     init {
         scope.launch { frameReadLoop() }
             .invokeOnCompletion { connectionHandleScope.cancel() }
@@ -69,11 +66,13 @@ internal class Http2Connection(
 
     fun openStream(streamId: Int, isSourceFinished: Boolean, headers: HttpRequestHead) {
         val stream = Http2Stream(streamId, headers, isSourceFinished, writerMutex, socketConn.sink)
+        println("Stream[$streamId] created.")
         streams[streamId] = stream
-        val job = connectionHandleScope.launch {
+        connectionHandleScope.launch {
             handleStreamConnection(stream)
         }.invokeOnCompletion {
-// TODO: remove stream from map
+            streams.remove(streamId) ?: error("try to remove stream but Stream[$streamId] not exist.")
+            println("Stream[$streamId] closed.")
         }
     }
 

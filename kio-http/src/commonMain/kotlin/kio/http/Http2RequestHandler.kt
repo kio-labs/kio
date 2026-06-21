@@ -37,8 +37,6 @@ internal suspend fun doHandleHttp2Request(
                 streamingSink = streamingConn.sink,
                 socketConnSink = http2Connection.socketConn.sink,
                 writerMutex = http2Connection.writerMutex,
-                hpackBuffer = http2Connection.hpackBuffer,
-                hpackWriter = http2Connection.hpackWriter,
             ).buffered()
         }
     )
