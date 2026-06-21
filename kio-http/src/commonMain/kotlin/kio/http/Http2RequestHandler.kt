@@ -37,8 +37,7 @@ internal suspend fun doHandleHttp2Request(
                 streamingSink = streamingConn.sink,
                 socketConnSink = http2Connection.socketConn.sink,
                 writerMutex = http2Connection.writerMutex,
-                hpackBuffer = http2Connection.hpackBuffer,
-                hpackWriter = http2Connection.hpackWriter,
+// TODO: add header commit callback.
             ).buffered()
         }
     )
@@ -49,6 +48,7 @@ internal suspend fun doHandleHttp2Request(
         throw cancellation
     } catch (t: Throwable) {
         println("exception happened $t")
+// TODO: response 500 only if header has not commit yet.
         callContext.respond(HttpStatusCode.InternalServerError, t.toString())
     } finally {
         callContext.requestBody?.close()

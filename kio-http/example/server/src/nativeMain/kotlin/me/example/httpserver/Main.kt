@@ -36,7 +36,7 @@ fun main(): Unit = runPollEventLoop(PosixPoll) {
             inject(RespondedBodyEncodeInterceptor) {
                 post("/hello") { call ->
                     val requestBody = call.requestBody?.readString() ?: "no data"
-                    call.respondText("hello back. requestBody: $requestBody")
+                    call.respondText("hello back. requestBody: $requestBody \n")
                 }
 
                 post("/chunk") { call ->

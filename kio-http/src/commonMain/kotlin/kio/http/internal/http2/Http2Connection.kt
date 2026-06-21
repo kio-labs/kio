@@ -10,31 +10,42 @@ import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.network.AsyncConnection
 import kio.network.buffered
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.plus
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.io.Buffer
+import kotlinx.coroutines.withContext
 import kotlinx.io.bytestring.decodeToString
 
-internal suspend fun RouteScope.handleHttp2Connection(conn: AsyncConnection) = coroutineScope {
+internal suspend fun RouteScope.handleHttp2Connection(conn: AsyncConnection) {
     conn.source.readPreface()
     conn.sink.writeSetting(Settings())
     conn.sink.flush()
 
+    // Uncaught exceptions from stream coroutines are reported here.
+    // Normal stream failures should be handled inside each stream coroutine.
+    // This handler is only a last-resort logger.
+    val streamExceptionHandler = CoroutineExceptionHandler { context, t ->
+        println("streamExceptionHandler $t")
+    }
+    withContext(streamExceptionHandler) {
+        runHttp2Connection(conn)
+    }
+}
+
+private suspend fun RouteScope.runHttp2Connection(conn: AsyncConnection) = supervisorScope {
     val http2Connection = Http2Connection(
         socketConn = conn,
-        scope = this@coroutineScope,
+        scope = this,
         handleStreamConnection = { stream ->
+            // handle http2 stream in a launched coroutine.
             val requestHead = stream.requestHead
             handleHttp2Request(stream.streamId, requestHead, stream.buffered())
         }
     )
+    http2Connection.frameReadLoop()
 }
 
 internal class Http2Connection(
@@ -51,29 +62,15 @@ internal class Http2Connection(
 
     private val streams = mutableMapOf<Int, Http2Stream>()
 
-    private val connectionHandleScope = scope + SupervisorJob()
-
-    /**
-     * Scope for connection-level control frame writers, such as PING,
-     * SETTINGS ACK, WINDOW_UPDATE, and GOAWAY.
-     */
-    private val controlFrameWriterScope = scope + Job()
-
-    val hpackBuffer = Buffer()
-    val hpackWriter: Hpack.Writer = Hpack.Writer(out = hpackBuffer)
-
-    init {
-        scope.launch { frameReadLoop() }
-            .invokeOnCompletion { connectionHandleScope.cancel() }
-    }
-
     fun openStream(streamId: Int, isSourceFinished: Boolean, headers: HttpRequestHead) {
         val stream = Http2Stream(streamId, headers, isSourceFinished, writerMutex, socketConn.sink)
+        println("Stream[$streamId] created.")
         streams[streamId] = stream
-        val job = connectionHandleScope.launch {
+        scope.launch {
             handleStreamConnection(stream)
         }.invokeOnCompletion {
-// TODO: remove stream from map
+            streams.remove(streamId) ?: error("try to remove stream but Stream[$streamId] not exist.")
+            println("Stream[$streamId] closed. exception=$it")
         }
     }
 
@@ -82,7 +79,7 @@ internal class Http2Connection(
     }
 
     fun applyAndAckSettings(settings: Settings) {
-        controlFrameWriterScope.launch {
+        scope.launch {
             // TODO: apply setting.
 
             writerMutex.withLock {
@@ -98,8 +95,8 @@ internal class Http2Connection(
     }
 }
 
-context(http2Connection: Http2Connection)
-private suspend fun frameReadLoop() {
+private suspend fun Http2Connection.frameReadLoop() {
+    val http2Connection = this
     val source = http2Connection.socketConn.source
     val continuation = ContinuationSource(source)
     val hpackReader: Hpack.Reader =
@@ -127,9 +124,11 @@ private suspend fun frameReadLoop() {
                     }
                     dataStream.receiveData(source, frame.length, frame.inFinished)
                 }
+
                 is Frame.Setting -> {
                     http2Connection.applyAndAckSettings(frame.settings)
                 }
+
                 Frame.AckSettings -> {}
                 is Frame.WindowUpdate -> {}
             }
