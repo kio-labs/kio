@@ -59,6 +59,46 @@ class Http2ConnectionTest {
         val stream = assertStreamCreated()
         assertTrue(stream.source.buffered().exhausted())
     }
+
+    @Test
+    fun changeInitialWindowSizeSettings() = withHttp2Test {
+        val initial = Settings()
+        initial[Settings.INITIAL_WINDOW_SIZE] = 1684
+        clientSetting(initial)
+        takeServerFrame { assertIs<Frame.SettingsAck>(this) }
+
+        val shouldntImpactConnection = Settings()
+        shouldntImpactConnection[Settings.INITIAL_WINDOW_SIZE] = 3368
+        clientSetting(shouldntImpactConnection)
+        takeServerFrame { assertIs<Frame.SettingsAck>(this) }
+        assertEquals(3368, conn.peerSettings.initialWindowSize)
+
+        clientHeader(true, 1, listOf(Header("a", "value")))
+        val stream = assertStreamCreated()
+        // New Stream is has the most recent initial window size.
+        assertEquals(3368, stream.writeBytesMaximum)
+    }
+
+    @Test
+    fun streamMaximumWriteSizeChangedAfterCreated() = withHttp2Test {
+        val initial = Settings()
+        initial[Settings.INITIAL_WINDOW_SIZE] = 1684
+        clientSetting(initial)
+        takeServerFrame { assertIs<Frame.SettingsAck>(this) }
+
+        // create stream before change.
+        clientHeader(true, 1, listOf(Header("a", "value")))
+        val stream = assertStreamCreated()
+
+        // Change INITIAL_WINDOW_SIZE
+        val shouldntImpactConnection = Settings()
+        shouldntImpactConnection[Settings.INITIAL_WINDOW_SIZE] = 3368
+        clientSetting(shouldntImpactConnection)
+        takeServerFrame { assertIs<Frame.SettingsAck>(this) }
+
+        // new size applied.
+        assertEquals(3368, stream.writeBytesMaximum)
+    }
 }
 
 private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
@@ -71,6 +111,7 @@ private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
         }
 
         block(scop)
+        mock.handlerCompleter.complete(Unit)
         job.cancel()
     }
 
@@ -78,6 +119,8 @@ private class Http2TestScope(
     private val mockConn: MockHttp2Connection,
     override val coroutineContext: CoroutineContext
 ) : CoroutineScope {
+    val conn: Http2Connection = mockConn.http2Conn
+
     private val clientMutex = Mutex()
     private val clientPpackBuffer = Buffer()
     private val clientPpackWriter: Hpack.Writer = Hpack.Writer(out = clientPpackBuffer)
@@ -115,8 +158,8 @@ private class Http2TestScope(
         }
     }
 
-    val continuation = ContinuationSource(mockConn.serverWriteBackSource)
-    val hpackReader: Hpack.Reader =
+    private val continuation = ContinuationSource(mockConn.serverWriteBackSource)
+    private val hpackReader: Hpack.Reader =
         Hpack.Reader(
             source = continuation,
             headerTableSizeSetting = 4096,
@@ -154,11 +197,13 @@ private class MockHttp2Connection(
     var createdHttp2Stream: CompletableDeferred<Http2Stream> = CompletableDeferred()
 
     val serverWriteMutex = Mutex()
+    val handlerCompleter = CompletableDeferred<Unit>()
     val http2Conn = Http2Connection(
         serverConnection.buffered(),
         serverWriteMutex,
         testScope,
     ) {
         createdHttp2Stream.complete(it)
+        handlerCompleter.await()
     }
 }

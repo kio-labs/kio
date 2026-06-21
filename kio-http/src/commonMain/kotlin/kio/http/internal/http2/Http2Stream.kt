@@ -18,8 +18,12 @@ internal class Http2Stream constructor(
     val requestHead: HttpRequestHead,
     sourceFinished: Boolean,
     writerMutex: Mutex,
-    socketSink: AsyncSink
+    socketSink: AsyncSink,
+    initialSettings: Settings,
 ) : AsyncRawConnection {
+    /** The total number of bytes permitted to be produced by incoming `WINDOW_UPDATE` frame. */
+    var writeBytesMaximum: Long = initialSettings.initialWindowSize.toLong()
+        internal set
 
     private val framingSource = FramingSource(sourceFinished)
     private val frameSink = FramingSink(streamId, socketSink, writerMutex)
@@ -38,6 +42,10 @@ internal class Http2Stream constructor(
 
     override suspend fun close() {
         TODO("Not yet implemented")
+    }
+
+    fun addBytesToWriteWindow(delta: Long) {
+        writeBytesMaximum += delta
     }
 }
 

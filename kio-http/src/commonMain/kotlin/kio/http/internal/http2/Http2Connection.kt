@@ -8,6 +8,7 @@ import kio.http.handleHttp2Request
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
+import kio.http.internal.http2.Settings.Companion.DEFAULT_INITIAL_WINDOW_SIZE
 import kio.network.AsyncConnection
 import kio.network.buffered
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -62,10 +63,23 @@ internal class Http2Connection(
     val scope: CoroutineScope,
     val handleStreamConnection: suspend Http2Connection.(Http2Stream) -> Unit
 ) {
+    /**
+     * Settings we receive from the peer. Changes to the field are guarded by this. The instance is
+     * never mutated once it has been assigned.
+     */
+    var peerSettings = DEFAULT_SETTINGS
+
     private val streams = mutableMapOf<Int, Http2Stream>()
 
     fun openStream(streamId: Int, isSourceFinished: Boolean, headers: HttpRequestHead) {
-        val stream = Http2Stream(streamId, headers, isSourceFinished, writerMutex, socketConn.sink)
+        val stream = Http2Stream(
+            streamId = streamId,
+            requestHead = headers,
+            sourceFinished = isSourceFinished,
+            writerMutex = writerMutex,
+            socketSink = socketConn.sink,
+            initialSettings = peerSettings
+        )
         println("Stream[$streamId] created.")
         streams[streamId] = stream
         scope.launch {
@@ -83,7 +97,19 @@ internal class Http2Connection(
 
     fun applyAndAckSettings(settings: Settings) {
         scope.launch {
-            // TODO: apply setting.
+            val previousPeerSettings = peerSettings
+            peerSettings = Settings().apply {
+                merge(previousPeerSettings)
+                merge(settings)
+            }
+
+            // apply setting to active stream.
+            val delta = peerSettings.initialWindowSize - previousPeerSettings.initialWindowSize
+            if (delta != 0 && streams.isNotEmpty()) {
+                streams.forEach { (id, stream) ->
+                    stream.addBytesToWriteWindow(delta.toLong())
+                }
+            }
 
             writerMutex.withLock {
                 socketConn.sink.frameHeader(
@@ -104,6 +130,14 @@ internal class Http2Connection(
             }
             socketConn.sink.flush()
         }
+    }
+
+    companion object {
+        val DEFAULT_SETTINGS =
+            Settings().apply {
+                set(Settings.INITIAL_WINDOW_SIZE, DEFAULT_INITIAL_WINDOW_SIZE)
+                set(Settings.MAX_FRAME_SIZE, Http2.INITIAL_MAX_FRAME_SIZE)
+            }
     }
 }
 
