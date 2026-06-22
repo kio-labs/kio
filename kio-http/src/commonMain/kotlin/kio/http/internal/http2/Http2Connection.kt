@@ -7,6 +7,7 @@ import kio.http.RouteScope
 import kio.http.handleHttp2Request
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.http2.Http2.FLAG_ACK
+import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Settings.Companion.DEFAULT_INITIAL_WINDOW_SIZE
 import kio.network.AsyncConnection
@@ -21,12 +22,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.bytestring.decodeToString
 
 internal suspend fun RouteScope.handleHttp2Connection(conn: AsyncConnection) {
-    val writerMutex = Mutex()
-
-    conn.source.readPreface()
-    with(writerMutex) { conn.sink.writeSetting(Settings()) }
-    conn.sink.flush()
-
     // Uncaught exceptions from stream coroutines are reported here.
     // Normal stream failures should be handled inside each stream coroutine.
     // This handler is only a last-resort logger.
@@ -34,52 +29,61 @@ internal suspend fun RouteScope.handleHttp2Connection(conn: AsyncConnection) {
         println("streamExceptionHandler $t")
     }
     withContext(streamExceptionHandler) {
-        runHttp2Connection(conn, writerMutex)
+        runHttp2Connection(conn)
     }
 }
 
-private suspend fun RouteScope.runHttp2Connection(conn: AsyncConnection, writerMutex: Mutex) = supervisorScope {
-    val http2Connection = Http2Connection(
-        socketConn = conn,
-        writerMutex = writerMutex,
-        scope = this,
-        handleStreamConnection = { stream ->
-            // handle http2 stream in a launched coroutine.
-            val requestHead = stream.requestHead
-            handleHttp2Request(stream.streamId, requestHead, stream.buffered())
-        }
-    )
-    http2Connection.frameReadLoop()
-}
+private suspend fun RouteScope.runHttp2Connection(conn: AsyncConnection) =
+    supervisorScope {
+        val http2Connection = Http2Connection(
+            socketConn = conn,
+            scope = this,
+            handleStreamConnection = { stream ->
+                // handle http2 stream in a launched coroutine.
+                val requestHead = stream.requestHead
+                handleHttp2Request(stream.streamId, requestHead, stream.buffered())
+            }
+        )
+        http2Connection.doInitSetting()
+        http2Connection.frameReadLoop()
+    }
 
-internal class Http2Connection(
+internal class Http2Connection constructor(
     val socketConn: AsyncConnection,
+    private val scope: CoroutineScope,
+    private val handleStreamConnection: suspend Http2Connection.(Http2Stream) -> Unit
+) {
     /**
      * Serializes writes to the connection sink.
      *
      * Each HTTP/2 frame must be written atomically.
      */
-    val writerMutex: Mutex,
-    val scope: CoroutineScope,
-    val handleStreamConnection: suspend Http2Connection.(Http2Stream) -> Unit
-) {
+    val writerMutex: Mutex = Mutex()
     /**
      * Settings we receive from the peer. Changes to the field are guarded by this. The instance is
      * never mutated once it has been assigned.
      */
     var peerSettings = DEFAULT_SETTINGS
+    val maxFrameSize: Int
+        get() = peerSettings.getMaxFrameSize(INITIAL_MAX_FRAME_SIZE)
+
     val hpackWriter: Hpack.Writer = Hpack.Writer()
 
     private val streams = mutableMapOf<Int, Http2Stream>()
+
+    suspend fun doInitSetting() {
+        socketConn.source.readPreface()
+
+        socketConn.sink.writeSetting(Settings())
+        socketConn.sink.flush()
+    }
 
     fun openStream(streamId: Int, isSourceFinished: Boolean, headers: HttpRequestHead) {
         val stream = Http2Stream(
             streamId = streamId,
             requestHead = headers,
             sourceFinished = isSourceFinished,
-            writerMutex = writerMutex,
-            socketSink = socketConn.sink,
-            initialSettings = peerSettings
+            http2Conn = this
         )
         println("Stream[$streamId] created.")
         streams[streamId] = stream
@@ -131,9 +135,7 @@ internal class Http2Connection(
 
     fun ackPing(payload1: Int, payload2: Int) {
         scope.launch {
-            with(writerMutex) {
-                socketConn.sink.writePing(true, payload1, payload2)
-            }
+            socketConn.sink.writePing(true, payload1, payload2)
             socketConn.sink.flush()
         }
     }
@@ -185,6 +187,7 @@ internal suspend fun Http2Connection.frameReadLoop() {
                 is Frame.Ping -> {
                     http2Connection.ackPing(frame.payload1, frame.payload2)
                 }
+
                 Frame.SettingsAck -> {}
                 is Frame.PingAck -> {}
             }

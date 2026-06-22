@@ -9,28 +9,23 @@ import kio.http.internal.http2.Http2.TYPE_DATA
 import kio.http.internal.http2.Http2.TYPE_PING
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Http2.frameLog
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.io.Buffer
 
-// TODO: move this field to Http2Connection
-private var maxFrameSize: Int = INITIAL_MAX_FRAME_SIZE
-
-context(writerMutex: Mutex)
+context(conn: Http2Connection)
 internal suspend fun AsyncSink.writeHeaders(
     outFinished: Boolean,
     streamId: Int,
     headerBlock: List<Header>,
-    hpackWriter: Hpack.Writer
 ) {
     val hpackBuffer = Buffer()
-    hpackWriter.writeHeaders(headerBlock, hpackBuffer)
+    conn.hpackWriter.writeHeaders(headerBlock, hpackBuffer)
 
     val byteCount = hpackBuffer.size
-    val length = minOf(maxFrameSize.toLong(), byteCount)
+    val length = minOf(conn.maxFrameSize.toLong(), byteCount)
     var flags = if (byteCount == length) Http2.FLAG_END_HEADERS else 0
     if (outFinished) flags = flags or Http2.FLAG_END_STREAM
-    writerMutex.withLock {
+    conn.writerMutex.withLock {
         frameHeader(
             streamId = streamId,
             length = length.toInt(),
@@ -43,7 +38,7 @@ internal suspend fun AsyncSink.writeHeaders(
     if (byteCount > length) writeContinuationFrames(streamId, byteCount - length, hpackBuffer)
 }
 
-context(writerMutex: Mutex)
+context(conn: Http2Connection)
 private suspend fun AsyncSink.writeContinuationFrames(
     streamId: Int,
     byteCount: Long,
@@ -51,10 +46,10 @@ private suspend fun AsyncSink.writeContinuationFrames(
 ) {
     var byteCount = byteCount
     while (byteCount > 0L) {
-        val length = minOf(maxFrameSize.toLong(), byteCount)
+        val length = minOf(conn.maxFrameSize.toLong(), byteCount)
         byteCount -= length
 
-        writerMutex.withLock {
+        conn.writerMutex.withLock {
             frameHeader(
                 streamId = streamId,
                 length = length.toInt(),
@@ -66,10 +61,10 @@ private suspend fun AsyncSink.writeContinuationFrames(
     }
 }
 
-context(writerMutex: Mutex)
+context(conn: Http2Connection)
 internal suspend fun AsyncSink.writeSetting(
     settings: Settings
-) = writerMutex.withLock {
+) = conn.writerMutex.withLock {
     frameHeader(
         streamId = 0,
         length = settings.size() * 6,
@@ -83,12 +78,12 @@ internal suspend fun AsyncSink.writeSetting(
     }
 }
 
-context(writerMutex: Mutex)
+context(conn: Http2Connection)
 internal suspend fun AsyncSink.writePing(
     ack: Boolean,
     payload1: Int,
     payload2: Int,
-) = writerMutex.withLock {
+) = conn.writerMutex.withLock {
     frameHeader(
         streamId = 0,
         length = 8,
@@ -99,6 +94,7 @@ internal suspend fun AsyncSink.writePing(
     writeInt(payload2)
 }
 
+context(conn: Http2Connection)
 internal suspend fun AsyncSink.frameHeader(
     streamId: Int,
     length: Int,
@@ -108,6 +104,7 @@ internal suspend fun AsyncSink.frameHeader(
     if (type != Http2.TYPE_WINDOW_UPDATE) {
         println(frameLog(false, streamId, length, type, flags))
     }
+    val maxFrameSize = conn.maxFrameSize
     require(length <= maxFrameSize) { "FRAME_SIZE_ERROR length > $maxFrameSize: $length" }
     require(streamId and 0x80000000.toInt() == 0) { "reserved bit set: $streamId" }
     writeMedium(length)
@@ -116,7 +113,7 @@ internal suspend fun AsyncSink.frameHeader(
     writeInt(streamId and 0x7fffffff)
 }
 
-context(_: Mutex)
+context(_: Http2Connection)
 internal suspend fun AsyncSink.writeData(
     streamId: Int,
     outFinished: Boolean,
@@ -139,20 +136,21 @@ internal suspend fun AsyncSink.writeData(
 }
 
 
-context(writeMutex: Mutex)
+context(conn: Http2Connection)
 private suspend fun AsyncSink.data(
     outFinished: Boolean,
     streamId: Int,
     source: Buffer?,
     byteCount: Int,
 ) {
-    writeMutex.withLock {
+    conn.writerMutex.withLock {
         var flags = FLAG_NONE
         if (outFinished) flags = flags or FLAG_END_STREAM
         dataFrame(streamId, flags, source, byteCount)
     }
 }
 
+context(conn: Http2Connection)
 private suspend fun AsyncSink.dataFrame(
     streamId: Int,
     flags: Int,

@@ -12,9 +12,7 @@ import kio.network.buffered
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withTimeout
-import kotlinx.io.Buffer
 import kotlin.coroutines.CoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -111,6 +109,18 @@ class Http2ConnectionTest {
         assertEquals(0, conn.hpackWriter.dynamicTableByteCount)
         assertEquals(0, conn.hpackWriter.headerTableSizeSetting)
     }
+
+    @Test
+    fun peerIncreasesMaxFrameSize() = withHttp2Test {
+        val newMaxFrameSize = 0x4001
+        val settings = Settings()
+        settings[Settings.MAX_FRAME_SIZE] = newMaxFrameSize
+        clientSetting(settings)
+        takeServerFrame { assertIs<Frame.SettingsAck>(this) }
+
+        assertEquals(newMaxFrameSize, conn.peerSettings.getMaxFrameSize(-1))
+        assertEquals(newMaxFrameSize, conn.maxFrameSize)
+    }
 }
 
 private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
@@ -133,17 +143,14 @@ private class Http2TestScope(
 ) : CoroutineScope {
     val conn: Http2Connection = mockConn.http2Conn
 
-    private val clientMutex = Mutex()
-    private val clientPpackWriter: Hpack.Writer = Hpack.Writer()
-
-    suspend fun clientPing(payload1: Int, payload2: Int) = with(clientMutex) {
+    suspend fun clientPing(payload1: Int, payload2: Int) = with(conn) {
         mockConn.clientSink.writePing(false, payload1, payload2)
         mockConn.clientSink.flush()
     }
 
     suspend fun clientSetting(
         settings: Settings
-    ) = with(clientMutex) {
+    ) = with(conn) {
         mockConn.clientSink.writeSetting(settings)
         mockConn.clientSink.flush()
     }
@@ -152,12 +159,11 @@ private class Http2TestScope(
         outFinished: Boolean,
         streamId: Int,
         headerBlock: List<Header>,
-    ) = with(clientMutex) {
+    ) = with(conn) {
         mockConn.clientSink.writeHeaders(
             outFinished,
             streamId,
             headerBlock,
-            clientPpackWriter,
         )
         mockConn.clientSink.flush()
     }
@@ -186,7 +192,7 @@ private class Http2TestScope(
 }
 
 private class MockHttp2Connection(
-    val testScope: CoroutineScope
+    testScope: CoroutineScope
 ) {
     private val clientPipeConn = openPipe()
     private val serverPipeConn = openPipe()
@@ -206,11 +212,9 @@ private class MockHttp2Connection(
 
     var createdHttp2Stream: CompletableDeferred<Http2Stream> = CompletableDeferred()
 
-    val serverWriteMutex = Mutex()
     val handlerCompleter = CompletableDeferred<Unit>()
     val http2Conn = Http2Connection(
         serverConnection.buffered(),
-        serverWriteMutex,
         testScope,
     ) {
         createdHttp2Stream.complete(it)
