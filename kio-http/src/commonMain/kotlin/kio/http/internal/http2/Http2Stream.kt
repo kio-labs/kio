@@ -8,21 +8,24 @@ import kio.http.internal.HttpRequestHead
 import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.network.AsyncRawConnection
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
 
-internal class Http2Stream(
+internal class Http2Stream constructor(
     val streamId: Int,
     val requestHead: HttpRequestHead,
     sourceFinished: Boolean,
-    writerMutex: Mutex,
-    socketSink: AsyncSink
+    http2Conn: Http2Connection,
 ) : AsyncRawConnection {
+    private val socketSink: AsyncSink = http2Conn.socketConn.sink
+
+    /** The total number of bytes permitted to be produced by incoming `WINDOW_UPDATE` frame. */
+    var writeBytesMaximum: Long = http2Conn.peerSettings.initialWindowSize.toLong()
+        internal set
 
     private val framingSource = FramingSource(sourceFinished)
-    private val frameSink = FramingSink(streamId, socketSink, writerMutex)
+    private val frameSink = FramingSink(streamId, socketSink, http2Conn)
 
     override val source: AsyncRawSource = framingSource
 
@@ -39,12 +42,16 @@ internal class Http2Stream(
     override suspend fun close() {
         TODO("Not yet implemented")
     }
+
+    fun addBytesToWriteWindow(delta: Long) {
+        writeBytesMaximum += delta
+    }
 }
 
 private class FramingSink(
-    val streamId: Int,
-    val socketSink: AsyncSink,
-    val writerMutex: Mutex,
+    private val streamId: Int,
+    private val socketSink: AsyncSink,
+    private val http2Connection: Http2Connection
 ) : AsyncRawSink {
     /**
      * Buffer of outgoing data. This batches writes of small writes into this sink as larges frames
@@ -52,7 +59,11 @@ private class FramingSink(
      */
     private val sendBuffer = Buffer()
 
+    private var closed: Boolean = false
+
     override suspend fun write(source: Buffer, byteCount: Long) {
+        if (closed) throw IOException("stream closed")
+
         sendBuffer.write(source, byteCount)
 
         while (sendBuffer.size >= EMIT_BUFFER_SIZE) {
@@ -65,7 +76,7 @@ private class FramingSink(
      * write window. This method will block until the write window is nonempty.
      */
     private suspend fun emitFrame(outFinishedOnLastFrame: Boolean) {
-        with(writerMutex) {
+        with(http2Connection) {
             // TODO: await io if no more WINDOW_SIZE
             val toWrite = minOf(sendBuffer.size, INITIAL_MAX_FRAME_SIZE.toLong())
             val outFinished = outFinishedOnLastFrame && toWrite == sendBuffer.size
@@ -90,14 +101,14 @@ private class FramingSink(
             }
 
             else -> {
-                with (writerMutex) {
+                with (http2Connection) {
                     socketSink.writeData(streamId, true, null, 0L)
                 }
             }
         }
         socketSink.flush()
 
-        // TODO: close stream??
+        closed = true
     }
 
     companion object {
@@ -154,7 +165,7 @@ private class FramingSource(
     }
 
     override suspend fun close() {
-// TODO: skip unread request body?
+        readBuffer.clear()
         closed = true
     }
 

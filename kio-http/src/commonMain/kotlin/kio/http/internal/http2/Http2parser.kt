@@ -18,6 +18,7 @@ package kio.http.internal.http2
 import kio.async.AsyncRawSource
 import kio.async.AsyncSource
 import kio.async.readByteArray
+import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.frameLog
 import kio.http.internal.http2.Http2.frameLogWindowUpdate
 import kotlinx.io.Buffer
@@ -48,11 +49,21 @@ sealed interface Frame {
 
     class Setting(val settings: Settings) : Frame
 
-    data object AckSettings : Frame
+    data object SettingsAck : Frame
 
     class WindowUpdate(
         streamId: Int,
         windowSizeIncrement: Long,
+    ): Frame
+
+    class PingAck(
+        val payload1: Int,
+        val payload2: Int,
+    ): Frame
+
+    class Ping(
+        val payload1: Int,
+        val payload2: Int,
     ): Frame
 }
 
@@ -93,7 +104,7 @@ internal suspend fun AsyncSource.nextFrame(): Frame {
         Http2.TYPE_RST_STREAM -> TODO("TYPE_RST_STREAM")
         Http2.TYPE_SETTINGS -> readSettings(length, flags, streamId)
         Http2.TYPE_PUSH_PROMISE -> TODO("TYPE_PUSH_PROMISE")
-        Http2.TYPE_PING -> TODO("TYPE_PING")
+        Http2.TYPE_PING -> readPing(length, flags, streamId)
         Http2.TYPE_GOAWAY -> TODO("TYPE_GOAWAY")
         Http2.TYPE_WINDOW_UPDATE -> readWindowUpdate(length, flags, streamId)
         else -> TODO()
@@ -109,7 +120,7 @@ internal suspend fun AsyncSource.readSettings(
     if (streamId != 0) throw IOException("TYPE_SETTINGS streamId != 0")
     if (flags and Http2.FLAG_ACK != 0) {
         if (length != 0) throw IOException("FRAME_SIZE_ERROR ack frame should be empty!")
-        return Frame.AckSettings
+        return Frame.SettingsAck
     }
 
     if (length % 6 != 0) throw IOException("TYPE_SETTINGS length % 6 != 0: $length")
@@ -160,6 +171,20 @@ internal suspend fun AsyncSource.readSettings(
     }
 
     return Frame.Setting(settings)
+}
+
+private suspend fun AsyncSource.readPing(
+    length: Int,
+    flags: Int,
+    streamId: Int,
+): Frame {
+    if (length != 8) throw IOException("TYPE_PING length != 8: $length")
+    if (streamId != 0) throw IOException("TYPE_PING streamId != 0")
+    val payload1 = readInt()
+    val payload2 = readInt()
+    val ack = flags and FLAG_ACK != 0
+    if (ack) return Frame.PingAck(payload1, payload2)
+    return Frame.Ping(payload1, payload2)
 }
 
 private suspend fun AsyncSource.readWindowUpdate(

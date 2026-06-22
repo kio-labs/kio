@@ -4,32 +4,23 @@ import kio.async.AsyncRawSink
 import kio.async.AsyncSink
 import kio.http.internal.HttpResponseHead
 import kio.http.internal.http2.Header.Companion.RESPONSE_STATUS_UTF8
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.io.Buffer
 
 internal class Http2ResponseSink(
     private val streamId: Int,
-    private val head: HttpResponseHead.Builder,
-    private val socketConnSink: AsyncSink,
-    private val writerMutex: Mutex,
     private val streamingSink: AsyncSink,
+    private val head: HttpResponseHead.Builder,
+    private val connection: Http2Connection
 ) : AsyncRawSink {
+    private val socketConnSink = connection.socketConn.sink
     private var headCommitted = false
-    private val hpackBuffer = Buffer()
-    private val hpackWriter: Hpack.Writer = Hpack.Writer(out = hpackBuffer)
 
     private suspend fun writeHeadIfNeeded() {
         if (!headCommitted) {
             headCommitted = true
             val headers = head.build()
-            with(writerMutex) {
-                socketConnSink.writeHeaders(
-                    outFinished = false,
-                    streamId,
-                    headers.toHeaders(),
-                    hpackBuffer,
-                    hpackWriter
-                )
+            with(connection) {
+                socketConnSink.writeHeaders(outFinished = false, streamId, headers.toHeaders())
             }
         }
     }
