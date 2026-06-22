@@ -68,6 +68,7 @@ internal class Http2Connection(
      * never mutated once it has been assigned.
      */
     var peerSettings = DEFAULT_SETTINGS
+    val hpackWriter: Hpack.Writer = Hpack.Writer()
 
     private val streams = mutableMapOf<Int, Http2Stream>()
 
@@ -103,12 +104,17 @@ internal class Http2Connection(
                 merge(settings)
             }
 
-            // apply setting to active stream.
+            // apply initialWindowSize setting to active stream.
             val delta = peerSettings.initialWindowSize - previousPeerSettings.initialWindowSize
             if (delta != 0 && streams.isNotEmpty()) {
                 streams.forEach { (id, stream) ->
                     stream.addBytesToWriteWindow(delta.toLong())
                 }
+            }
+
+            // apply headerTableSize setting to hpackWriter.
+            if (peerSettings.headerTableSize != -1) {
+                hpackWriter.resizeHeaderTable(peerSettings.headerTableSize)
             }
 
             writerMutex.withLock {

@@ -99,6 +99,18 @@ class Http2ConnectionTest {
         // new size applied.
         assertEquals(3368, stream.writeBytesMaximum)
     }
+
+    @Test
+    fun peerHttp2ServerZerosCompressionTable() = withHttp2Test {
+        val initial = Settings()
+        initial[Settings.HEADER_TABLE_SIZE] = 0
+        clientSetting(initial)
+        takeServerFrame { assertIs<Frame.SettingsAck>(this) }
+
+        assertEquals(0, conn.peerSettings.headerTableSize)
+        assertEquals(0, conn.hpackWriter.dynamicTableByteCount)
+        assertEquals(0, conn.hpackWriter.headerTableSizeSetting)
+    }
 }
 
 private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =

@@ -36,6 +36,7 @@ internal suspend fun doHandleHttp2Request(
                 head = headBuilder,
                 streamingSink = streamingConn.sink,
                 socketConnSink = http2Connection.socketConn.sink,
+                hpackWriter = http2Connection.hpackWriter,
                 writerMutex = http2Connection.writerMutex,
 // TODO: add header commit callback.
             ).buffered()

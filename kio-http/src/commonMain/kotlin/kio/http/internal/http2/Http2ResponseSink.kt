@@ -13,10 +13,10 @@ internal class Http2ResponseSink(
     private val socketConnSink: AsyncSink,
     private val writerMutex: Mutex,
     private val streamingSink: AsyncSink,
+    private val hpackWriter: Hpack.Writer
 ) : AsyncRawSink {
     private var headCommitted = false
 // TODO: move hpack to connection
-    private val hpackWriter: Hpack.Writer = Hpack.Writer()
 
     private suspend fun writeHeadIfNeeded() {
         if (!headCommitted) {
