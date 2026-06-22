@@ -122,8 +122,7 @@ private class Http2TestScope(
     val conn: Http2Connection = mockConn.http2Conn
 
     private val clientMutex = Mutex()
-    private val clientPpackBuffer = Buffer()
-    private val clientPpackWriter: Hpack.Writer = Hpack.Writer(out = clientPpackBuffer)
+    private val clientPpackWriter: Hpack.Writer = Hpack.Writer()
 
     suspend fun clientPing(payload1: Int, payload2: Int) = with(clientMutex) {
         mockConn.clientSink.writePing(false, payload1, payload2)
@@ -146,7 +145,6 @@ private class Http2TestScope(
             outFinished,
             streamId,
             headerBlock,
-            clientPpackBuffer,
             clientPpackWriter,
         )
         mockConn.clientSink.flush()

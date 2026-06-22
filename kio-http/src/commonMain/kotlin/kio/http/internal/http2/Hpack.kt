@@ -430,7 +430,6 @@ object Hpack {
     constructor(
         var headerTableSizeSetting: Int = SETTINGS_HEADER_TABLE_SIZE,
         private val useCompression: Boolean = true,
-        private val out: Buffer,
     ) {
         /**
          * In the scenario where the dynamic table size changes multiple times between transmission of
@@ -524,15 +523,15 @@ object Hpack {
          * http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-12#section-6.2.3
          */
         @Throws(IOException::class)
-        fun writeHeaders(headerBlock: List<Header>) {
+        fun writeHeaders(headerBlock: List<Header>, out: Buffer) {
             if (emitDynamicTableSizeUpdate) {
                 if (smallestHeaderTableSizeSetting < maxDynamicTableByteCount) {
                     // Multiple dynamic table size updates!
-                    writeInt(smallestHeaderTableSizeSetting, PREFIX_5_BITS, 0x20)
+                    writeInt(smallestHeaderTableSizeSetting, PREFIX_5_BITS, 0x20, out)
                 }
                 emitDynamicTableSizeUpdate = false
                 smallestHeaderTableSizeSetting = Int.MAX_VALUE
-                writeInt(maxDynamicTableByteCount, PREFIX_5_BITS, 0x20)
+                writeInt(maxDynamicTableByteCount, PREFIX_5_BITS, 0x20, out)
             }
 
             for (i in 0 until headerBlock.size) {
@@ -574,28 +573,28 @@ object Hpack {
                 when {
                     headerIndex != -1 -> {
                         // Indexed Header Field.
-                        writeInt(headerIndex, PREFIX_7_BITS, 0x80)
+                        writeInt(headerIndex, PREFIX_7_BITS, 0x80, out)
                     }
 
                     headerNameIndex == -1 -> {
                         // Literal Header Field with Incremental Indexing - New Name.
                         out.writeByte(0x40)
-                        writeByteString(name)
-                        writeByteString(value)
+                        writeByteString(name, out)
+                        writeByteString(value, out)
                         insertIntoDynamicTable(header)
                     }
 
                     name.startsWith(Header.PSEUDO_PREFIX) && TARGET_AUTHORITY != name -> {
                         // Follow Chromes lead - only include the :authority pseudo header, but exclude all other
                         // pseudo headers. Literal Header Field without Indexing - Indexed Name.
-                        writeInt(headerNameIndex, PREFIX_4_BITS, 0)
-                        writeByteString(value)
+                        writeInt(headerNameIndex, PREFIX_4_BITS, 0, out)
+                        writeByteString(value, out)
                     }
 
                     else -> {
                         // Literal Header Field with Incremental Indexing - Indexed Name.
-                        writeInt(headerNameIndex, PREFIX_6_BITS, 0x40)
-                        writeByteString(value)
+                        writeInt(headerNameIndex, PREFIX_6_BITS, 0x40, out)
+                        writeByteString(value, out)
                         insertIntoDynamicTable(header)
                     }
                 }
@@ -607,6 +606,7 @@ object Hpack {
             value: Int,
             prefixMask: Int,
             bits: Int,
+            out: Buffer
         ) {
             var value = value
             // Write the raw value for a single byte value.
@@ -629,15 +629,15 @@ object Hpack {
         }
 
         @Throws(IOException::class)
-        fun writeByteString(data: ByteString) {
+        fun writeByteString(data: ByteString, out: Buffer) {
             if (useCompression && Huffman.encodedLength(data) < data.size) {
                 val huffmanBuffer = Buffer()
                 Huffman.encode(data, huffmanBuffer)
                 val huffmanBytes = huffmanBuffer.readByteString()
-                writeInt(huffmanBytes.size, PREFIX_7_BITS, 0x80)
+                writeInt(huffmanBytes.size, PREFIX_7_BITS, 0x80, out)
                 out.write(huffmanBytes)
             } else {
-                writeInt(data.size, PREFIX_7_BITS, 0)
+                writeInt(data.size, PREFIX_7_BITS, 0, out)
                 out.write(data)
             }
         }

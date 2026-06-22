@@ -16,8 +16,7 @@ internal class Http2ResponseSink(
 ) : AsyncRawSink {
     private var headCommitted = false
 // TODO: move hpack to connection
-    private val hpackBuffer = Buffer()
-    private val hpackWriter: Hpack.Writer = Hpack.Writer(out = hpackBuffer)
+    private val hpackWriter: Hpack.Writer = Hpack.Writer()
 
     private suspend fun writeHeadIfNeeded() {
         if (!headCommitted) {
@@ -28,7 +27,6 @@ internal class Http2ResponseSink(
                     outFinished = false,
                     streamId,
                     headers.toHeaders(),
-                    hpackBuffer,
                     hpackWriter
                 )
             }

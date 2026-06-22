@@ -5,7 +5,6 @@ import kio.async.readString
 import kio.async.runPollEventLoop
 import kio.http.RequestBodyDecodeInterceptor
 import kio.http.RespondedBodyEncodeInterceptor
-import kio.http.get
 import kio.http.httpServer
 import kio.http.inject
 import kio.http.post
@@ -16,9 +15,9 @@ import kio.http.websocket
 import kio.network.tcpBind
 import kio.websocket.WebSocketEvent
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.coroutines.delay
-import platform.posix.*
-import kotlin.time.Duration.Companion.seconds
+import platform.posix.SIGPIPE
+import platform.posix.SIG_IGN
+import platform.posix.signal
 
 const val HOST_IP = "127.0.0.1"
 const val PORT = 7878
@@ -35,8 +34,8 @@ fun main(): Unit = runPollEventLoop(PosixPoll) {
         inject(RequestBodyDecodeInterceptor) {
             inject(RespondedBodyEncodeInterceptor) {
                 post("/hello") { call ->
-//                    val requestBody = call.requestBody?.readString() ?: "no data"
-                    call.respondText("hello back. requestBody no \n")
+                    val requestBody = call.requestBody?.readString() ?: "no data"
+                    call.respondText("hello back. requestBody $requestBody \n")
                 }
 
                 post("/chunk") { call ->

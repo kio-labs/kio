@@ -21,10 +21,10 @@ internal suspend fun AsyncSink.writeHeaders(
     outFinished: Boolean,
     streamId: Int,
     headerBlock: List<Header>,
-    hpackBuffer: Buffer,
     hpackWriter: Hpack.Writer
 ) {
-    hpackWriter.writeHeaders(headerBlock)
+    val hpackBuffer = Buffer()
+    hpackWriter.writeHeaders(headerBlock, hpackBuffer)
 
     val byteCount = hpackBuffer.size
     val length = minOf(maxFrameSize.toLong(), byteCount)
