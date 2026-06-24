@@ -12,16 +12,38 @@ import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Settings.Companion.DEFAULT_INITIAL_WINDOW_SIZE
 import kio.network.AsyncConnection
 import kio.network.buffered
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.decodeToString
+import kotlinx.io.bytestring.isNotEmpty
 
-internal suspend fun RouteScope.handleHttp2Connection(conn: AsyncConnection) {
+class StreamResetCancellationException(
+    val errorCode: ErrorCode,
+) : CancellationException("stream was reset: $errorCode")
+
+internal suspend fun RouteScope.http2Connection(conn: AsyncConnection) {
+    http2Connection(conn) { conn, stream ->
+        // handle http2 stream in a launched coroutine.
+        val requestHead = stream.requestHead
+        with(conn) {
+            handleHttp2Request(stream.streamId, requestHead, stream.buffered())
+        }
+    }
+}
+
+internal suspend fun http2Connection(
+    conn: AsyncConnection,
+    handleHttp2Request: suspend CoroutineScope.(Http2Connection, Http2Stream) -> Unit
+) {
     // Uncaught exceptions from stream coroutines are reported here.
     // Normal stream failures should be handled inside each stream coroutine.
     // This handler is only a last-resort logger.
@@ -29,47 +51,50 @@ internal suspend fun RouteScope.handleHttp2Connection(conn: AsyncConnection) {
         println("streamExceptionHandler $t")
     }
     withContext(streamExceptionHandler) {
-        runHttp2Connection(conn)
+        supervisorScope {
+            val http2Connection = Http2Connection(
+                socketConn = conn,
+                connectionScope = this,
+            ).also { connection ->
+                connection.handleStreamConnection = { stream ->
+                    handleHttp2Request.invoke(this, connection, stream)
+                }
+            }
+            http2Connection.doInitSetting()
+            http2Connection.frameReadLoop()
+            println("http2Connection.frameReadLoop() finished")
+        }
     }
 }
 
-private suspend fun RouteScope.runHttp2Connection(conn: AsyncConnection) =
-    supervisorScope {
-        val http2Connection = Http2Connection(
-            socketConn = conn,
-            scope = this,
-            handleStreamConnection = { stream ->
-                // handle http2 stream in a launched coroutine.
-                val requestHead = stream.requestHead
-                handleHttp2Request(stream.streamId, requestHead, stream.buffered())
-            }
-        )
-        http2Connection.doInitSetting()
-        http2Connection.frameReadLoop()
-    }
-
 internal class Http2Connection constructor(
     val socketConn: AsyncConnection,
-    private val scope: CoroutineScope,
-    private val handleStreamConnection: suspend Http2Connection.(Http2Stream) -> Unit
+    private val connectionScope: CoroutineScope,
 ) {
+    lateinit var handleStreamConnection: suspend CoroutineScope.(Http2Stream) -> Unit
+
     /**
      * Serializes writes to the connection sink.
      *
      * Each HTTP/2 frame must be written atomically.
      */
     val writerMutex: Mutex = Mutex()
+
     /**
      * Settings we receive from the peer. Changes to the field are guarded by this. The instance is
      * never mutated once it has been assigned.
      */
     var peerSettings = DEFAULT_SETTINGS
+
+    // TODO: send frame limit by this field
     val maxFrameSize: Int
         get() = peerSettings.getMaxFrameSize(INITIAL_MAX_FRAME_SIZE)
 
     val hpackWriter: Hpack.Writer = Hpack.Writer()
 
-    private val streams = mutableMapOf<Int, Http2Stream>()
+    val streams = mutableMapOf<Int, Http2Stream>()
+
+    private var isShutdown = false
 
     suspend fun doInitSetting() {
         socketConn.source.readPreface()
@@ -78,17 +103,23 @@ internal class Http2Connection constructor(
         socketConn.sink.flush()
     }
 
-    fun openStream(streamId: Int, isSourceFinished: Boolean, headers: HttpRequestHead) {
+    fun receiveHeader(streamId: Int, isSourceFinished: Boolean, headers: HttpRequestHead) {
+        if (isShutdown) return
+
         val stream = Http2Stream(
             streamId = streamId,
             requestHead = headers,
             sourceFinished = isSourceFinished,
             http2Conn = this
         )
-        println("Stream[$streamId] created.")
+
         streams[streamId] = stream
-        scope.launch {
+        println("Stream[$streamId] created.")
+
+        connectionScope.launch {
             handleStreamConnection(stream)
+        }.also { job ->
+            stream.scope = job as CoroutineScope
         }.invokeOnCompletion {
             val stream = streams.remove(streamId)
                 ?: error("try to remove stream but Stream[$streamId] not exist.")
@@ -96,12 +127,8 @@ internal class Http2Connection constructor(
         }
     }
 
-    fun getStream(streamId: Int): Http2Stream? {
-        return streams[streamId]
-    }
-
     fun applyAndAckSettings(settings: Settings) {
-        scope.launch {
+        connectionScope.launch {
             val previousPeerSettings = peerSettings
             peerSettings = Settings().apply {
                 merge(previousPeerSettings)
@@ -121,7 +148,7 @@ internal class Http2Connection constructor(
                 hpackWriter.resizeHeaderTable(peerSettings.headerTableSize)
             }
 
-            writerMutex.withLock {
+            writeFrameNonCancellable {
                 socketConn.sink.frameHeader(
                     streamId = 0,
                     length = 0,
@@ -134,10 +161,39 @@ internal class Http2Connection constructor(
     }
 
     fun ackPing(payload1: Int, payload2: Int) {
-        scope.launch {
+        connectionScope.launch {
             socketConn.sink.writePing(true, payload1, payload2)
             socketConn.sink.flush()
         }
+    }
+
+    fun receiveGoAway(lastGoodStreamId: Int, errorCode: ErrorCode, debugData: ByteString) {
+        if (debugData.isNotEmpty()) {
+            println("receive GoAway from peer: ${debugData.decodeToString()}")
+        }
+
+        streams.forEach { (streamId, stream) ->
+            if (streamId > lastGoodStreamId) {
+                stream.scope.cancel(StreamResetCancellationException(errorCode))
+            }
+        }
+
+        // mark this connection is shut down, which means it will not accept new streams.
+        isShutdown = true
+    }
+
+    suspend fun receiveData(
+        streamId: Int,
+        length: Long,
+        inFinished: Boolean
+    ) {
+        val dataStream = streams[streamId]
+        val source = socketConn.source
+        if (dataStream == null) {
+            source.skip(length)
+            return
+        }
+        dataStream.receiveData(source, length, inFinished)
     }
 
     companion object {
@@ -149,7 +205,14 @@ internal class Http2Connection constructor(
     }
 }
 
-internal suspend fun Http2Connection.frameReadLoop() {
+internal suspend inline fun Http2Connection.writeFrameNonCancellable(crossinline block: suspend () -> Unit) =
+    writerMutex.withLock {
+        withContext(NonCancellable) {
+            block()
+        }
+    }
+
+internal suspend fun Http2Connection.frameReadLoop(onFrame: () -> Unit = {}) {
     val http2Connection = this
     val source = http2Connection.socketConn.source
     val continuation = ContinuationSource(source)
@@ -160,10 +223,9 @@ internal suspend fun Http2Connection.frameReadLoop() {
         )
     context(hpackReader, continuation) {
         while (true) {
-            val frame = source.nextFrame()
-            when (frame) {
+            when (val frame = source.nextFrame()) {
                 is Frame.Headers -> {
-                    http2Connection.openStream(
+                    http2Connection.receiveHeader(
                         frame.streamId,
                         frame.inFinished,
                         frame.headerBlock.toHttpRequestHead(),
@@ -171,12 +233,7 @@ internal suspend fun Http2Connection.frameReadLoop() {
                 }
 
                 is Frame.Data -> {
-                    val dataStream = http2Connection.getStream(frame.streamId)
-                    if (dataStream == null) {
-                        source.skip(frame.length)
-                        return
-                    }
-                    dataStream.receiveData(source, frame.length, frame.inFinished)
+                    http2Connection.receiveData(frame.streamId, frame.length, frame.inFinished)
                 }
 
                 is Frame.Setting -> {
@@ -190,7 +247,16 @@ internal suspend fun Http2Connection.frameReadLoop() {
 
                 Frame.SettingsAck -> {}
                 is Frame.PingAck -> {}
+                is Frame.GoAway -> {
+                    http2Connection.receiveGoAway(
+                        frame.lastGoodStreamId,
+                        frame.errorCode,
+                        frame.debugData
+                    )
+                }
             }
+
+            onFrame()
         }
     }
 }

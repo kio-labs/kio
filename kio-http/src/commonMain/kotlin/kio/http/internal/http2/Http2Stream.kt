@@ -7,6 +7,7 @@ import kio.async.AsyncSource
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.network.AsyncRawConnection
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
@@ -18,6 +19,7 @@ internal class Http2Stream constructor(
     sourceFinished: Boolean,
     http2Conn: Http2Connection,
 ) : AsyncRawConnection {
+    lateinit var scope: CoroutineScope
     private val socketSink: AsyncSink = http2Conn.socketConn.sink
 
     /** The total number of bytes permitted to be produced by incoming `WINDOW_UPDATE` frame. */
@@ -31,11 +33,7 @@ internal class Http2Stream constructor(
 
     override val sink: AsyncRawSink = frameSink
 
-    suspend fun receiveData(
-        source: AsyncSource,
-        byteCount: Long,
-        inFinished: Boolean,
-    ) {
+    suspend fun receiveData(source: AsyncSource, byteCount: Long, inFinished: Boolean) {
         framingSource.receive(source, byteCount, inFinished)
     }
 
@@ -45,6 +43,10 @@ internal class Http2Stream constructor(
 
     fun addBytesToWriteWindow(delta: Long) {
         writeBytesMaximum += delta
+    }
+
+    override fun toString(): String {
+        return "Http2Stream[$streamId]"
     }
 }
 

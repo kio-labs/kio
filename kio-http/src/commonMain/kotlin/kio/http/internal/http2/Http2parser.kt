@@ -18,6 +18,7 @@ package kio.http.internal.http2
 import kio.async.AsyncRawSource
 import kio.async.AsyncSource
 import kio.async.readByteArray
+import kio.async.readByteString
 import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.frameLog
 import kio.http.internal.http2.Http2.frameLogWindowUpdate
@@ -25,6 +26,7 @@ import kotlinx.io.Buffer
 import kotlinx.io.IOException
 import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.decodeToString
+import kotlinx.io.readByteString
 
 internal suspend fun AsyncSource.readPreface() {
     val connectionPreface = ByteString(readByteArray(Http2.CONNECTION_PREFACE.size))
@@ -46,6 +48,12 @@ sealed interface Frame {
         val streamId: Int,
         val length: Long,
     ): Frame
+
+    class GoAway(
+        val lastGoodStreamId: Int,
+        val errorCode: ErrorCode,
+        val debugData: ByteString,
+    ) : Frame
 
     class Setting(val settings: Settings) : Frame
 
@@ -105,7 +113,7 @@ internal suspend fun AsyncSource.nextFrame(): Frame {
         Http2.TYPE_SETTINGS -> readSettings(length, flags, streamId)
         Http2.TYPE_PUSH_PROMISE -> TODO("TYPE_PUSH_PROMISE")
         Http2.TYPE_PING -> readPing(length, flags, streamId)
-        Http2.TYPE_GOAWAY -> TODO("TYPE_GOAWAY")
+        Http2.TYPE_GOAWAY -> readGoAway(length, flags, streamId)
         Http2.TYPE_WINDOW_UPDATE -> readWindowUpdate(length, flags, streamId)
         else -> TODO()
     }
@@ -185,6 +193,27 @@ private suspend fun AsyncSource.readPing(
     val ack = flags and FLAG_ACK != 0
     if (ack) return Frame.PingAck(payload1, payload2)
     return Frame.Ping(payload1, payload2)
+}
+
+private suspend fun AsyncSource.readGoAway(
+    length: Int,
+    flags: Int,
+    streamId: Int,
+): Frame.GoAway {
+    if (length < 8) throw IOException("TYPE_GOAWAY length < 8: $length")
+    if (streamId != 0) throw IOException("TYPE_GOAWAY streamId != 0")
+    val lastStreamId = readInt()
+    val errorCodeInt = readInt()
+    val opaqueDataLength = length - 8
+    val errorCode =
+        ErrorCode.fromHttp2(errorCodeInt) ?: throw IOException(
+            "TYPE_GOAWAY unexpected error code: $errorCodeInt",
+        )
+    var debugData = ByteString()
+    if (opaqueDataLength > 0) { // Must read debug data in order to not corrupt the connection.
+        debugData = readByteString(opaqueDataLength)
+    }
+    return Frame.GoAway(lastStreamId, errorCode, debugData)
 }
 
 private suspend fun AsyncSource.readWindowUpdate(
