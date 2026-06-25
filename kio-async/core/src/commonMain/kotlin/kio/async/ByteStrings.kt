@@ -8,3 +8,8 @@ import kotlinx.io.bytestring.unsafe.UnsafeByteStringOperations
 suspend fun AsyncSource.readByteString(): ByteString {
     return UnsafeByteStringOperations.wrapUnsafe(readByteArray())
 }
+
+@OptIn(UnsafeByteStringApi::class)
+suspend fun AsyncSource.readByteString(byteCount: Int): ByteString {
+    return UnsafeByteStringOperations.wrapUnsafe(readByteArray(byteCount))
+}

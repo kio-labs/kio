@@ -6,6 +6,7 @@ import kio.http.internal.http2.Http2.FLAG_END_STREAM
 import kio.http.internal.http2.Http2.FLAG_NONE
 import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.http.internal.http2.Http2.TYPE_DATA
+import kio.http.internal.http2.Http2.TYPE_GOAWAY
 import kio.http.internal.http2.Http2.TYPE_PING
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Http2.frameLog
@@ -25,7 +26,7 @@ internal suspend fun AsyncSink.writeHeaders(
     val length = minOf(conn.maxFrameSize.toLong(), byteCount)
     var flags = if (byteCount == length) Http2.FLAG_END_HEADERS else 0
     if (outFinished) flags = flags or Http2.FLAG_END_STREAM
-    conn.writerMutex.withLock {
+    conn.writeFrameNonCancellable {
         frameHeader(
             streamId = streamId,
             length = length.toInt(),
@@ -49,7 +50,7 @@ private suspend fun AsyncSink.writeContinuationFrames(
         val length = minOf(conn.maxFrameSize.toLong(), byteCount)
         byteCount -= length
 
-        conn.writerMutex.withLock {
+        conn.writeFrameNonCancellable {
             frameHeader(
                 streamId = streamId,
                 length = length.toInt(),
@@ -64,7 +65,7 @@ private suspend fun AsyncSink.writeContinuationFrames(
 context(conn: Http2Connection)
 internal suspend fun AsyncSink.writeSetting(
     settings: Settings
-) = conn.writerMutex.withLock {
+) = conn.writeFrameNonCancellable {
     frameHeader(
         streamId = 0,
         length = settings.size() * 6,
@@ -83,7 +84,7 @@ internal suspend fun AsyncSink.writePing(
     ack: Boolean,
     payload1: Int,
     payload2: Int,
-) = conn.writerMutex.withLock {
+) = conn.writeFrameNonCancellable {
     frameHeader(
         streamId = 0,
         length = 8,
@@ -92,6 +93,33 @@ internal suspend fun AsyncSink.writePing(
     )
     writeInt(payload1)
     writeInt(payload2)
+}
+
+/**
+ * Tell the peer to stop creating streams and that we last processed `lastGoodStreamId`, or zero
+ * if no streams were processed.
+ *
+ * @param lastGoodStreamId the last stream ID processed, or zero if no streams were processed.
+ * @param errorCode reason for closing the connection.
+ * @param debugData only valid for HTTP/2; opaque debug data to send.
+ */
+context(conn: Http2Connection)
+internal suspend fun AsyncSink.writeGoAway(
+    lastGoodStreamId: Int,
+    errorCode: ErrorCode,
+    debugData: ByteArray,
+) = conn.writeFrameNonCancellable {
+    frameHeader(
+        streamId = 0,
+        length = 8 + debugData.size,
+        type = TYPE_GOAWAY,
+        flags = FLAG_NONE,
+    )
+    writeInt(lastGoodStreamId)
+    writeInt(errorCode.httpCode)
+    if (debugData.isNotEmpty()) {
+        write(debugData)
+    }
 }
 
 context(conn: Http2Connection)
@@ -143,7 +171,7 @@ private suspend fun AsyncSink.data(
     source: Buffer?,
     byteCount: Int,
 ) {
-    conn.writerMutex.withLock {
+    conn.writeFrameNonCancellable {
         var flags = FLAG_NONE
         if (outFinished) flags = flags or FLAG_END_STREAM
         dataFrame(streamId, flags, source, byteCount)

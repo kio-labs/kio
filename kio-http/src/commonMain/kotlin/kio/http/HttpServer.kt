@@ -1,8 +1,7 @@
 package kio.http
 
 import io.ktor.http.HttpMethod
-import kio.http.internal.http1.handleHttp1Connection
-import kio.http.internal.http2.handleHttp2Connection
+import kio.http.internal.http2.http2Connection
 import kio.network.AsyncConnection
 import kio.network.AsyncRawConnection
 import kio.network.ServerSocket
@@ -70,7 +69,7 @@ private suspend fun CoroutineScope.startHttpServer(
             try {
 // TODO: check current protocol?
 //                routeScope.handleHttp1Connection(conn)
-                routeScope.handleHttp2Connection(conn)
+                routeScope.http2Connection(conn)
             } catch (e: IOException) {
                 println("exception when try to keep connection alive $e")
             } finally {
