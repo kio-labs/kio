@@ -160,6 +160,15 @@ class Http2ConnectionTest {
         assertEquals(1, conn.streams.size)
         completer1.complete(Unit)
     }
+
+    @Test
+    fun windowUpdateParse() = withHttp2Test {
+        clientSendSetting(Settings())
+        serverSendFrame { assertIs<Frame.SettingsAck>(this) }
+
+        clientSendWindowUpdate(0, 10)
+        awaitNextClientFrame()
+    }
 }
 
 private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
@@ -204,6 +213,14 @@ private class Http2TestScope(
         debugData: ByteArray,
     ) = with(conn) {
         mockConn.clientSink.writeGoAway(lastGoodStreamId, errorCode, debugData)
+        mockConn.clientSink.flush()
+    }
+
+    suspend fun clientSendWindowUpdate(
+        streamId: Int,
+        windowSizeIncrement: Long,
+    ) = with(conn) {
+        mockConn.clientSink.writeWindowUpdate(streamId, windowSizeIncrement)
         mockConn.clientSink.flush()
     }
 

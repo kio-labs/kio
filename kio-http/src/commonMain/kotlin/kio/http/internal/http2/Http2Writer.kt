@@ -9,8 +9,8 @@ import kio.http.internal.http2.Http2.TYPE_DATA
 import kio.http.internal.http2.Http2.TYPE_GOAWAY
 import kio.http.internal.http2.Http2.TYPE_PING
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
+import kio.http.internal.http2.Http2.TYPE_WINDOW_UPDATE
 import kio.http.internal.http2.Http2.frameLog
-import kotlinx.coroutines.sync.withLock
 import kotlinx.io.Buffer
 
 context(conn: Http2Connection)
@@ -60,6 +60,20 @@ private suspend fun AsyncSink.writeContinuationFrames(
             write(hpackBuffer, length)
         }
     }
+}
+
+context(conn: Http2Connection)
+internal suspend fun AsyncSink.writeWindowUpdate(
+    streamId: Int,
+    windowSizeIncrement: Long,
+) = conn.writeFrameNonCancellable {
+    frameHeader(
+        streamId = streamId,
+        length = 4,
+        type = TYPE_WINDOW_UPDATE,
+        flags = FLAG_NONE,
+    )
+    writeInt(windowSizeIncrement.toInt())
 }
 
 context(conn: Http2Connection)
@@ -156,6 +170,7 @@ internal suspend fun AsyncSink.writeData(
     var byteCount = byteCount
     while (byteCount > 0L) {
         // TODO: await io if no more WINDOW_SIZE
+        // TODO: send frame limit by Http2Connection::maxFrameSize
         val toWrite: Int = minOf(INITIAL_MAX_FRAME_SIZE, byteCount.toInt())
 
         byteCount -= toWrite.toLong()
@@ -164,18 +179,16 @@ internal suspend fun AsyncSink.writeData(
 }
 
 
-context(conn: Http2Connection)
+context(_: Http2Connection)
 private suspend fun AsyncSink.data(
     outFinished: Boolean,
     streamId: Int,
     source: Buffer?,
     byteCount: Int,
 ) {
-    conn.writeFrameNonCancellable {
-        var flags = FLAG_NONE
-        if (outFinished) flags = flags or FLAG_END_STREAM
-        dataFrame(streamId, flags, source, byteCount)
-    }
+    var flags = FLAG_NONE
+    if (outFinished) flags = flags or FLAG_END_STREAM
+    dataFrame(streamId, flags, source, byteCount)
 }
 
 context(conn: Http2Connection)
@@ -184,7 +197,9 @@ private suspend fun AsyncSink.dataFrame(
     flags: Int,
     buffer: Buffer?,
     byteCount: Int,
-) {
+)= conn.writeFrameNonCancellable {
+// TODO: await if no window size remained.
+//  conn.awaitIfNeeded(streamId, byteCount)
     frameHeader(
         streamId = streamId,
         length = byteCount,

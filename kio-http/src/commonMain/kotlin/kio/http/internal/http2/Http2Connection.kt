@@ -90,6 +90,14 @@ internal class Http2Connection constructor(
     val maxFrameSize: Int
         get() = peerSettings.getMaxFrameSize(INITIAL_MAX_FRAME_SIZE)
 
+    /** The total number of bytes produced by the application. */
+    var writeBytesTotal = 0L
+        private set
+
+    /** The total number of bytes permitted to be produced according to `WINDOW_UPDATE` frames. */
+    var writeBytesMaximum: Long = peerSettings.initialWindowSize.toLong()
+        private set
+
     val hpackWriter: Hpack.Writer = Hpack.Writer()
 
     val streams = mutableMapOf<Int, Http2Stream>()
@@ -196,11 +204,19 @@ internal class Http2Connection constructor(
         dataStream.receiveData(source, length, inFinished)
     }
 
+    fun receiveWindowUpdate(streamId: Int, windowSizeIncrement: Long) {
+        if (streamId == 0) {
+            writeBytesMaximum += windowSizeIncrement
+        } else {
+            streams[streamId]?.addBytesToWriteWindow(windowSizeIncrement)
+        }
+    }
+
     companion object {
         val DEFAULT_SETTINGS =
             Settings().apply {
                 set(Settings.INITIAL_WINDOW_SIZE, DEFAULT_INITIAL_WINDOW_SIZE)
-                set(Settings.MAX_FRAME_SIZE, Http2.INITIAL_MAX_FRAME_SIZE)
+                set(Settings.MAX_FRAME_SIZE, INITIAL_MAX_FRAME_SIZE)
             }
     }
 }
@@ -240,7 +256,10 @@ internal suspend fun Http2Connection.frameReadLoop(onFrame: () -> Unit = {}) {
                     http2Connection.applyAndAckSettings(frame.settings)
                 }
 
-                is Frame.WindowUpdate -> {}
+                is Frame.WindowUpdate -> {
+                    http2Connection.receiveWindowUpdate(frame.streamId, frame.windowSizeIncrement)
+                }
+
                 is Frame.Ping -> {
                     http2Connection.ackPing(frame.payload1, frame.payload2)
                 }

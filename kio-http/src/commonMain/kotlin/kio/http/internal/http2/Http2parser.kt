@@ -60,8 +60,8 @@ sealed interface Frame {
     data object SettingsAck : Frame
 
     class WindowUpdate(
-        streamId: Int,
-        windowSizeIncrement: Long,
+        val streamId: Int,
+        val windowSizeIncrement: Long,
     ): Frame
 
     class PingAck(
