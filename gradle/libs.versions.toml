@@ -5,7 +5,7 @@ kotlinxCoroutines = "1.11.0"
 serialization = "1.11.0"
 kotlinxDatetime = "0.8.0"
 hash = "0.5.6"
-ktorHttp = "3.5.0"
+ktorHttp = "3.5.1"
 
 [libraries]
 kotlinx-io = { group = "org.jetbrains.kotlinx", name = "kotlinx-io-core", version.ref = "kotlinx-io" }
