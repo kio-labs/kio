@@ -90,13 +90,7 @@ internal class Http2Connection constructor(
     val maxFrameSize: Int
         get() = peerSettings.getMaxFrameSize(INITIAL_MAX_FRAME_SIZE)
 
-    /** The total number of bytes produced by the application. */
-    var writeBytesTotal = 0L
-        private set
-
-    /** The total number of bytes permitted to be produced according to `WINDOW_UPDATE` frames. */
-    var writeBytesMaximum: Long = peerSettings.initialWindowSize.toLong()
-        private set
+    val windowSizeCounter = WindowSizeCounter(peerSettings.initialWindowSize.toLong())
 
     val hpackWriter: Hpack.Writer = Hpack.Writer()
 
@@ -206,7 +200,7 @@ internal class Http2Connection constructor(
 
     fun receiveWindowUpdate(streamId: Int, windowSizeIncrement: Long) {
         if (streamId == 0) {
-            writeBytesMaximum += windowSizeIncrement
+            windowSizeCounter.increaseWindowSize(windowSizeIncrement)
         } else {
             streams[streamId]?.addBytesToWriteWindow(windowSizeIncrement)
         }
@@ -218,6 +212,29 @@ internal class Http2Connection constructor(
                 set(Settings.INITIAL_WINDOW_SIZE, DEFAULT_INITIAL_WINDOW_SIZE)
                 set(Settings.MAX_FRAME_SIZE, INITIAL_MAX_FRAME_SIZE)
             }
+    }
+}
+
+internal class WindowSizeCounter(
+    initialWindowSize: Long
+) {
+    /** The total number of bytes produced by the application. */
+    var writeBytesTotal = 0L
+        private set
+
+    /** The total number of bytes permitted to be produced according to `WINDOW_UPDATE` frames. */
+    var writeBytesMaximum: Long = initialWindowSize
+        private set
+
+    val remainWindowSize: Int
+        get() = (writeBytesMaximum - writeBytesTotal).coerceAtLeast(0).toInt()
+
+    fun increaseWindowSize(size: Long) {
+        writeBytesMaximum += size
+    }
+
+    fun onWrite(size: Int) {
+        writeBytesTotal += size
     }
 }
 

@@ -22,12 +22,10 @@ internal class Http2Stream constructor(
     lateinit var scope: CoroutineScope
     private val socketSink: AsyncSink = http2Conn.socketConn.sink
 
-    /** The total number of bytes permitted to be produced by incoming `WINDOW_UPDATE` frame. */
-    var writeBytesMaximum: Long = http2Conn.peerSettings.initialWindowSize.toLong()
-        internal set
+    val windowSizeCounter = WindowSizeCounter(http2Conn.peerSettings.initialWindowSize.toLong())
 
     private val framingSource = FramingSource(sourceFinished)
-    private val frameSink = FramingSink(streamId, socketSink, http2Conn)
+    private val frameSink = FramingSink(streamId, socketSink, http2Conn, this)
 
     override val source: AsyncRawSource = framingSource
 
@@ -42,7 +40,7 @@ internal class Http2Stream constructor(
     }
 
     fun addBytesToWriteWindow(delta: Long) {
-        writeBytesMaximum += delta
+        windowSizeCounter.increaseWindowSize(delta)
     }
 
     override fun toString(): String {
@@ -53,7 +51,8 @@ internal class Http2Stream constructor(
 private class FramingSink(
     private val streamId: Int,
     private val socketSink: AsyncSink,
-    private val http2Connection: Http2Connection
+    private val http2Connection: Http2Connection,
+    private val stream: Http2Stream
 ) : AsyncRawSink {
     /**
      * Buffer of outgoing data. This batches writes of small writes into this sink as larges frames
@@ -78,9 +77,8 @@ private class FramingSink(
      * write window. This method will block until the write window is nonempty.
      */
     private suspend fun emitFrame(outFinishedOnLastFrame: Boolean) {
-        with(http2Connection) {
-            // TODO: await io if no more WINDOW_SIZE
-            val toWrite = minOf(sendBuffer.size, INITIAL_MAX_FRAME_SIZE.toLong())
+        context(http2Connection, stream.windowSizeCounter) {
+            val toWrite = minOf(sendBuffer.size, EMIT_BUFFER_SIZE)
             val outFinished = outFinishedOnLastFrame && toWrite == sendBuffer.size
             socketSink.writeData(streamId, outFinished, sendBuffer, toWrite)
         }
@@ -103,7 +101,7 @@ private class FramingSink(
             }
 
             else -> {
-                with (http2Connection) {
+                context(http2Connection, stream.windowSizeCounter) {
                     socketSink.writeData(streamId, true, null, 0L)
                 }
             }

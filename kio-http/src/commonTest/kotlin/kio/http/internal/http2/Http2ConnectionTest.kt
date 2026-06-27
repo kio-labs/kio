@@ -86,7 +86,7 @@ abstract class Http2ConnectionTest {
         clientSendHeader(true, 1, listOf(Header("a", "value")))
         val (stream, completer) = assertStreamCreated()
         // New Stream is has the most recent initial window size.
-        assertEquals(3368, stream.writeBytesMaximum)
+        assertEquals(3368, stream.windowSizeCounter.writeBytesMaximum)
         completer.complete(Unit)
     }
 
@@ -108,7 +108,7 @@ abstract class Http2ConnectionTest {
         serverSendFrame { assertIs<Frame.SettingsAck>(this) }
 
         // new size applied.
-        assertEquals(3368, stream.writeBytesMaximum)
+        assertEquals(3368, stream.windowSizeCounter.writeBytesMaximum)
         completer.complete(Unit)
     }
 
