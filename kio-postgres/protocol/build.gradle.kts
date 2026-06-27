@@ -3,6 +3,7 @@ plugins {
 }
 
 kotlin {
+    jvm()
     macosArm64()
 
     sourceSets {

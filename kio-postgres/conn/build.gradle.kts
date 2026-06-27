@@ -4,6 +4,7 @@ plugins {
 }
 
 kotlin {
+    jvm()
     macosArm64()
 
     sourceSets {
@@ -21,6 +22,13 @@ kotlin {
 
         nativeTest.dependencies {
             implementation(project(":kio-async:poller-poll"))
+        }
+
+        jvmTest.dependencies {
+            implementation(project(":kio-async:poller-jvm-select"))
+        }
+
+        macosTest.dependencies {
             implementation(project(":kio-async:poller-kqueue"))
         }
     }

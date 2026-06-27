@@ -6,6 +6,7 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.io.Buffer
 import kotlinx.io.IOException
 import kotlinx.io.RawSink
@@ -13,6 +14,26 @@ import kotlinx.io.RawSource
 import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
 import platform.posix.*
+
+suspend fun awaitReadIo(fd: Int): Unit = suspendCancellableCoroutine { c ->
+    val dispatcher = c.context[AsyncPollEventDispatcher] ?: error("not in async poll event")
+    dispatcher.registerHandle(fd, PollInterestRead, c)
+
+    c.invokeOnCancellation {
+        println("awaitReadIo cancelled $it")
+        dispatcher.unRegisterHandle(fd, PollInterestRead)
+    }
+}
+
+suspend fun awaitWriteIo(fd: Int): Unit = suspendCancellableCoroutine { c ->
+    val dispatcher = c.context[AsyncPollEventDispatcher] ?: error("not in async poll event")
+    dispatcher.registerHandle(fd, PollInterestWrite,c)
+
+    c.invokeOnCancellation {
+        println("awaitWriteIo cancelled $it")
+        dispatcher.unRegisterHandle(fd, PollInterestWrite)
+    }
+}
 
 fun fdRawSink(fd: Int): RawSink = FdRawSink(fd)
 fun asyncFdRawSink(fd: Int): AsyncRawSink = AsyncFdRawSink(fd)

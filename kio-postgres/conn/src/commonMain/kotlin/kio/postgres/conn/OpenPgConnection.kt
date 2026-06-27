@@ -1,5 +1,6 @@
 package kio.postgres.conn
 
+import kio.network.buffered
 import kio.network.openConnection
 import kio.postegre.protocol.Message
 import kio.postegre.protocol.readMessage
@@ -18,7 +19,7 @@ suspend fun openPgConnection(
     options: String? = null,
     onNotice: (PgException) -> Unit = {},
 ): PgConnection {
-    val conn = openConnection(host, port)
+    val conn = openConnection(host, port).buffered()
 
     val params = buildMap {
         put("user", user)

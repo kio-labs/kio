@@ -7,6 +7,11 @@ plugins {
 }
 
 kotlin {
+    jvm() {
+        mainRun {
+
+        }
+    }
     macosArm64 {
         binaries {
             executable {
@@ -18,7 +23,12 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":kio-network"))
+        }
+        nativeMain.dependencies {
             implementation(project(":kio-async:poller-poll"))
+        }
+        jvmMain.dependencies {
+            implementation(project(":kio-async:poller-jvm-select"))
         }
     }
 }

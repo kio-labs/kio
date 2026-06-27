@@ -3,9 +3,9 @@ package kio.http.internal.http2
 import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.AsyncSink
+import kio.async.Poller
 import kio.async.buffered
 import kio.async.openPipe
-import kio.async.poller.poll.PosixPoll
 import kio.async.readString
 import kio.async.runPollEventLoop
 import kio.network.AsyncRawConnection
@@ -29,7 +29,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 
-class Http2ConnectionTest {
+abstract class Http2ConnectionTest {
+    abstract val poller: Poller.Factory
+
     @Test
     fun serverCanAckPing() = withHttp2Test {
         clientSendPing(4, 23)
@@ -169,25 +171,24 @@ class Http2ConnectionTest {
         clientSendWindowUpdate(0, 10)
         awaitNextClientFrame()
     }
-}
 
-private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
-    runPollEventLoop(PosixPoll) {
-        supervisorScope {
-            val mock = MockHttp2Connection(this)
-            val scop = Http2TestScope(mock, this.coroutineContext)
+    private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
+        runPollEventLoop(poller) {
+            supervisorScope {
+                val mock = MockHttp2Connection(this)
+                val scop = Http2TestScope(mock, this.coroutineContext)
 
-            val job = launch {
-                mock.http2Conn.frameReadLoop(
-                    onFrame = { scop.onFrame() }
-                )
+                val job = launch {
+                    mock.http2Conn.frameReadLoop(
+                        onFrame = { scop.onFrame() }
+                    )
+                }
+
+                block(scop)
+                job.cancel()
             }
-
-            block(scop)
-            job.cancel()
         }
-    }
-
+}
 
 private class Http2TestScope(
     private val mockConn: MockHttp2Connection,

@@ -1,8 +1,6 @@
 package kio.postegre.protocol
 
 import kio.async.AsyncSource
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.toKString
 import kotlinx.io.Buffer
 import kotlinx.io.IOException
 import kotlinx.io.InternalIoApi
@@ -143,7 +141,6 @@ suspend fun AsyncSource.readHeader(): Header {
     return Header(tag, len)
 }
 
-@OptIn(ExperimentalForeignApi::class)
 suspend fun AsyncSource.readMessage(): Message {
     val tag = readByte()
     val len = readInt()
@@ -305,4 +302,17 @@ private fun Source.readCString(): String? {
             string
         }
     }
+}
+
+private fun ByteArray.toKString() : String {
+    val realEndIndex = realEndIndex(this, 0, this.size)
+    return decodeToString(0, realEndIndex)
+}
+
+private fun realEndIndex(byteArray: ByteArray, startIndex: Int, endIndex: Int): Int {
+    var index = startIndex
+    while (index < endIndex && byteArray[index] != 0.toByte()) {
+        index++
+    }
+    return index
 }
