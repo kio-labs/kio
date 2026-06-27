@@ -2,8 +2,6 @@ package kio.async.poller.test
 
 import kio.async.Poller
 import kio.async.openPipe
-import kio.async.poller.kqueue.Kqueue
-import kio.async.poller.poll.PosixPoll
 import kio.async.runPollEventLoop
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -12,14 +10,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
-
-class PosixPollEventLoopTest: PollEventLoopTest() {
-    override val factory: Poller.Factory = PosixPoll
-}
-
-class KqueueEventLoopTest: PollEventLoopTest() {
-    override val factory: Poller.Factory = Kqueue
-}
 
 abstract class PollEventLoopTest {
     abstract val factory : Poller.Factory

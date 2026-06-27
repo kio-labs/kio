@@ -1,9 +1,11 @@
 package kio.async.poller.kqueue
 
+import kio.async.PollInterest
+import kio.async.PollInterestRead
+import kio.async.PollInterestWrite
 import kio.async.Poller
 import kotlinx.cinterop.Arena
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.MemScope
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.get
@@ -18,14 +20,13 @@ import platform.darwin.EV_ENABLE
 import platform.darwin.kevent
 import platform.darwin.kqueue
 import platform.posix.timespec
-import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 object Kqueue : Poller.Factory {
-    override fun create(): Poller = NativePoller()
+    override fun create(): Poller = KqueuePoller()
 }
 
-private class NativePoller : Poller {
+private class KqueuePoller : Poller {
     private val kq = kqueue()
     @OptIn(ExperimentalForeignApi::class)
     private val arean = Arena()
@@ -33,9 +34,9 @@ private class NativePoller : Poller {
     private val events = arean.allocArray<kevent>(EVENT_CAPACITY)
 
     @OptIn(ExperimentalForeignApi::class, ExperimentalAtomicApi::class)
-    override fun registerFd(fd: Int, event: Poller.EventType): Unit = memScoped {
+    override fun register(handle: Int, event: PollInterest): Unit = memScoped {
         val change = alloc<kevent> {
-            ident = fd.toULong()
+            ident = handle.toULong()
             filter = event.filter()
             flags = (EV_ADD or EV_ENABLE).toUShort()
             fflags = 0U
@@ -49,9 +50,9 @@ private class NativePoller : Poller {
     }
 
     @OptIn(ExperimentalForeignApi::class, ExperimentalAtomicApi::class)
-    override fun unRegisterFd(fd: Int, event: Poller.EventType): Unit = memScoped {
+    override fun unRegister(handle: Int, event: PollInterest): Unit = memScoped {
         val change = alloc<kevent> {
-            ident = fd.toULong()
+            ident = handle.toULong()
             filter = event.filter()
             flags = (EV_DELETE).toUShort()
             fflags = 0U
@@ -85,13 +86,13 @@ private class NativePoller : Poller {
             for (i in 0 until n) {
                 val e = events[i]
                 val fd = e.ident.toInt()
-                val eventType = when (e.filter.toInt()) {
-                    EVFILT_READ -> Poller.EventType.READ
-                    EVFILT_WRITE -> Poller.EventType.WRITE
+                val pollInterest = when (e.filter.toInt()) {
+                    EVFILT_READ -> PollInterestRead
+                    EVFILT_WRITE -> PollInterestWrite
                     else -> continue
                 }
 
-                add(fd to eventType)
+                add(fd to pollInterest)
             }
         }
 
@@ -110,7 +111,8 @@ private class NativePoller : Poller {
 
 private const val EVENT_CAPACITY = 1024
 
-private fun Poller.EventType.filter() = when (this) {
-    Poller.EventType.READ -> EVFILT_READ.toShort()
-    Poller.EventType.WRITE -> EVFILT_WRITE.toShort()
+private fun PollInterest.filter() = when (this) {
+    PollInterestRead -> EVFILT_READ.toShort()
+    PollInterestWrite -> EVFILT_WRITE.toShort()
+    else -> error("never")
 }

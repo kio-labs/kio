@@ -1,5 +1,8 @@
 package kio.async.poller.poll
 
+import kio.async.PollInterest
+import kio.async.PollInterestRead
+import kio.async.PollInterestWrite
 import kio.async.Poller
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
@@ -20,26 +23,27 @@ object PosixPoll : Poller.Factory {
 }
 
 private class NativePoller : Poller {
-    private val pollFdRequestMap: MutableMap<Pair<Int, Poller.EventType>, PollFdRequest> =
+    private val pollFdRequestMap: MutableMap<Pair<Int, PollInterest>, PollFdRequest> =
         mutableMapOf()
 
-    private val scope = fun(fd: Int, event: Poller.EventType): Boolean {
+    private val scope = fun(fd: Int, event: PollInterest): Boolean {
         val request = pollFdRequestMap[fd to event] ?: return false
         return request.needContinue()
     }
 
-    override fun registerFd(fd: Int, event: Poller.EventType) {
+    override fun register(handle: Int, event: PollInterest) {
         val fdRequest = when (event) {
-            Poller.EventType.READ -> PollFdRequest(fd, POLLRDNORM)
-            Poller.EventType.WRITE -> PollFdRequest(fd, POLLWRNORM)
+            PollInterestRead -> PollFdRequest(handle, POLLRDNORM)
+            PollInterestWrite -> PollFdRequest(handle, POLLWRNORM)
+            else -> error("never")
         }
 
-        if (pollFdRequestMap.values.contains(fdRequest)) throw IllegalStateException("$fd already sleep.")
-        pollFdRequestMap[fd to event] = fdRequest
+        if (pollFdRequestMap.values.contains(fdRequest)) throw IllegalStateException("$handle already sleep.")
+        pollFdRequestMap[handle to event] = fdRequest
     }
 
-    override fun unRegisterFd(fd: Int, event: Poller.EventType) {
-        pollFdRequestMap.remove(fd to event)
+    override fun unRegister(handle: Int, event: PollInterest) {
+        pollFdRequestMap.remove(handle to event)
     }
 
     override fun poll(

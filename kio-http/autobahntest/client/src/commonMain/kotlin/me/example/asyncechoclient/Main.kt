@@ -11,6 +11,7 @@ import kio.async.poller.poll.PosixPoll
 import kio.async.readLine
 import kio.async.writeString
 import kio.network.AsyncConnection
+import kio.network.buffered
 import kio.websocket.asWsClientConnection
 import kio.websocket.sendTextMessage
 import org.kotlincrypto.hash.sha1.SHA1
@@ -31,7 +32,7 @@ fun main(): Unit = runPollEventLoop(PosixPoll) {
 }
 
 private suspend fun runCase(caseId: String) {
-    val conn = openConnection(HOST, PORT)
+    val conn = openConnection(HOST, PORT).buffered()
     val ws = conn.asWsClientConnection()
 
     println("running case $caseId")
@@ -83,7 +84,7 @@ private suspend fun runCase(caseId: String) {
 }
 
 private suspend fun updateReports() {
-    val conn = openConnection(HOST, PORT)
+    val conn = openConnection(HOST, PORT).buffered()
     val ws = conn.asWsClientConnection()
 
     println("updating reports")
@@ -112,7 +113,7 @@ private suspend fun updateReports() {
 
 
 private suspend fun getCaseCount(): Int {
-    val conn = openConnection(HOST, PORT)
+    val conn = openConnection(HOST, PORT).buffered()
     val ws = conn.asWsClientConnection()
 
     try {

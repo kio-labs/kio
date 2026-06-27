@@ -3,6 +3,7 @@ package kio.postgres.conn
 import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.network.AsyncConnection
+import kio.network.buffered
 import kio.network.openConnection
 import kio.postegre.protocol.ErrorField
 import kio.postegre.protocol.Message
@@ -131,10 +132,6 @@ suspend fun PgConnection.exec(sql: String): String {
     }
 }
 
-suspend fun PgConnection.prepare(sql: String, name: String): PgStatement {
-    return prepare<Unit>(sql, name)
-}
-
 suspend inline fun <reified P> PgConnection.prepare(sql: String, name: String): PgStatement {
     this as InternalPgConnection
 
@@ -172,30 +169,32 @@ class PgException(
     val line: String? = null,
     val routine: String? = null,
     val unknownFields: String? = null,
-) : IOException(
-    message = buildString {
-        appendLine()
-        severity?.let { appendLine("Code: $it") }
-        severityUnlocalized?.let { appendLine("ColumnName: $it") }
-        code?.let { appendLine("ConstraintName: $it") }
-        pgMessage?.let { appendLine("DataTypeName: $it") }
-        detail?.let { appendLine("Detail: $it") }
-        hint?.let { appendLine("File: $it") }
-        position?.let { appendLine("Hint: $it") }
-        internalPosition?.let { appendLine("InternalPosition: $it") }
-        internalQuery?.let { appendLine("InternalQuery: $it") }
-        where?.let { appendLine("Line: $it") }
-        schemaName?.let { appendLine("Message: $it") }
-        tableName?.let { appendLine("Position: $it") }
-        columnName?.let { appendLine("Routine: $it") }
-        dataTypeName?.let { appendLine("SchemaName: $it") }
-        constraintName?.let { appendLine("Severity: $it") }
-        file?.let { appendLine("SeverityUnlocalized: $it") }
-        line?.let { appendLine("TableName: $it") }
-        routine?.let { appendLine("UnknownFields: $it") }
-        unknownFields?.let { appendLine("Where: $it") }
+) : IOException() {
+    override val message: String by lazy {
+        buildString {
+            appendLine()
+            severity?.let { appendLine("Code: $it") }
+            severityUnlocalized?.let { appendLine("ColumnName: $it") }
+            code?.let { appendLine("ConstraintName: $it") }
+            pgMessage?.let { appendLine("DataTypeName: $it") }
+            detail?.let { appendLine("Detail: $it") }
+            hint?.let { appendLine("File: $it") }
+            position?.let { appendLine("Hint: $it") }
+            internalPosition?.let { appendLine("InternalPosition: $it") }
+            internalQuery?.let { appendLine("InternalQuery: $it") }
+            where?.let { appendLine("Line: $it") }
+            schemaName?.let { appendLine("Message: $it") }
+            tableName?.let { appendLine("Position: $it") }
+            columnName?.let { appendLine("Routine: $it") }
+            dataTypeName?.let { appendLine("SchemaName: $it") }
+            constraintName?.let { appendLine("Severity: $it") }
+            file?.let { appendLine("SeverityUnlocalized: $it") }
+            line?.let { appendLine("TableName: $it") }
+            routine?.let { appendLine("UnknownFields: $it") }
+            unknownFields?.let { appendLine("Where: $it") }
+        }
     }
-)
+}
 
 @PublishedApi
 internal suspend fun execStmt(
@@ -489,7 +488,7 @@ internal class InternalPgConnection(
 
     suspend fun sendCancelRequest() {
         withContext(NonCancellable) {
-            val conn = openConnection(host, port)
+            val conn = openConnection(host, port).buffered()
             try {
                 conn.sink.writeCancelRequest(processId = pid, secretKey = secretKey)
                 conn.sink.flush()

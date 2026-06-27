@@ -86,3 +86,5 @@ internal actual fun wakeupPipe() = memScoped {
         }
     }
 }
+
+actual typealias PollHandle = Int
