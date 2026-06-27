@@ -15,7 +15,7 @@ import platform.darwin.inet_addr
 import kotlin.Int
 
 @OptIn(ExperimentalForeignApi::class)
-actual suspend fun openConnection(host: String, port: Int): AsyncConnection = memScoped {
+actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection = memScoped {
     val hints = alloc<addrinfo> {
         ai_family = AF_UNSPEC
         ai_socktype = SOCK_STREAM
@@ -54,7 +54,7 @@ actual suspend fun openConnection(host: String, port: Int): AsyncConnection = me
                 )
 
                 if (ret == 0) {
-                    return@memScoped FdRawAsyncConnection(fd = fd).buffered()
+                    return@memScoped FdRawAsyncConnection(fd = fd)
                 }
 
                 if (errno == EINPROGRESS) {
@@ -62,7 +62,7 @@ actual suspend fun openConnection(host: String, port: Int): AsyncConnection = me
 
                     val socketError = getSocketError(fd)
                     if (socketError == 0) {
-                        return@memScoped FdRawAsyncConnection(fd = fd).buffered()
+                        return@memScoped FdRawAsyncConnection(fd = fd)
                     }
 
                     lastError = strerror(socketError)?.toKString()
@@ -85,11 +85,8 @@ actual suspend fun openConnection(host: String, port: Int): AsyncConnection = me
 }
 
 @OptIn(ExperimentalForeignApi::class)
-fun tcpBind(
-    host: String,
-    port: Int,
-    backlog: Int = 128,
-): ServerSocket = memScoped {
+actual fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
+    val backlog: Int = 128
 // TODO: Judge IP type form host.
     val serverFd = socket(AF_INET, SOCK_STREAM, 0)
     if (serverFd < 0) {

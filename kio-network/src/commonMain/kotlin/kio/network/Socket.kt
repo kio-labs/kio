@@ -26,7 +26,9 @@ interface AsyncConnection: AsyncRawConnection {
     override suspend fun close()
 }
 
-expect suspend fun openConnection(host: String, port: Int): AsyncConnection
+expect suspend fun openConnection(host: String, port: Int): AsyncRawConnection
+
+expect fun tcpBind(host: String, port: Int): ServerSocket
 
 interface ServerSocket {
     suspend fun accept(): AsyncRawConnection

@@ -12,7 +12,6 @@ import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.disposeOnCancellation
 import kotlinx.coroutines.newCoroutineContext
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.iterator
@@ -25,26 +24,6 @@ import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.resume
-
-suspend fun awaitReadIo(fd: Int): Unit = suspendCancellableCoroutine { c ->
-    val dispatcher = c.context[AsyncPollEventDispatcher] ?: error("not in async poll event")
-    dispatcher.registerFdForRead(fd, c)
-
-    c.invokeOnCancellation {
-        println("awaitReadIo cancelled $it")
-        dispatcher.unRegisterFdForRead(fd)
-    }
-}
-
-suspend fun awaitWriteIo(fd: Int): Unit = suspendCancellableCoroutine { c ->
-    val dispatcher = c.context[AsyncPollEventDispatcher] ?: error("not in async poll event")
-    dispatcher.registerFdForWrite(fd, c)
-
-    c.invokeOnCancellation {
-        println("awaitWriteIo cancelled $it")
-        dispatcher.unRegisterFdForWrite(fd)
-    }
-}
 
 @OptIn(DelicateCoroutinesApi::class)
 fun <T> runPollEventLoop(
@@ -59,6 +38,15 @@ fun <T> runPollEventLoop(
     return coroutine.joinBlocking()
 }
 
+expect class PollHandle
+
+sealed interface PollInterest
+data object PollInterestRead : PollInterest
+data object PollInterestWrite : PollInterest
+// JVM only
+data object PollInterestConnect : PollInterest
+data object PollInterestAccept : PollInterest
+
 interface Poller {
 
     interface Factory {
@@ -66,16 +54,12 @@ interface Poller {
     }
 
     fun interface PollScope {
-        fun isAwake(fd: Int, event: EventType): Boolean
+        fun isAwake(handle: PollHandle, event: PollInterest): Boolean
     }
 
-    enum class EventType {
-        READ,
-        WRITE,
-    }
 
-    fun registerFd(fd: Int, event: EventType)
-    fun unRegisterFd(fd: Int, event: EventType)
+    fun register(handle: PollHandle, event: PollInterest)
+    fun unRegister(handle: PollHandle, event: PollInterest)
 
     /**
      * Blocks the current thread until this fd becomes ready or the timeout expires.
@@ -102,16 +86,14 @@ internal class AsyncPollEventDispatcher(
 
     private val nativePoller = factory.create()
 
-    // TODO: Thread safe support for this three collection
-    private val readFdWithContinueMap: MutableMap<Int, Continuation<Unit>> = mutableMapOf()
-    private val writeFdWithContinueMap: MutableMap<Int, Continuation<Unit>> = mutableMapOf()
+    private val continuationMap: MutableMap<Pair<PollHandle, PollInterest>, Continuation<Unit>> = mutableMapOf()
     private val timerRequestMap: MutableMap<TimerRequest, Continuation<Unit>> = mutableMapOf()
     private val taskQueue = ArrayDeque<Runnable>()
 
     private val wakeupPipe = wakeupPipe()
 
     init {
-        nativePoller.registerFd(wakeupPipe.wakeupReadFD, Poller.EventType.READ)
+        nativePoller.register(wakeupPipe.wakeupReadFD, PollInterestRead)
     }
 
     override fun dispatch(
@@ -149,10 +131,6 @@ internal class AsyncPollEventDispatcher(
             else -> -1
         }
 
-//        if (timeout == -1L && fdWithContinueMap.keys.isEmpty()) {
-//            throw IllegalStateException("Try to block indefinitely with no fd registration.")
-//        }
-
         // block
         nativePoller.poll(timeout) {
             resumeSleepingFds()
@@ -171,28 +149,26 @@ internal class AsyncPollEventDispatcher(
     }
 
     private fun Poller.PollScope.resumeSleepingFds() {
-        fun removeFdIfAwake(fd: Int, event: Poller.EventType): Boolean {
+        fun removeFdIfAwake(fd: PollHandle, event: PollInterest): Boolean {
             val awake = isAwake(fd, event)
-            if (awake) nativePoller.unRegisterFd(fd, event)
+            if (awake) nativePoller.unRegister(fd, event)
             return awake
         }
 
-        fun resume(fdMap: MutableMap<Int, Continuation<Unit>>, event: Poller.EventType) {
-            val it = fdMap.iterator()
-            while (it.hasNext()) {
-                val (req, continuation) = it.next()
-                if (removeFdIfAwake(req, event)) {
-                    it.remove()
-                    continuation.resume(Unit)
-                }
+        val it = continuationMap.iterator()
+        while (it.hasNext()) {
+            val (req, continuation) = it.next()
+            val (handle, event) = req
+            if (removeFdIfAwake(handle, event)) {
+                it.remove()
+                continuation.resume(Unit)
             }
         }
-
-        resume(readFdWithContinueMap, Poller.EventType.READ)
-        resume(writeFdWithContinueMap, Poller.EventType.WRITE)
     }
 
     private fun resumeTimers() {
+        if (timerRequestMap.isEmpty()) return
+
         val it = timerRequestMap.iterator()
         while (it.hasNext()) {
             val (req, continuation) = it.next()
@@ -212,33 +188,14 @@ internal class AsyncPollEventDispatcher(
         timerRequestMap.remove(req)
     }
 
-    fun registerFdForRead(fd: Int, c: Continuation<Unit>) {
-        registerFd(fd, Poller.EventType.READ, c)
+    fun registerHandle(fd: PollHandle, event: PollInterest, c: Continuation<Unit>) {
+        nativePoller.register(fd, event)
+        continuationMap[fd to event] = c
     }
 
-    fun registerFdForWrite(fd: Int, c: Continuation<Unit>) {
-        registerFd(fd, Poller.EventType.WRITE, c)
-    }
-
-    private fun registerFd(fd: Int, event: Poller.EventType, c: Continuation<Unit>) {
-        nativePoller.registerFd(fd, event)
-        when (event) {
-            Poller.EventType.READ -> readFdWithContinueMap[fd] = c
-            Poller.EventType.WRITE -> writeFdWithContinueMap[fd] = c
-        }
-    }
-
-    fun unRegisterFdForRead(fd: Int) = unRegisterFd(fd, Poller.EventType.READ)
-
-    fun unRegisterFdForWrite(fd: Int) = unRegisterFd(fd, Poller.EventType.WRITE)
-
-    private fun unRegisterFd(fd: Int, event: Poller.EventType) {
-        nativePoller.unRegisterFd(fd, event)
-        when (event) {
-            Poller.EventType.READ -> readFdWithContinueMap.remove(fd)
-            Poller.EventType.WRITE -> writeFdWithContinueMap.remove(fd)
-        }
-
+    fun unRegisterHandle(fd: PollHandle, event: PollInterest) {
+        nativePoller.unRegister(fd, event)
+        continuationMap.remove(fd to event)
         wakeupPipe.wakeup()
     }
 
@@ -288,7 +245,7 @@ internal class TimerRequest(
 }
 
 internal interface WakeupPipe {
-    val wakeupReadFD: Int
+    val wakeupReadFD: PollHandle
     fun drainWakeup()
     fun wakeup()
 
@@ -300,24 +257,11 @@ private class BlockingAIOCoroutine<T>(
     parentContext: CoroutineContext,
     private val dispatcher: AsyncPollEventDispatcher
 ) : AbstractCoroutine<T>(parentContext, true, true) {
-//    private val joinWorker = Worker.current
-
-    // TODO: is this safe for multi-thread?
     private var result: Result<T>? = null
-
-    override fun afterCompletion(state: Any?) {
-        // wake up blocked thread
-//        if (joinWorker != Worker.current) {
-//            // Unpark waiting worker
-//            println("unpark thread!!!!")
-//            joinWorker.executeAfter(0L, {}) // send an empty task to unpark the waiting event loop
-//        }
-    }
 
     override fun onCompleted(value: T) {
         super.onCompleted(value)
         result = Result.success(value)
-        println("Complete !!! $value")
     }
 
     override fun onCancelled(cause: Throwable, handled: Boolean) {
@@ -329,11 +273,10 @@ private class BlockingAIOCoroutine<T>(
         while (true) {
             dispatcher.doBlockPoll()
 
-            dispatcher.processNextEvent()
-//            if (!dispatcher.processNextEvent()) {
-//                // no more task. sleep to wait complete
-//                joinWorker.park(Long.MAX_VALUE / 1000L, true)
-//            }
+            while (true) {
+                val hasNext = dispatcher.processNextEvent()
+                if (!hasNext) break
+            }
 
             if (isCompleted) break
         }

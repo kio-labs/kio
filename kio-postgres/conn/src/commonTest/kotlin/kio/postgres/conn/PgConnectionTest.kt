@@ -2,8 +2,6 @@ package kio.postgres.conn
 
 import kio.async.Poller
 import kio.async.openPipe
-import kio.async.poller.kqueue.Kqueue
-import kio.async.poller.poll.PosixPoll
 import kio.async.runPollEventLoop
 import kio.async.writeString
 import kio.postegre.types.PgBool
@@ -29,14 +27,6 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.measureTime
-
-class PosixPgConnectionTest : PgConnectionTest() {
-    override val pollerFactory: Poller.Factory = PosixPoll
-}
-
-class KqueuePgConnectionTest : PgConnectionTest() {
-    override val pollerFactory: Poller.Factory = Kqueue
-}
 
 abstract class PgConnectionTest {
     abstract val pollerFactory: Poller.Factory
