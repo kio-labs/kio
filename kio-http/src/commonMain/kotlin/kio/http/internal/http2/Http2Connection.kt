@@ -17,6 +17,8 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
@@ -96,6 +98,9 @@ internal class Http2Connection constructor(
 
     val streams = mutableMapOf<Int, Http2Stream>()
 
+    // notify all observers when received window update event
+    private val windowUpdateEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
     private var isShutdown = false
 
     suspend fun doInitSetting() {
@@ -129,6 +134,10 @@ internal class Http2Connection constructor(
         }
     }
 
+    suspend fun awaitWindowUpdateEvent() {
+        windowUpdateEvents.first()
+    }
+
     fun applyAndAckSettings(settings: Settings) {
         connectionScope.launch {
             val previousPeerSettings = peerSettings
@@ -143,6 +152,7 @@ internal class Http2Connection constructor(
                 streams.forEach { (id, stream) ->
                     stream.addBytesToWriteWindow(delta.toLong())
                 }
+                windowUpdateEvents.tryEmit(Unit)
             }
 
             // apply headerTableSize setting to hpackWriter.
@@ -204,6 +214,7 @@ internal class Http2Connection constructor(
         } else {
             streams[streamId]?.addBytesToWriteWindow(windowSizeIncrement)
         }
+        windowUpdateEvents.tryEmit(Unit)
     }
 
     companion object {

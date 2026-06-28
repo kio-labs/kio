@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Delay
 import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.DisposableHandle
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Runnable
@@ -87,7 +88,7 @@ internal class AsyncPollEventDispatcher(
     private val nativePoller = factory.create()
 
     private val continuationMap: MutableMap<Pair<PollHandle, PollInterest>, Continuation<Unit>> = mutableMapOf()
-    private val timerRequestMap: MutableMap<TimerRequest, Continuation<Unit>> = mutableMapOf()
+    private val timerRequestMap: MutableMap<TimerRequest, Runnable> = mutableMapOf()
     private val taskQueue = ArrayDeque<Runnable>()
 
     private val wakeupPipe = wakeupPipe()
@@ -103,18 +104,37 @@ internal class AsyncPollEventDispatcher(
         taskQueue.addFirst(block)
     }
 
+    override fun invokeOnTimeout(
+        timeMillis: Long,
+        block: Runnable,
+        context: CoroutineContext
+    ): DisposableHandle {
+        val request = TimerRequest(
+            TimerRequest.nextKey(),
+            deadlineMillis = nowMillis() + timeMillis
+        )
+
+        registerTimer(request, block)
+
+        return DisposableHandle {
+            unRegisterTimer(request)
+        }
+    }
+
     override fun scheduleResumeAfterDelay(
         timeMillis: Long,
         continuation: CancellableContinuation<Unit>
     ) {
-        val timer = TimerRequest(
+        val request = TimerRequest(
             TimerRequest.nextKey(),
             deadlineMillis = nowMillis() + timeMillis
         )
-        registerTimer(timer, continuation)
+        registerTimer(request) {
+            continuation.resume(Unit)
+        }
 
         continuation.disposeOnCancellation {
-            unRegisterTimer(timer)
+            unRegisterTimer(request)
         }
     }
 
@@ -171,15 +191,15 @@ internal class AsyncPollEventDispatcher(
 
         val it = timerRequestMap.iterator()
         while (it.hasNext()) {
-            val (req, continuation) = it.next()
+            val (req, runnable) = it.next()
             if (req.needContinue()) {
                 it.remove()
-                continuation.resume(Unit)
+                runnable.run()
             }
         }
     }
 
-    fun registerTimer(req: TimerRequest, c: Continuation<Unit>) {
+    fun registerTimer(req: TimerRequest, c: Runnable) {
         if (timerRequestMap.contains(req)) throw IllegalStateException("$req already sleep.")
         timerRequestMap[req] = c
     }
@@ -240,7 +260,7 @@ internal class TimerRequest(
         @OptIn(ExperimentalAtomicApi::class)
         private val index = AtomicInt(0)
         @OptIn(ExperimentalAtomicApi::class)
-            internal fun nextKey() = index.addAndFetch(1)
+        internal fun nextKey() = index.addAndFetch(1)
     }
 }
 

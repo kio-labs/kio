@@ -168,7 +168,7 @@ internal suspend fun AsyncSink.writeData(
 
     var remain = byteCount
     while (remain > 0L) {
-        val toWrite = waitUnitCanWrite(remain)
+        val toWrite = waitUntilCanWrite(remain)
 
         streamWindowSize.onWrite(toWrite)
         conn.windowSizeCounter.onWrite(toWrite)
@@ -179,11 +179,13 @@ internal suspend fun AsyncSink.writeData(
 }
 
 context(conn: Http2Connection, streamWindowSize: WindowSizeCounter)
-private suspend fun waitUnitCanWrite(remainByteCount: Long): Int {
+private suspend fun waitUntilCanWrite(remainByteCount: Long): Int {
     val ret: Int
     while (true) {
         if (calculateWriteSize(remainByteCount) == 0) {
-            // TODO: suspend to wait io
+            println("conn.awaitWindowUpdateEvent() E ${calculateWriteSize(remainByteCount)}")
+            conn.awaitWindowUpdateEvent()
+            println("conn.awaitWindowUpdateEvent() X ${calculateWriteSize(remainByteCount)}")
         }
 
         val writeSize = calculateWriteSize(remainByteCount)
