@@ -4,13 +4,12 @@ import kio.async.AsyncSink
 import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.FLAG_END_STREAM
 import kio.http.internal.http2.Http2.FLAG_NONE
-import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.http.internal.http2.Http2.TYPE_DATA
 import kio.http.internal.http2.Http2.TYPE_GOAWAY
 import kio.http.internal.http2.Http2.TYPE_PING
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
+import kio.http.internal.http2.Http2.TYPE_WINDOW_UPDATE
 import kio.http.internal.http2.Http2.frameLog
-import kotlinx.coroutines.sync.withLock
 import kotlinx.io.Buffer
 
 context(conn: Http2Connection)
@@ -60,6 +59,20 @@ private suspend fun AsyncSink.writeContinuationFrames(
             write(hpackBuffer, length)
         }
     }
+}
+
+context(conn: Http2Connection)
+internal suspend fun AsyncSink.writeWindowUpdate(
+    streamId: Int,
+    windowSizeIncrement: Long,
+) = conn.writeFrameNonCancellable {
+    frameHeader(
+        streamId = streamId,
+        length = 4,
+        type = TYPE_WINDOW_UPDATE,
+        flags = FLAG_NONE,
+    )
+    writeInt(windowSizeIncrement.toInt())
 }
 
 context(conn: Http2Connection)
@@ -141,7 +154,7 @@ internal suspend fun AsyncSink.frameHeader(
     writeInt(streamId and 0x7fffffff)
 }
 
-context(_: Http2Connection)
+context(conn: Http2Connection, streamWindowSize: WindowSizeCounter)
 internal suspend fun AsyncSink.writeData(
     streamId: Int,
     outFinished: Boolean,
@@ -153,29 +166,55 @@ internal suspend fun AsyncSink.writeData(
         return
     }
 
-    var byteCount = byteCount
-    while (byteCount > 0L) {
-        // TODO: await io if no more WINDOW_SIZE
-        val toWrite: Int = minOf(INITIAL_MAX_FRAME_SIZE, byteCount.toInt())
+    var remain = byteCount
+    while (remain > 0L) {
+        val toWrite = waitUntilCanWrite(remain)
 
-        byteCount -= toWrite.toLong()
-        data(outFinished && byteCount == 0L, streamId, buffer, toWrite)
+        streamWindowSize.onWrite(toWrite)
+        conn.windowSizeCounter.onWrite(toWrite)
+
+        remain -= toWrite.toLong()
+        data(outFinished && remain == 0L, streamId, buffer, toWrite)
     }
 }
 
+context(conn: Http2Connection, streamWindowSize: WindowSizeCounter)
+private suspend fun waitUntilCanWrite(remainByteCount: Long): Int {
+    val ret: Int
+    while (true) {
+        if (calculateWriteSize(remainByteCount) == 0) {
+            println("conn.awaitWindowUpdateEvent() E ${calculateWriteSize(remainByteCount)}")
+            conn.awaitWindowUpdateEvent()
+            println("conn.awaitWindowUpdateEvent() X ${calculateWriteSize(remainByteCount)}")
+        }
 
-context(conn: Http2Connection)
+        val writeSize = calculateWriteSize(remainByteCount)
+        if (writeSize > 0) {
+            ret = writeSize
+            break
+        }
+    }
+
+    return ret
+}
+
+context(conn: Http2Connection, streamWindowSize: WindowSizeCounter)
+private fun calculateWriteSize(remainByteCount: Long): Int {
+    val toWrite: Int = minOf(conn.maxFrameSize, remainByteCount.toInt())
+    val remainWindowSize = minOf(conn.windowSizeCounter.remainWindowSize, streamWindowSize.remainWindowSize)
+    return minOf(toWrite, remainWindowSize)
+}
+
+context(_: Http2Connection)
 private suspend fun AsyncSink.data(
     outFinished: Boolean,
     streamId: Int,
     source: Buffer?,
     byteCount: Int,
 ) {
-    conn.writeFrameNonCancellable {
-        var flags = FLAG_NONE
-        if (outFinished) flags = flags or FLAG_END_STREAM
-        dataFrame(streamId, flags, source, byteCount)
-    }
+    var flags = FLAG_NONE
+    if (outFinished) flags = flags or FLAG_END_STREAM
+    dataFrame(streamId, flags, source, byteCount)
 }
 
 context(conn: Http2Connection)
@@ -184,7 +223,7 @@ private suspend fun AsyncSink.dataFrame(
     flags: Int,
     buffer: Buffer?,
     byteCount: Int,
-) {
+)= conn.writeFrameNonCancellable {
     frameHeader(
         streamId = streamId,
         length = byteCount,

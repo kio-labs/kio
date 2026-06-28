@@ -17,6 +17,8 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
@@ -90,9 +92,14 @@ internal class Http2Connection constructor(
     val maxFrameSize: Int
         get() = peerSettings.getMaxFrameSize(INITIAL_MAX_FRAME_SIZE)
 
+    val windowSizeCounter = WindowSizeCounter(peerSettings.initialWindowSize.toLong())
+
     val hpackWriter: Hpack.Writer = Hpack.Writer()
 
     val streams = mutableMapOf<Int, Http2Stream>()
+
+    // notify all observers when received window update event
+    private val windowUpdateEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     private var isShutdown = false
 
@@ -127,6 +134,10 @@ internal class Http2Connection constructor(
         }
     }
 
+    suspend fun awaitWindowUpdateEvent() {
+        windowUpdateEvents.first()
+    }
+
     fun applyAndAckSettings(settings: Settings) {
         connectionScope.launch {
             val previousPeerSettings = peerSettings
@@ -141,6 +152,7 @@ internal class Http2Connection constructor(
                 streams.forEach { (id, stream) ->
                     stream.addBytesToWriteWindow(delta.toLong())
                 }
+                windowUpdateEvents.tryEmit(Unit)
             }
 
             // apply headerTableSize setting to hpackWriter.
@@ -196,12 +208,44 @@ internal class Http2Connection constructor(
         dataStream.receiveData(source, length, inFinished)
     }
 
+    fun receiveWindowUpdate(streamId: Int, windowSizeIncrement: Long) {
+        if (streamId == 0) {
+            windowSizeCounter.increaseWindowSize(windowSizeIncrement)
+        } else {
+            streams[streamId]?.addBytesToWriteWindow(windowSizeIncrement)
+        }
+        windowUpdateEvents.tryEmit(Unit)
+    }
+
     companion object {
         val DEFAULT_SETTINGS =
             Settings().apply {
                 set(Settings.INITIAL_WINDOW_SIZE, DEFAULT_INITIAL_WINDOW_SIZE)
-                set(Settings.MAX_FRAME_SIZE, Http2.INITIAL_MAX_FRAME_SIZE)
+                set(Settings.MAX_FRAME_SIZE, INITIAL_MAX_FRAME_SIZE)
             }
+    }
+}
+
+internal class WindowSizeCounter(
+    initialWindowSize: Long
+) {
+    /** The total number of bytes produced by the application. */
+    var writeBytesTotal = 0L
+        private set
+
+    /** The total number of bytes permitted to be produced according to `WINDOW_UPDATE` frames. */
+    var writeBytesMaximum: Long = initialWindowSize
+        private set
+
+    val remainWindowSize: Int
+        get() = (writeBytesMaximum - writeBytesTotal).coerceAtLeast(0).toInt()
+
+    fun increaseWindowSize(size: Long) {
+        writeBytesMaximum += size
+    }
+
+    fun onWrite(size: Int) {
+        writeBytesTotal += size
     }
 }
 
@@ -240,7 +284,10 @@ internal suspend fun Http2Connection.frameReadLoop(onFrame: () -> Unit = {}) {
                     http2Connection.applyAndAckSettings(frame.settings)
                 }
 
-                is Frame.WindowUpdate -> {}
+                is Frame.WindowUpdate -> {
+                    http2Connection.receiveWindowUpdate(frame.streamId, frame.windowSizeIncrement)
+                }
+
                 is Frame.Ping -> {
                     http2Connection.ackPing(frame.payload1, frame.payload2)
                 }
