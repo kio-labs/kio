@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.decodeToString
 import kotlinx.io.bytestring.isNotEmpty
+import kotlin.text.set
 
 class StreamResetCancellationException(
     val errorCode: ErrorCode,
@@ -75,6 +76,9 @@ internal class Http2Connection constructor(
 ) {
     lateinit var handleStreamConnection: suspend CoroutineScope.(Http2Stream) -> Unit
 
+    /** Settings we communicate to the peer. */
+    val http2Settings = Settings()
+
     /**
      * Serializes writes to the connection sink.
      *
@@ -106,7 +110,12 @@ internal class Http2Connection constructor(
     suspend fun doInitSetting() {
         socketConn.source.readPreface()
 
-        socketConn.sink.writeSetting(Settings())
+        socketConn.sink.writeSetting(http2Settings)
+        val windowSize = http2Settings.initialWindowSize
+        if (windowSize != DEFAULT_INITIAL_WINDOW_SIZE) {
+            socketConn.sink.writeWindowUpdate(0, (windowSize - DEFAULT_INITIAL_WINDOW_SIZE).toLong())
+        }
+
         socketConn.sink.flush()
     }
 
@@ -168,6 +177,16 @@ internal class Http2Connection constructor(
                     flags = FLAG_ACK,
                 )
             }
+            socketConn.sink.flush()
+        }
+    }
+
+    fun sendWindowUpdate(
+        streamId: Int,
+        windowSizeIncrement: Long,
+    ) {
+        connectionScope.launch {
+            socketConn.sink.writeWindowUpdate(streamId, windowSizeIncrement)
             socketConn.sink.flush()
         }
     }

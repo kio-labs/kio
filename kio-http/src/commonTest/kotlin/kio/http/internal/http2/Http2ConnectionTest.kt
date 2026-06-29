@@ -376,9 +376,11 @@ private class Http2TestScope(
 
     private var nextClientFrameCont: Continuation<Unit>? = null
 
-    suspend fun awaitNextClientFrame(): Unit = suspendCoroutine {
-        if (nextClientFrameCont != null) error("something err")
-        nextClientFrameCont = it
+    suspend fun awaitNextClientFrame(): Unit = withTimeout(10.milliseconds) {
+        suspendCoroutine {
+            if (nextClientFrameCont != null) error("something err")
+            nextClientFrameCont = it
+        }
     }
 
     fun onFrame() {

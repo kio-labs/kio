@@ -5,7 +5,6 @@ import kio.async.AsyncRawSource
 import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.http.internal.HttpRequestHead
-import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.network.AsyncRawConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -24,7 +23,10 @@ internal class Http2Stream constructor(
 
     val windowSizeCounter = WindowSizeCounter(http2Conn.peerSettings.initialWindowSize.toLong())
 
-    private val framingSource = FramingSource(sourceFinished)
+    /** The bytes consumed and acknowledged by the stream. */
+    val readBytes: WindowCounter = WindowCounter(streamId)
+
+    private val framingSource = FramingSource(sourceFinished, readBytes, http2Conn)
     private val frameSink = FramingSink(streamId, socketSink, http2Conn, this)
 
     override val source: AsyncRawSource = framingSource
@@ -121,7 +123,9 @@ private class FramingSource(
      * True if either side has cleanly shut down this stream. We will receive no more bytes beyond
      * those already in the buffer.
      */
-    var finished: Boolean = false
+    var finished: Boolean = false,
+    val readBytes: WindowCounter,
+    val http2Conn: Http2Connection
 ) : AsyncRawSource {
     private val readableSignal = Channel<Unit>(Channel.CONFLATED)
 
@@ -147,6 +151,13 @@ private class FramingSource(
             } else if (readBuffer.size > 0L) {
                 readBytesDelivered =
                     readBuffer.readAtMostTo(sink, minOf(byteCount, readBuffer.size))
+                readBytes.update(total = readBytesDelivered)
+
+                val unacknowledgedBytesRead = readBytes.unacknowledged
+                if (unacknowledgedBytesRead >= http2Conn.http2Settings.initialWindowSize / 2) {
+                    http2Conn.sendWindowUpdate(readBytes.streamId, unacknowledgedBytesRead)
+                    readBytes.update(acknowledged = unacknowledgedBytesRead)
+                }
             } else if (!finished) {
                 readableSignal.receive()
                 tryAgain = true
