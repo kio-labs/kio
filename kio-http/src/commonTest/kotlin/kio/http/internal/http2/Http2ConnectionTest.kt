@@ -232,12 +232,11 @@ abstract class Http2ConnectionTest {
         val (stream2, completer2) = assertStreamCreated()
 
         // consume the connection level window size.
-        repeat(3) {
-            serverSendDataFrame(stream1, false, 16384)
+        while (conn.windowSizeCounter.remainWindowSize > 0) {
+            val writeSize = minOf(1024, conn.windowSizeCounter.remainWindowSize)
+            serverSendDataFrame(stream1, false, writeSize)
             serverResponseFrame { source -> assertIs<Frame.Data>(this); source.skip(this.length) }
         }
-        serverSendDataFrame(stream1, false, 16383)
-        serverResponseFrame { source -> assertIs<Frame.Data>(this); source.skip(this.length) }
 
         // Window size of connection and stream1 is 0
         assertEquals(0, conn.windowSizeCounter.remainWindowSize)
