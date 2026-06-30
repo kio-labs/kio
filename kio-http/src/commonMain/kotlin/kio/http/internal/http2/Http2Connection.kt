@@ -27,6 +27,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.decodeToString
 import kotlinx.io.bytestring.isNotEmpty
+import kotlin.text.compareTo
 import kotlin.text.set
 
 class StreamResetCancellationException(
@@ -92,7 +93,9 @@ internal class Http2Connection constructor(
      */
     var peerSettings = DEFAULT_SETTINGS
 
-    // TODO: send frame limit by this field
+    /** The bytes consumed and acknowledged by the application. */
+    val readBytes: WindowCounter = WindowCounter(streamId = 0)
+
     val maxFrameSize: Int
         get() = peerSettings.getMaxFrameSize(INITIAL_MAX_FRAME_SIZE)
 
@@ -222,9 +225,16 @@ internal class Http2Connection constructor(
         val source = socketConn.source
         if (dataStream == null) {
             source.skip(length)
-            return
+        } else {
+            dataStream.receiveData(source, length, inFinished)
         }
-        dataStream.receiveData(source, length, inFinished)
+
+        readBytes.update(total = length)
+        val readBytesToAcknowledge = readBytes.unacknowledged
+        if (readBytesToAcknowledge >= http2Settings.initialWindowSize / 2) {
+            sendWindowUpdate(0, readBytesToAcknowledge)
+            readBytes.update(acknowledged = readBytesToAcknowledge)
+        }
     }
 
     fun receiveWindowUpdate(streamId: Int, windowSizeIncrement: Long) {

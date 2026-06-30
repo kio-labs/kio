@@ -142,10 +142,10 @@ private class FramingSource(
         sink: Buffer,
         byteCount: Long
     ): Long {
-        var readBytesDelivered = -1L
-        var tryAgain = false
-
         while (true) {
+            var readBytesDelivered = -1L
+            var tryAgain = false
+
             if (closed) {
                 throw IOException("stream closed")
             } else if (readBuffer.size > 0L) {

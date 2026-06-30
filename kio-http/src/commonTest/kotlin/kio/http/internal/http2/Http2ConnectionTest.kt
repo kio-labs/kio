@@ -38,7 +38,7 @@ abstract class Http2ConnectionTest {
     @Test
     fun canAckPing() = withHttp2Test {
         peerSendPing(4, 23)
-        responseFrame {
+        takeFrame {
             assertIs<Frame.PingAck>(this)
             assertEquals(4, payload1)
             assertEquals(23, payload2)
@@ -48,13 +48,13 @@ abstract class Http2ConnectionTest {
     @Test
     fun canSendAckSettingFrameWhenReceiveSettingFrame() = withHttp2Test {
         peerSendSetting(Settings())
-        responseFrame { assertIs<Frame.SettingsAck>(this) }
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
     }
 
     @Test
     fun streamCanCreatedWhenReceiveHeaderFrame() = withHttp2Test {
         peerSendSetting(Settings())
-        responseFrame {}
+        takeFrame {}
 
         peerSendHeader(true, 1, listOf(Header("a", "value")))
         val (stream, completer) = assertStreamCreated()
@@ -65,7 +65,7 @@ abstract class Http2ConnectionTest {
     @Test
     fun streamSourceExhaustedWhenNoRequestBody() = withHttp2Test {
         peerSendSetting(Settings())
-        responseFrame {}
+        takeFrame {}
 
         peerSendHeader(true, 1, listOf(Header("a", "value")))
         val (stream, completer) = assertStreamCreated()
@@ -78,13 +78,13 @@ abstract class Http2ConnectionTest {
         val initial = Settings()
         initial[Settings.INITIAL_WINDOW_SIZE] = 1684
         peerSendSetting(initial)
-        responseFrame { assertIs<Frame.SettingsAck>(this) }
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
 
         val shouldntImpactConnection = Settings()
         shouldntImpactConnection[Settings.INITIAL_WINDOW_SIZE] = 3368
         peerSendSetting(shouldntImpactConnection)
-        responseFrame { assertIs<Frame.SettingsAck>(this) }
-        assertEquals(3368, serverConn.peerSettings.initialWindowSize)
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
+        assertEquals(3368, conn.peerSettings.initialWindowSize)
 
         peerSendHeader(true, 1, listOf(Header("a", "value")))
         val (stream, completer) = assertStreamCreated()
@@ -98,7 +98,7 @@ abstract class Http2ConnectionTest {
         val initial = Settings()
         initial[Settings.INITIAL_WINDOW_SIZE] = 1684
         peerSendSetting(initial)
-        responseFrame { assertIs<Frame.SettingsAck>(this) }
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
 
         // create stream before change.
         peerSendHeader(true, 1, listOf(Header("a", "value")))
@@ -108,7 +108,7 @@ abstract class Http2ConnectionTest {
         val shouldntImpactConnection = Settings()
         shouldntImpactConnection[Settings.INITIAL_WINDOW_SIZE] = 3368
         peerSendSetting(shouldntImpactConnection)
-        responseFrame { assertIs<Frame.SettingsAck>(this) }
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
 
         // new size applied.
         assertEquals(3368, stream.windowSizeCounter.writeBytesMaximum)
@@ -120,11 +120,11 @@ abstract class Http2ConnectionTest {
         val initial = Settings()
         initial[Settings.HEADER_TABLE_SIZE] = 0
         peerSendSetting(initial)
-        responseFrame { assertIs<Frame.SettingsAck>(this) }
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
 
-        assertEquals(0, serverConn.peerSettings.headerTableSize)
-        assertEquals(0, serverConn.hpackWriter.dynamicTableByteCount)
-        assertEquals(0, serverConn.hpackWriter.headerTableSizeSetting)
+        assertEquals(0, conn.peerSettings.headerTableSize)
+        assertEquals(0, conn.hpackWriter.dynamicTableByteCount)
+        assertEquals(0, conn.hpackWriter.headerTableSizeSetting)
     }
 
     @Test
@@ -133,16 +133,16 @@ abstract class Http2ConnectionTest {
         val settings = Settings()
         settings[Settings.MAX_FRAME_SIZE] = newMaxFrameSize
         peerSendSetting(settings)
-        responseFrame { assertIs<Frame.SettingsAck>(this) }
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
 
-        assertEquals(newMaxFrameSize, serverConn.peerSettings.getMaxFrameSize(-1))
-        assertEquals(newMaxFrameSize, serverConn.maxFrameSize)
+        assertEquals(newMaxFrameSize, conn.peerSettings.getMaxFrameSize(-1))
+        assertEquals(newMaxFrameSize, conn.maxFrameSize)
     }
 
     @Test
     fun requestBodyReadThrowsWhenStreamIsResetByGoAway() = withHttp2Test {
         peerSendSetting(Settings())
-        responseFrame { assertIs<Frame.SettingsAck>(this) }
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
         peerSendHeader(true, 3, listOf(Header("a", "value")))
         val (stream1, completer1) = assertStreamCreated()
 
@@ -162,7 +162,7 @@ abstract class Http2ConnectionTest {
         assertTrue(stream1.scope.isActive)
         assertFalse(stream2.scope.isActive)
 
-        assertEquals(1, serverConn.streams.size)
+        assertEquals(1, conn.streams.size)
         completer1.complete(Unit)
     }
 
@@ -171,7 +171,7 @@ abstract class Http2ConnectionTest {
         val initial = Settings()
         initial[Settings.INITIAL_WINDOW_SIZE] = 50
         peerSendSetting(initial)
-        responseFrame { assertIs<Frame.SettingsAck>(this) }
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
 
         peerSendHeader(false, 5, listOf(Header("b", "value")))
         val (stream, completer) = assertStreamCreated()
@@ -179,16 +179,16 @@ abstract class Http2ConnectionTest {
 
         // write data frame
         sendDataFrame(stream, false, 10)
-        responseFrame { source -> assertIs<Frame.Data>(this); source.skip(this.length) }
+        takeFrame { source -> assertIs<Frame.Data>(this); source.skip(this.length) }
 
-        assertEquals(10, serverConn.windowSizeCounter.writeBytesTotal)
+        assertEquals(10, conn.windowSizeCounter.writeBytesTotal)
         assertEquals(10, stream.windowSizeCounter.writeBytesTotal)
         assertEquals(40, stream.windowSizeCounter.remainWindowSize)
 
         sendDataFrame(stream, false, 40)
-        responseFrame { source -> assertIs<Frame.Data>(this); source.skip(this.length) }
+        takeFrame { source -> assertIs<Frame.Data>(this); source.skip(this.length) }
 
-        assertEquals(50, serverConn.windowSizeCounter.writeBytesTotal)
+        assertEquals(50, conn.windowSizeCounter.writeBytesTotal)
         assertEquals(50, stream.windowSizeCounter.writeBytesTotal)
         assertEquals(0, stream.windowSizeCounter.remainWindowSize)
 
@@ -212,7 +212,7 @@ abstract class Http2ConnectionTest {
             writeJob.join()
         }
 
-        responseFrame { source -> assertIs<Frame.Data>(this); source.skip(this.length) }
+        takeFrame { source -> assertIs<Frame.Data>(this); source.skip(this.length) }
 
         completer.complete(Unit)
     }
@@ -220,7 +220,7 @@ abstract class Http2ConnectionTest {
     @Test
     fun concurrentWriteDataGuardByWindowSize() = withHttp2Test {
         peerSendSetting(Settings())
-        responseFrame { assertIs<Frame.SettingsAck>(this) }
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
 
         peerSendHeader(false, 3, listOf(Header("b", "value")))
         val (stream1, completer1) = assertStreamCreated()
@@ -229,14 +229,14 @@ abstract class Http2ConnectionTest {
         val (stream2, completer2) = assertStreamCreated()
 
         // consume the connection level window size.
-        while (serverConn.windowSizeCounter.remainWindowSize > 0) {
-            val writeSize = minOf(1024, serverConn.windowSizeCounter.remainWindowSize)
+        while (conn.windowSizeCounter.remainWindowSize > 0) {
+            val writeSize = minOf(1024, conn.windowSizeCounter.remainWindowSize)
             sendDataFrame(stream1, false, writeSize)
-            responseFrame { source -> assertIs<Frame.Data>(this); source.skip(this.length) }
+            takeFrame { source -> assertIs<Frame.Data>(this); source.skip(this.length) }
         }
 
         // Window size of connection and stream1 is 0
-        assertEquals(0, serverConn.windowSizeCounter.remainWindowSize)
+        assertEquals(0, conn.windowSizeCounter.remainWindowSize)
         assertEquals(0, stream1.windowSizeCounter.remainWindowSize)
 
         val job1 = stream1.scope.launch {
@@ -271,6 +271,36 @@ abstract class Http2ConnectionTest {
         completer2.complete(Unit)
     }
 
+    @Test
+    fun readSendsWindowUpdateHttp2() = withHttp2Test {
+        conn.http2Settings[Settings.INITIAL_WINDOW_SIZE] = 100
+
+        peerSendSetting(Settings())
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
+
+        peerSendHeader(false, 3, listOf(Header("b", "value")))
+        val (stream, completer) = assertStreamCreated()
+
+        repeat(3) {
+            peerSendData(3, false, 24)
+            peerSendData(3, false, 25)
+            peerSendData(3, false, 1)
+            stream.source.buffered().readTo(Buffer(), 50)
+            takeFrame {
+                assertIs<Frame.WindowUpdate>(this)
+                assertEquals(0, this.streamId)
+                assertEquals(50, this.windowSizeIncrement)
+            }
+            takeFrame {
+                assertIs<Frame.WindowUpdate>(this)
+                assertEquals(3, this.streamId)
+                assertEquals(50, this.windowSizeIncrement)
+            }
+        }
+
+        completer.complete(Unit)
+    }
+
     private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
         runPollEventLoop(poller) {
             supervisorScope {
@@ -293,59 +323,70 @@ private class Http2TestScope(
     private val mockConn: MockHttpClientServerConnection,
     override val coroutineContext: CoroutineContext
 ) : CoroutineScope {
-    val serverConn: Http2Connection = mockConn.http2Conn
-    val clientConn: Http2Connection = mockConn.clientConn
+    val conn: Http2Connection = mockConn.http2Conn
+    val peerConn: Http2Connection = mockConn.peerConn
 
-    suspend fun peerSendPing(payload1: Int, payload2: Int) = with(mockConn.clientConn) {
-        clientConn.socketConn.sink.writePing(false, payload1, payload2)
-        clientConn.socketConn.sink.flush()
+    suspend fun peerSendPing(payload1: Int, payload2: Int) = with(mockConn.peerConn) {
+        peerConn.socketConn.sink.writePing(false, payload1, payload2)
+        peerConn.socketConn.sink.flush()
     }
 
     suspend fun peerSendSetting(
         settings: Settings
-    ) = with(clientConn) {
-        clientConn.socketConn.sink.writeSetting(settings)
-        clientConn.socketConn.sink.flush()
+    ) = with(peerConn) {
+        peerConn.socketConn.sink.writeSetting(settings)
+        peerConn.socketConn.sink.flush()
     }
 
     suspend fun peerSendGoAway(
         lastGoodStreamId: Int,
         errorCode: ErrorCode,
         debugData: ByteArray,
-    ) = with(clientConn) {
-        clientConn.socketConn.sink.writeGoAway(lastGoodStreamId, errorCode, debugData)
-        clientConn.socketConn.sink.flush()
+    ) = with(peerConn) {
+        peerConn.socketConn.sink.writeGoAway(lastGoodStreamId, errorCode, debugData)
+        peerConn.socketConn.sink.flush()
     }
 
     suspend fun peerSendWindowUpdate(
         streamId: Int,
         windowSizeIncrement: Long,
-    ) = with(clientConn) {
-        clientConn.socketConn.sink.writeWindowUpdate(streamId, windowSizeIncrement)
-        clientConn.socketConn.sink.flush()
+    ) = with(peerConn) {
+        peerConn.socketConn.sink.writeWindowUpdate(streamId, windowSizeIncrement)
+        peerConn.socketConn.sink.flush()
     }
 
     suspend fun sendDataFrame(
         stream: Http2Stream,
         outFinished: Boolean,
         byteCount: Int,
-    ) = context(serverConn, stream.windowSizeCounter) {
+    ) = context(conn, stream.windowSizeCounter) {
         val buffer = Buffer().apply { write(ByteArray(byteCount)) }
-        serverConn.socketConn.sink.writeData(stream.streamId, outFinished, buffer, byteCount.toLong())
-        serverConn.socketConn.sink.flush()
+        conn.socketConn.sink.writeData(stream.streamId, outFinished, buffer, byteCount.toLong())
+        conn.socketConn.sink.flush()
     }
 
     suspend fun peerSendHeader(
         outFinished: Boolean,
         streamId: Int,
         headerBlock: List<Header>,
-    ) = with(clientConn) {
-        clientConn.socketConn.sink.writeHeaders(
+    ) = with(peerConn) {
+        peerConn.socketConn.sink.writeHeaders(
             outFinished,
             streamId,
             headerBlock,
         )
-        clientConn.socketConn.sink.flush()
+        peerConn.socketConn.sink.flush()
+    }
+
+    suspend fun peerSendData(
+        streamId: Int,
+        outFinished: Boolean,
+        byteCount: Int,
+    ) = context(peerConn, WindowSizeCounter(Int.MAX_VALUE.toLong())) {
+        val buffer = Buffer().apply { write(ByteArray(byteCount)) }
+        peerConn.socketConn.sink.writeData(streamId, outFinished, buffer, byteCount.toLong())
+        peerConn.socketConn.sink.flush()
+
     }
 
     suspend fun assertStreamCreated(): Pair<Http2Stream, CompletableDeferred<Unit>> {
@@ -361,7 +402,7 @@ private class Http2TestScope(
             headerTableSizeSetting = 4096,
         )
 
-    suspend fun responseFrame(block: suspend Frame.(AsyncSource) -> Unit) {
+    suspend fun takeFrame(block: suspend Frame.(AsyncSource) -> Unit) {
         val frame = context(hpackReader, continuation) {
             withTimeout(100.milliseconds) {
                 mockConn.serverWriteBackSource.nextFrame()
@@ -420,7 +461,7 @@ private class MockHttpClientServerConnection(
         testScope,
     )
 
-    val clientConn = Http2Connection(
+    val peerConn = Http2Connection(
         clientConnection.buffered(),
         testScope
     )
