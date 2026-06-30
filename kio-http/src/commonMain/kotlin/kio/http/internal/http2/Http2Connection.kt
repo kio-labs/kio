@@ -27,6 +27,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.decodeToString
 import kotlinx.io.bytestring.isNotEmpty
+import kotlin.text.compareTo
+import kotlin.text.set
 
 class StreamResetCancellationException(
     val errorCode: ErrorCode,
@@ -75,6 +77,9 @@ internal class Http2Connection constructor(
 ) {
     lateinit var handleStreamConnection: suspend CoroutineScope.(Http2Stream) -> Unit
 
+    /** Settings we communicate to the peer. */
+    val http2Settings = Settings()
+
     /**
      * Serializes writes to the connection sink.
      *
@@ -88,7 +93,9 @@ internal class Http2Connection constructor(
      */
     var peerSettings = DEFAULT_SETTINGS
 
-    // TODO: send frame limit by this field
+    /** The bytes consumed and acknowledged by the application. */
+    val readBytes: WindowCounter = WindowCounter(streamId = 0)
+
     val maxFrameSize: Int
         get() = peerSettings.getMaxFrameSize(INITIAL_MAX_FRAME_SIZE)
 
@@ -106,7 +113,12 @@ internal class Http2Connection constructor(
     suspend fun doInitSetting() {
         socketConn.source.readPreface()
 
-        socketConn.sink.writeSetting(Settings())
+        socketConn.sink.writeSetting(http2Settings)
+        val windowSize = http2Settings.initialWindowSize
+        if (windowSize != DEFAULT_INITIAL_WINDOW_SIZE) {
+            socketConn.sink.writeWindowUpdate(0, (windowSize - DEFAULT_INITIAL_WINDOW_SIZE).toLong())
+        }
+
         socketConn.sink.flush()
     }
 
@@ -172,6 +184,16 @@ internal class Http2Connection constructor(
         }
     }
 
+    fun sendWindowUpdate(
+        streamId: Int,
+        windowSizeIncrement: Long,
+    ) {
+        connectionScope.launch {
+            socketConn.sink.writeWindowUpdate(streamId, windowSizeIncrement)
+            socketConn.sink.flush()
+        }
+    }
+
     fun ackPing(payload1: Int, payload2: Int) {
         connectionScope.launch {
             socketConn.sink.writePing(true, payload1, payload2)
@@ -203,9 +225,16 @@ internal class Http2Connection constructor(
         val source = socketConn.source
         if (dataStream == null) {
             source.skip(length)
-            return
+        } else {
+            dataStream.receiveData(source, length, inFinished)
         }
-        dataStream.receiveData(source, length, inFinished)
+
+        readBytes.update(total = length)
+        val readBytesToAcknowledge = readBytes.unacknowledged
+        if (readBytesToAcknowledge >= http2Settings.initialWindowSize / 2) {
+            sendWindowUpdate(0, readBytesToAcknowledge)
+            readBytes.update(acknowledged = readBytesToAcknowledge)
+        }
     }
 
     fun receiveWindowUpdate(streamId: Int, windowSizeIncrement: Long) {
