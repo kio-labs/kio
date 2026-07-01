@@ -60,52 +60,13 @@ typealias PgInt8MultiRange = @Serializable(PostegreInt8MultiRangeSerializer::cla
 typealias PgTsMultiRange = @Serializable(PostegreTimeStampMultiRangeSerializer::class) PgMultiRange<PgTsRange>
 typealias PgDateMultiRange = @Serializable(PostegreDateMultiRangeSerializer::class) PgMultiRange<PgDateRange>
 typealias PgTsTzMultiRange = @Serializable(PostegreTimeStampTzMultiRangeSerializer::class) PgMultiRange<PgTsTzRange>
-
-@Serializable(PostegrePointSerializer::class)
-data class PgPoint(
-    val x: Double,
-    val y: Double
-)
-
-@Serializable(PostegreLineSerializer::class)
-data class PgLine(
-    val a: Double,
-    val b: Double,
-    val c: Double,
-)
-
-@Serializable(PostegreLsegSerializer::class)
-data class PgLseg(
-    val x1: Double,
-    val y1: Double,
-    val x2: Double,
-    val y2: Double,
-)
-
-@Serializable(PostegreBoxSerializer::class)
-data class PgBox(
-    val x1: Double,
-    val y1: Double,
-    val x2: Double,
-    val y2: Double,
-)
-
-@Serializable(PostegrePathSerializer::class)
-data class PgPath(
-    val closed: Boolean,
-    val points: List<PgPoint>
-)
-
-@Serializable(PostegrePolygonSerializer::class)
-data class PgPolygon(
-    val points: List<PgPoint>
-)
-
-@Serializable(PostegreCircleSerializer::class)
-data class PgCircle(
-    val center: PgPoint,
-    val radius: Double,
-)
+@Serializable(PostegrePointSerializer::class) data class PgPoint(val x: Double, val y: Double)
+@Serializable(PostegreLineSerializer::class) data class PgLine(val a: Double, val b: Double, val c: Double)
+@Serializable(PostegreLsegSerializer::class) data class PgLseg(val x1: Double, val y1: Double, val x2: Double, val y2: Double)
+@Serializable(PostegreBoxSerializer::class) data class PgBox(val x1: Double, val y1: Double, val x2: Double, val y2: Double)
+@Serializable(PostegrePathSerializer::class) data class PgPath(val closed: Boolean, val points: List<PgPoint>)
+@Serializable(PostegrePolygonSerializer::class) data class PgPolygon(val points: List<PgPoint>)
+@Serializable(PostegreCircleSerializer::class) data class PgCircle(val center: PgPoint, val radius: Double)
 
 data class PgRange<T>(
     val lower: T?,
