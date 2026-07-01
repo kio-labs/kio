@@ -301,6 +301,21 @@ abstract class Http2ConnectionTest {
         completer.complete(Unit)
     }
 
+    @Test
+    fun peerWritesTrailersAndReadsTrailers() = withHttp2Test {
+        peerSendSetting(Settings())
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
+
+        peerSendHeader(false, 3, listOf(Header("header", "value")))
+        val (stream, completer) = assertStreamCreated()
+
+        peerSendHeader(true, 3, listOf(Header("trailer", "value1")))
+        awaitNextPeerFrame()
+        assertEquals("value1", stream.trailers!!["trailer"])
+        assertTrue(stream.source.buffered().exhausted())
+        completer.complete(Unit)
+    }
+
     private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
         runPollEventLoop(poller) {
             supervisorScope {

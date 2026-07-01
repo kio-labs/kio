@@ -5,31 +5,34 @@ import kio.async.buffered
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.http2.Http2Connection
 import kio.http.internal.http2.Http2ResponseSink
+import kio.http.internal.http2.Http2Stream
 import kio.network.AsyncConnection
+import kio.network.buffered
 import kotlinx.coroutines.CancellationException
 
 context(_: Http2Connection)
 internal suspend fun RouteScope.handleHttp2Request(
-    streamId: Int,
-    head: HttpRequestHead,
-    streamingConn: AsyncConnection,
+    stream: Http2Stream,
 ) {
-    val handler = getCallHandler(RouteScope.RouteKey(head.method, head.uri))
+    val handler = getCallHandler(RouteScope.RouteKey(stream.requestHead.method, stream.requestHead.uri))
 
-    doHandleHttp2Request(streamId, head, streamingConn, handler)
+    doHandleHttp2Request(stream, handler)
 }
 
 context(http2Connection: Http2Connection)
 internal suspend fun doHandleHttp2Request(
-    streamId: Int,
-    head: HttpRequestHead,
-    streamingConn: AsyncConnection,
+    stream: Http2Stream,
     handler: CallHandler?,
 ) {
+    val streamId: Int = stream.streamId
+    val head: HttpRequestHead = stream.requestHead
+    val streamingConn: AsyncConnection = stream.buffered()
+
 // TODO: assign null if no request body.
     val body = streamingConn.source
     val callContext = CallContext(
         head, body,
+        getRequestTrailers = { stream.trailers },
         responseSink = { headBuilder ->
             Http2ResponseSink(
                 streamId = streamId,
