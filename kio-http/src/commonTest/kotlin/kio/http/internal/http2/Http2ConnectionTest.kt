@@ -2,10 +2,10 @@ package kio.http.internal.http2
 
 import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
+import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.Poller
 import kio.async.buffered
-import kio.async.openPipe
 import kio.async.readString
 import kio.async.runPollEventLoop
 import kio.network.AsyncRawConnection
@@ -31,6 +31,9 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlin.math.min
 
 abstract class Http2ConnectionTest {
     abstract val poller: Poller.Factory
@@ -302,6 +305,46 @@ abstract class Http2ConnectionTest {
     }
 
     @Test
+
+    fun maxFrameSizeHonored() = withHttp2Test {
+        val setting = Settings()
+        peerSendSetting(setting)
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
+
+        peerSendHeader(false, 3, listOf(Header("b", "value")))
+        val (stream, completer) = assertStreamCreated()
+
+        val sink = stream.sink.buffered()
+        val buff = ByteArray(conn.maxFrameSize + 1)
+        buff.fill('*'.code.toByte())
+        sink.write(buff)
+        sink.flush()
+        takeFrame {
+            assertIs<Frame.Data>(this)
+            assertEquals(conn.maxFrameSize, length.toInt())
+            it.skip(length)
+        }
+        takeFrame {
+            assertIs<Frame.Data>(this)
+            assertEquals(1, length.toInt())
+            it.skip(1)
+        }
+        completer.complete(Unit)
+    }
+
+    @Test
+    fun peerFinishesStreamWithHeaders() = withHttp2Test {
+        peerSendSetting(Settings())
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
+
+        peerSendHeader(true, 3, listOf(Header("b", "value")))
+        val (stream, completer) = assertStreamCreated()
+        assertEquals("value" ,stream.requestHead.headers["b"])
+        assertTrue(stream.source.buffered().exhausted())
+        completer.complete(Unit)
+    }
+
+    @Test
     fun peerWritesTrailersAndReadsTrailers() = withHttp2Test {
         peerSendSetting(Settings())
         takeFrame { assertIs<Frame.SettingsAck>(this) }
@@ -444,8 +487,8 @@ private class Http2TestScope(
 private class MockHttpClientServerConnection(
     testScope: CoroutineScope
 ) {
-    private val clientPipeConn = openPipe()
-    private val serverPipeConn = openPipe()
+    private val clientPipeConn = openInMemoryPipe()
+    private val serverPipeConn = openInMemoryPipe()
 
     val serverWriteBackSource = serverPipeConn.first
 
@@ -487,6 +530,134 @@ private class MockHttpClientServerConnection(
             createdHttp2Stream.send(it to handle)
             handle.await()
             println("stream handle of $it finished")
+        }
+    }
+}
+
+private fun openInMemoryPipe(
+    maxBufferSize: Long = 64 * 1024L,
+): Pair<AsyncSource, AsyncSink> {
+    val pipe = AsyncMemoryPipe(maxBufferSize)
+    return pipe.source.buffered() to pipe.sink.buffered()
+}
+
+private class AsyncMemoryPipe(
+    private val maxBufferSize: Long,
+) {
+    init {
+        require(maxBufferSize > 0)
+    }
+
+    private val mutex = Mutex()
+    private val buffer = Buffer()
+
+    private var sourceClosed = false
+    private var sinkClosed = false
+
+    private val readWaiters = ArrayDeque<CompletableDeferred<Unit>>()
+    private val writeWaiters = ArrayDeque<CompletableDeferred<Unit>>()
+
+    val source: AsyncRawSource = Source()
+    val sink: AsyncRawSink = Sink()
+
+    private inner class Source : AsyncRawSource {
+        override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
+            require(byteCount >= 0L)
+            if (byteCount == 0L) return 0L
+
+            while (true) {
+                val waiter = mutex.withLock {
+                    check(!sourceClosed) { "source is closed" }
+
+                    if (buffer.size > 0L) {
+                        val readByteCount = min(byteCount, buffer.size)
+                        sink.write(buffer, readByteCount)
+
+                        notifyWriters()
+                        return readByteCount
+                    }
+
+                    if (sinkClosed) {
+                        return -1L
+                    }
+
+                    CompletableDeferred<Unit>().also {
+                        readWaiters.addLast(it)
+                    }
+                }
+
+                waiter.await()
+            }
+        }
+
+        override suspend fun close() {
+            mutex.withLock {
+                if (sourceClosed) return
+                sourceClosed = true
+
+                notifyWriters()
+                notifyReaders()
+            }
+        }
+    }
+
+    private inner class Sink : AsyncRawSink {
+        override suspend fun write(source: Buffer, byteCount: Long) {
+            require(byteCount >= 0L)
+            require(source.size >= byteCount)
+
+            var remaining = byteCount
+
+            while (remaining > 0L) {
+                val waiter = mutex.withLock {
+                    check(!sinkClosed) { "sink is closed" }
+                    check(!sourceClosed) { "source is closed" }
+
+                    val writableByteCount = maxBufferSize - buffer.size
+
+                    if (writableByteCount > 0L) {
+                        val writeByteCount = min(remaining, writableByteCount)
+
+                        buffer.write(source, writeByteCount)
+                        remaining -= writeByteCount
+
+                        notifyReaders()
+                        null
+                    } else {
+                        CompletableDeferred<Unit>().also {
+                            writeWaiters.addLast(it)
+                        }
+                    }
+                }
+
+                waiter?.await()
+            }
+        }
+
+        override suspend fun flush() {
+            // memory pipe 不需要 flush
+        }
+
+        override suspend fun close() {
+            mutex.withLock {
+                if (sinkClosed) return
+                sinkClosed = true
+
+                notifyReaders()
+                notifyWriters()
+            }
+        }
+    }
+
+    private fun notifyReaders() {
+        while (readWaiters.isNotEmpty()) {
+            readWaiters.removeFirst().complete(Unit)
+        }
+    }
+
+    private fun notifyWriters() {
+        while (writeWaiters.isNotEmpty()) {
+            writeWaiters.removeFirst().complete(Unit)
         }
     }
 }
