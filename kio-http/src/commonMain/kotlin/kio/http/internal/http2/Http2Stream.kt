@@ -1,5 +1,6 @@
 package kio.http.internal.http2
 
+import io.ktor.http.Headers
 import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.AsyncSink
@@ -19,6 +20,13 @@ internal class Http2Stream constructor(
     http2Conn: Http2Connection,
 ) : AsyncRawConnection {
     lateinit var scope: CoroutineScope
+
+    /**
+     * Received trailers. Null unless the server has provided trailers. Undefined until the stream
+     * is exhausted.
+     */
+    var trailers: Headers? = null
+
     private val socketSink: AsyncSink = http2Conn.socketConn.sink
 
     val windowSizeCounter = WindowSizeCounter(http2Conn.peerSettings.initialWindowSize.toLong())
@@ -36,6 +44,8 @@ internal class Http2Stream constructor(
     suspend fun receiveData(source: AsyncSource, byteCount: Long, inFinished: Boolean) {
         framingSource.receive(source, byteCount, inFinished)
     }
+
+    fun sourceFinished() = framingSource.finish()
 
     override suspend fun close() {
         TODO("Not yet implemented")
@@ -203,5 +213,10 @@ private class FramingSource(
             this.finished = true
             readableSignal.trySend(Unit)
         }
+    }
+
+    fun finish() {
+        this.finished = true
+        readableSignal.trySend(Unit)
     }
 }

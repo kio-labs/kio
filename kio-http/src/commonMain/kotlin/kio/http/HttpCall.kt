@@ -49,9 +49,12 @@ fun RouteScope.post(uri: String, block: suspend (CallContext) -> Unit) {
 class CallContext internal constructor(
     requestHead: HttpRequestHead,
     body: AsyncRawSource?,
-    responseSink: (HttpResponseHead.Builder) -> AsyncSink
+    private val getRequestTrailers: () -> Headers? = { null },
+    responseSink: (HttpResponseHead.Builder) -> AsyncSink,
 ) {
     val requestHeaders: Headers = requestHead.headers
+    val requestTrailers: Headers?
+        get() = getRequestTrailers()
     var requestBody = body?.buffered()
         internal set
 

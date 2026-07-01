@@ -27,8 +27,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.decodeToString
 import kotlinx.io.bytestring.isNotEmpty
-import kotlin.text.compareTo
-import kotlin.text.set
 
 class StreamResetCancellationException(
     val errorCode: ErrorCode,
@@ -37,9 +35,8 @@ class StreamResetCancellationException(
 internal suspend fun RouteScope.http2Connection(conn: AsyncConnection) {
     http2Connection(conn) { conn, stream ->
         // handle http2 stream in a launched coroutine.
-        val requestHead = stream.requestHead
         with(conn) {
-            handleHttp2Request(stream.streamId, requestHead, stream.buffered())
+            handleHttp2Request(stream)
         }
     }
 }
@@ -124,6 +121,18 @@ internal class Http2Connection constructor(
 
     fun receiveHeader(streamId: Int, isSourceFinished: Boolean, headers: HttpRequestHead) {
         if (isShutdown) return
+
+        when (val stream = streams[streamId]) {
+            null -> {}
+            else -> {
+                // receive trailer.
+                check(isSourceFinished) { "receive trailer but the frame is not marked finished." }
+                stream.trailers = headers.headers
+
+                stream.sourceFinished()
+                return
+            }
+        }
 
         val stream = Http2Stream(
             streamId = streamId,
