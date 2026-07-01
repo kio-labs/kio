@@ -305,7 +305,6 @@ abstract class Http2ConnectionTest {
     }
 
     @Test
-
     fun maxFrameSizeHonored() = withHttp2Test {
         val setting = Settings()
         peerSendSetting(setting)
