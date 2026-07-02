@@ -358,6 +358,22 @@ abstract class Http2ConnectionTest {
         completer.complete(Unit)
     }
 
+    @Test
+    fun rstStream() = withHttp2Test {
+        peerSendSetting(Settings())
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
+
+        peerSendHeader(false, 3, listOf(Header("header", "value")))
+        val (stream, completer) = assertStreamCreated()
+
+        peerSendData(stream.streamId, true, 12)
+        awaitNextPeerFrame()
+        peerSendRstStream(stream.streamId, ErrorCode.NO_ERROR)
+        awaitNextPeerFrame()
+    }
+
+    // TODO: server write trailer
+
     private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
         runPollEventLoop(poller) {
             supervisorScope {
@@ -443,7 +459,11 @@ private class Http2TestScope(
         val buffer = Buffer().apply { write(ByteArray(byteCount)) }
         peerConn.socketConn.sink.writeData(streamId, outFinished, buffer, byteCount.toLong())
         peerConn.socketConn.sink.flush()
+    }
 
+    suspend fun peerSendRstStream(streamId: Int, errorCode: ErrorCode) = context(peerConn, WindowSizeCounter(Int.MAX_VALUE.toLong())) {
+        peerConn.socketConn.sink.writeRstStream(streamId, errorCode)
+        peerConn.socketConn.sink.flush()
     }
 
     suspend fun assertStreamCreated(): Pair<Http2Stream, CompletableDeferred<Unit>> {
