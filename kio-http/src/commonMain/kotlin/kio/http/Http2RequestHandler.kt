@@ -33,10 +33,11 @@ internal suspend fun doHandleHttp2Request(
     val callContext = CallContext(
         head, body,
         getRequestTrailers = { stream.trailers },
-        responseSink = { headBuilder ->
+        responseSink = { head, trailer ->
             Http2ResponseSink(
                 streamId = streamId,
-                head = headBuilder,
+                head = head,
+                trailer = trailer,
                 streamingSink = streamingConn.sink,
                 connection = http2Connection
 // TODO: add header commit callback.

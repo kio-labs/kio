@@ -37,8 +37,9 @@ internal suspend fun doHandleHttp1Request(
 
     val callContext = CallContext(
         head, body,
-        responseSink = {
-            conn.sink.http1ResponseSink(it).buffered()
+        responseSink = { head, trailer ->
+// TODO: send trailer for http1
+            conn.sink.http1ResponseSink(head).buffered()
         }
     )
 

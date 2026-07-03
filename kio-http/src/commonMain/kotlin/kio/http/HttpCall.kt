@@ -50,7 +50,7 @@ class CallContext internal constructor(
     requestHead: HttpRequestHead,
     body: AsyncRawSource?,
     private val getRequestTrailers: () -> Headers? = { null },
-    responseSink: (HttpResponseHead.Builder) -> AsyncSink,
+    responseSink: (header: HttpResponseHead.Builder, trailer: HeadersBuilder) -> AsyncSink,
 ) {
     val requestHeaders: Headers = requestHead.headers
     val requestTrailers: Headers?
@@ -59,8 +59,9 @@ class CallContext internal constructor(
         internal set
 
     internal val responseHead = HttpResponseHead.Builder()
+    internal val responseTrailer = HeadersBuilder()
 
-    internal var responseSink: AsyncSink = responseSink(responseHead)
+    internal var responseSink: AsyncSink = responseSink(responseHead, responseTrailer)
         private set
 
     internal fun wrapResponseSink(block: AsyncSink.() -> AsyncSink) {
@@ -78,6 +79,8 @@ suspend fun CallContext.respondText(
     text: String,
     contentType: ContentType? = null,
     status: HttpStatusCode? = null,
+    configHeaders: HeadersBuilder.() -> Unit = {},
+    configTrailers: HeadersBuilder.() -> Unit = {}
 ) {
     val charset = contentType?.charset() ?: Charsets.UTF_8
     require(charset == Charsets.UTF_8) {
@@ -91,6 +94,8 @@ suspend fun CallContext.respondText(
             headers[HttpHeaders.ContentLength] = text.length.toString()
         }
     }
+    responseHead.headers.configHeaders()
+    responseTrailer.configTrailers()
 
     responseSink.writeString(text)
 }

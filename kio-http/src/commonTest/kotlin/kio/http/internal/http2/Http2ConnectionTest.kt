@@ -1,5 +1,6 @@
 package kio.http.internal.http2
 
+import io.ktor.http.HeadersBuilder
 import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.AsyncSink
@@ -8,6 +9,7 @@ import kio.async.Poller
 import kio.async.buffered
 import kio.async.readString
 import kio.async.runPollEventLoop
+import kio.http.internal.HttpResponseHead
 import kio.network.AsyncRawConnection
 import kio.network.buffered
 import kotlinx.coroutines.CompletableDeferred
@@ -372,7 +374,27 @@ abstract class Http2ConnectionTest {
         awaitNextPeerFrame()
     }
 
-    // TODO: server write trailer
+    @Test
+    fun serverWriteTrailer() = withHttp2Test {
+        peerSendSetting(Settings())
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
+
+        peerSendHeader(false, 3, listOf(Header("header", "value")))
+        val (stream, completer) = assertStreamCreated()
+        val buffered = stream.buffered()
+        val trailer = HeadersBuilder()
+        val sink = Http2ResponseSink(stream.streamId, buffered.sink, HttpResponseHead.Builder(), trailer, conn)
+        trailer["trailer"] = "foo"
+        sink.flush()
+        sink.close()
+
+        takeFrame { assertIs<Frame.Headers>(this) }
+        takeFrame {
+            assertIs<Frame.Headers>(this)
+            assertEquals("foo", parseHttpResponseHead(this.headerBlock).headers["trailer"])
+        }
+        completer.complete(Unit)
+    }
 
     private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
         runPollEventLoop(poller) {
