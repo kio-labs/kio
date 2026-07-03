@@ -7,6 +7,7 @@ import kio.http.internal.http2.Http2.FLAG_NONE
 import kio.http.internal.http2.Http2.TYPE_DATA
 import kio.http.internal.http2.Http2.TYPE_GOAWAY
 import kio.http.internal.http2.Http2.TYPE_PING
+import kio.http.internal.http2.Http2.TYPE_RST_STREAM
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Http2.TYPE_WINDOW_UPDATE
 import kio.http.internal.http2.Http2.frameLog
@@ -106,6 +107,20 @@ internal suspend fun AsyncSink.writePing(
     )
     writeInt(payload1)
     writeInt(payload2)
+}
+
+context(conn: Http2Connection)
+internal suspend fun AsyncSink.writeRstStream(
+    streamId: Int,
+    errorCode: ErrorCode
+) = conn.writeFrameNonCancellable {
+    frameHeader(
+        streamId = streamId,
+        length = 4,
+        type = TYPE_RST_STREAM,
+        flags = FLAG_NONE,
+    )
+    writeInt(errorCode.httpCode)
 }
 
 /**

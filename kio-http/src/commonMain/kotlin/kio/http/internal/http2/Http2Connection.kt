@@ -11,7 +11,6 @@ import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Settings.Companion.DEFAULT_INITIAL_WINDOW_SIZE
 import kio.network.AsyncConnection
-import kio.network.buffered
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -255,6 +254,10 @@ internal class Http2Connection constructor(
         windowUpdateEvents.tryEmit(Unit)
     }
 
+    fun receiveRstStream(streamId: Int, errorCode: ErrorCode) {
+        streams[streamId]?.scope?.cancel(StreamResetCancellationException(errorCode))
+    }
+
     companion object {
         val DEFAULT_SETTINGS =
             Settings().apply {
@@ -339,6 +342,8 @@ internal suspend fun Http2Connection.frameReadLoop(onFrame: () -> Unit = {}) {
                         frame.debugData
                     )
                 }
+
+                is Frame.RstStream -> http2Connection.receiveRstStream(frame.streamId, frame.errorCode)
             }
 
             onFrame()

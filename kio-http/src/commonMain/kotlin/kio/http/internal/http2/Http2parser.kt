@@ -73,6 +73,11 @@ sealed interface Frame {
         val payload1: Int,
         val payload2: Int,
     ): Frame
+
+    data class RstStream(
+        val streamId: Int,
+        val errorCode: ErrorCode,
+    ): Frame
 }
 
 context(_: Hpack.Reader, _: ContinuationSource)
@@ -109,7 +114,7 @@ internal suspend fun AsyncSource.nextFrame(): Frame {
         Http2.TYPE_DATA -> readData(length, flags, streamId)
         Http2.TYPE_HEADERS -> readHeaders(length, flags, streamId)
         Http2.TYPE_PRIORITY -> TODO("TYPE_PRIORITY")
-        Http2.TYPE_RST_STREAM -> TODO("TYPE_RST_STREAM")
+        Http2.TYPE_RST_STREAM -> readRstStream(length, flags, streamId)
         Http2.TYPE_SETTINGS -> readSettings(length, flags, streamId)
         Http2.TYPE_PUSH_PROMISE -> TODO("TYPE_PUSH_PROMISE")
         Http2.TYPE_PING -> readPing(length, flags, streamId)
@@ -214,6 +219,21 @@ private suspend fun AsyncSource.readGoAway(
         debugData = readByteString(opaqueDataLength)
     }
     return Frame.GoAway(lastStreamId, errorCode, debugData)
+}
+
+private suspend fun AsyncSource.readRstStream(
+    length: Int,
+    flags: Int,
+    streamId: Int,
+): Frame.RstStream {
+    if (length != 4) throw IOException("TYPE_RST_STREAM length: $length != 4")
+    if (streamId == 0) throw IOException("TYPE_RST_STREAM streamId == 0")
+    val errorCodeInt = readInt()
+    val errorCode =
+        ErrorCode.fromHttp2(errorCodeInt) ?: throw IOException(
+            "TYPE_RST_STREAM unexpected error code: $errorCodeInt",
+        )
+    return Frame.RstStream(streamId, errorCode)
 }
 
 private suspend fun AsyncSource.readWindowUpdate(
