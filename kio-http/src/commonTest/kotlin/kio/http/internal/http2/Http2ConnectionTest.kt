@@ -320,6 +320,7 @@ abstract class Http2ConnectionTest {
         buff.fill('*'.code.toByte())
         sink.write(buff)
         sink.flush()
+        sink.close()
         takeFrame {
             assertIs<Frame.Data>(this)
             assertEquals(conn.maxFrameSize, length.toInt())
@@ -381,9 +382,8 @@ abstract class Http2ConnectionTest {
 
         peerSendHeader(false, 3, listOf(Header("header", "value")))
         val (stream, completer) = assertStreamCreated()
-        val buffered = stream.buffered()
         val trailer = HeadersBuilder()
-        val sink = Http2ResponseSink(stream.streamId, buffered.sink, HttpResponseHead.Builder(), trailer, conn)
+        val sink = Http2ResponseSink(stream,HttpResponseHead.Builder(), trailer, conn)
         trailer["trailer"] = "foo"
         sink.flush()
         sink.close()
@@ -391,6 +391,7 @@ abstract class Http2ConnectionTest {
         takeFrame { assertIs<Frame.Headers>(this) }
         takeFrame {
             assertIs<Frame.Headers>(this)
+            assertTrue(this.inFinished)
             assertEquals("foo", parseHttpResponseHead(this.headerBlock).headers["trailer"])
         }
         completer.complete(Unit)
