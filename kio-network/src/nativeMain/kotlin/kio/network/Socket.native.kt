@@ -11,7 +11,6 @@ import platform.posix.*
 import kotlinx.cinterop.*
 import kotlinx.io.Buffer
 import kotlinx.io.IOException
-import platform.darwin.inet_addr
 import kotlin.Int
 
 @OptIn(ExperimentalForeignApi::class)
@@ -84,7 +83,7 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
     }
 }
 
-@OptIn(ExperimentalForeignApi::class)
+@OptIn(ExperimentalForeignApi::class, UnsafeNumber::class)
 actual fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
     val backlog: Int = 128
 // TODO: Judge IP type form host.
@@ -136,6 +135,8 @@ actual fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
         throw t
     }
 }
+
+internal expect fun inet_addr(host: String?): UInt
 
 private class FdServerSocket(
     private val serverFd: Int,
