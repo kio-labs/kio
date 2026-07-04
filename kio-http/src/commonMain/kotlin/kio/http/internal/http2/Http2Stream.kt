@@ -100,24 +100,12 @@ private class FramingSink(
         while (sendBuffer.size > 0L) {
             emitFrame(false)
         }
-        socketSink.flush()
     }
 
     override suspend fun close() {
         val hasData = sendBuffer.size > 0
-        when {
-            hasData -> {
-                while (sendBuffer.size > 0L) {
-                    emitFrame(true)
-                }
-            }
+        check(!hasData) { "still has unsend buffer in framing sink[$streamId]." }
 
-            else -> {
-                context(http2Connection, stream.windowSizeCounter) {
-                    socketSink.writeData(streamId, true, null, 0L)
-                }
-            }
-        }
         socketSink.flush()
 
         closed = true

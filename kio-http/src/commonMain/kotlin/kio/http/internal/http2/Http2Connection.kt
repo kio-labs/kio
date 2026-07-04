@@ -3,9 +3,11 @@ package kio.http.internal.http2
 import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpProtocolVersion
+import io.ktor.http.HttpStatusCode
 import kio.http.RouteScope
 import kio.http.handleHttp2Request
 import kio.http.internal.HttpRequestHead
+import kio.http.internal.HttpResponseHead
 import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
@@ -23,6 +25,7 @@ import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.io.IOException
 import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.decodeToString
 import kotlinx.io.bytestring.isNotEmpty
@@ -313,7 +316,7 @@ internal suspend fun Http2Connection.frameReadLoop(onFrame: () -> Unit = {}) {
                     http2Connection.receiveHeader(
                         frame.streamId,
                         frame.inFinished,
-                        frame.headerBlock.toHttpRequestHead(),
+                        parseHttpRequestHead(frame.headerBlock),
                     )
                 }
 
@@ -343,7 +346,10 @@ internal suspend fun Http2Connection.frameReadLoop(onFrame: () -> Unit = {}) {
                     )
                 }
 
-                is Frame.RstStream -> http2Connection.receiveRstStream(frame.streamId, frame.errorCode)
+                is Frame.RstStream -> http2Connection.receiveRstStream(
+                    frame.streamId,
+                    frame.errorCode
+                )
             }
 
             onFrame()
@@ -351,12 +357,12 @@ internal suspend fun Http2Connection.frameReadLoop(onFrame: () -> Unit = {}) {
     }
 }
 
-private fun List<Header>.toHttpRequestHead(): HttpRequestHead {
+internal fun parseHttpRequestHead(headers: List<Header>): HttpRequestHead {
     var method: HttpMethod? = null
     var uri: String? = null
 
     val headersBuilder = HeadersBuilder()
-    for ((name, value) in this) {
+    for ((name, value) in headers) {
         when (name) {
             Header.TARGET_METHOD -> method = HttpMethod.parse(value.decodeToString())
             Header.TARGET_PATH -> uri = value.decodeToString()
@@ -372,4 +378,20 @@ private fun List<Header>.toHttpRequestHead(): HttpRequestHead {
         version = HttpProtocolVersion.HTTP_2_0,
         headers = headersBuilder.build()
     )
+}
+
+internal fun parseHttpResponseHead(headers: List<Header>): HttpResponseHead {
+    val builder = HttpResponseHead.Builder()
+    for ((name, value) in headers) {
+        when (name) {
+            Header.RESPONSE_STATUS -> builder.statusCode = HttpStatusCode.fromValue(
+                value.decodeToString().toIntOrNull()
+                    ?: throw IOException("Not a valid status ${value.decodeToString()}")
+            )
+
+            else -> builder.headers.set(name.decodeToString(), value.decodeToString())
+        }
+    }
+
+    return builder.build()
 }

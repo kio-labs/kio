@@ -2,9 +2,7 @@ package kio.http.internal
 
 import io.ktor.http.Headers
 import io.ktor.http.HeadersBuilder
-import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.HttpStatusCode
-import kio.http.internal.http2.Header
 
 internal class HttpResponseHead internal constructor(
     val status: Int,
@@ -13,7 +11,7 @@ internal class HttpResponseHead internal constructor(
 ) {
     class Builder {
         var statusCode: HttpStatusCode = HttpStatusCode.NotFound
-        var headers: HeadersBuilder = HeadersBuilder()
+        val headers: HeadersBuilder = HeadersBuilder()
 
         fun build(): HttpResponseHead {
             return HttpResponseHead(

@@ -24,22 +24,17 @@ internal suspend fun doHandleHttp2Request(
     stream: Http2Stream,
     handler: CallHandler?,
 ) {
-    val streamId: Int = stream.streamId
-    val head: HttpRequestHead = stream.requestHead
-    val streamingConn: AsyncConnection = stream.buffered()
-
-// TODO: assign null if no request body.
-    val body = streamingConn.source
     val callContext = CallContext(
-        head, body,
+        requestHead = stream.requestHead,
+        body = stream.source.buffered(),
         getRequestTrailers = { stream.trailers },
-        responseSink = { headBuilder ->
+        responseSink = { head, trailer ->
             Http2ResponseSink(
-                streamId = streamId,
-                head = headBuilder,
-                streamingSink = streamingConn.sink,
+                stream = stream,
+                head = head,
+                trailer = trailer,
                 connection = http2Connection
-// TODO: add header commit callback.
+        // TODO: add header commit callback.
             ).buffered()
         }
     )
