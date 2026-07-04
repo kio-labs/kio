@@ -397,6 +397,30 @@ abstract class Http2ConnectionTest {
         completer.complete(Unit)
     }
 
+    @Test
+    fun cannotReadTrailersWithoutExhaustingStream() = withHttp2Test {
+        peerSendSetting(Settings())
+        takeFrame { assertIs<Frame.SettingsAck>(this) }
+
+        peerSendHeader(false, 3, listOf(Header("header", "value")))
+        val (stream, completer) = assertStreamCreated()
+
+        peerSendData(stream.streamId, false, 12)
+        awaitNextPeerFrame()
+
+        peerSendHeader(true, 3, listOf(Header("trailer", "value1")))
+        awaitNextPeerFrame()
+
+        // trailer is null when stream source not exhausted
+        assertEquals(null, stream.trailers)
+
+        stream.source.buffered().readString()
+        assertTrue(stream.source.buffered().exhausted())
+        assertEquals("value1", stream.trailers!!["trailer"])
+
+        completer.complete(Unit)
+    }
+
     private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
         runPollEventLoop(poller) {
             supervisorScope {

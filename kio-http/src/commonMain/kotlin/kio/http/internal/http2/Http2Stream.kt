@@ -21,12 +21,6 @@ internal class Http2Stream constructor(
 ) : AsyncRawConnection {
     lateinit var scope: CoroutineScope
 
-    /**
-     * Received trailers. Null unless the server has provided trailers. Undefined until the stream
-     * is exhausted.
-     */
-    var trailers: Headers? = null
-
     private val socketSink: AsyncSink = http2Conn.socketConn.sink
 
     val windowSizeCounter = WindowSizeCounter(http2Conn.peerSettings.initialWindowSize.toLong())
@@ -40,6 +34,22 @@ internal class Http2Stream constructor(
     override val source: AsyncRawSource = framingSource
 
     override val sink: AsyncRawSink = frameSink
+
+    private var _trailers: Headers? = null
+    /**
+     * Received trailers. Null unless the server has provided trailers. Undefined until the stream
+     * is exhausted.
+     */
+    var trailers: Headers?
+        set(value) {
+            _trailers = value
+        }
+        get() {
+            if (framingSource.finished && framingSource.receiveBuffer.exhausted() && framingSource.readBuffer.exhausted()) {
+                return _trailers
+            }
+            return null
+        }
 
     suspend fun receiveData(source: AsyncSource, byteCount: Long, inFinished: Boolean) {
         framingSource.receive(source, byteCount, inFinished)
