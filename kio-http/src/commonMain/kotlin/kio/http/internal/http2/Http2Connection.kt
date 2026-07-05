@@ -4,6 +4,7 @@ import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.HttpStatusCode
+import kio.async.io.AsyncConnection
 import kio.http.RouteScope
 import kio.http.handleHttp2Request
 import kio.http.internal.HttpRequestHead
@@ -12,7 +13,6 @@ import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Settings.Companion.DEFAULT_INITIAL_WINDOW_SIZE
-import kio.network.AsyncConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope

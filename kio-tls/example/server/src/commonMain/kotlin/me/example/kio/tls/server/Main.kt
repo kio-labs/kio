@@ -1,16 +1,13 @@
 package me.example.kio.tls.server
 
-import kio.async.AsyncSource
+import kio.async.io.tcpBind
 import kio.async.poller.poll.PosixPoll
 import kio.async.runPollEventLoop
-import kio.network.tcpBind
 import kio.tls.pem
 import kio.tls.withServerTls
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.launch
-import kotlinx.io.Buffer
 import kotlinx.io.IOException
-import kotlinx.io.readString
 import platform.posix.SIGPIPE
 import platform.posix.SIG_IGN
 import platform.posix.signal

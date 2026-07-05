@@ -1,7 +1,8 @@
 package kio.postgres.conn
 
 import kio.async.Poller
-import kio.async.openPipe
+import kio.async.io.buffered
+import kio.async.io.openPipe
 import kio.async.runPollEventLoop
 import kio.async.writeString
 import kio.postegre.types.PgBool
@@ -306,7 +307,9 @@ abstract class PgConnectionTest {
                         )
                         """.trimIndent()
                     )
-                    val (source, sink) = openPipe()
+                    val pipe = openPipe().buffered()
+                    val source = pipe.source
+                    val sink = pipe.sink
                     val sendJob = launch {
                         try {
                             repeat(1_000_000) { i ->
@@ -317,13 +320,13 @@ abstract class PgConnectionTest {
                             }
                         } finally {
                             sink.flush()
-                            sink.close()
+                            pipe.close()
                         }
                     }
 
                     val copyJob = launch {
                         println(copyFrom("COPY foo FROM STDIN WITH (FORMAT csv)", source))
-                        source.close()
+                        pipe.close()
                     }
 
                     val delayTask = launch {
@@ -332,6 +335,7 @@ abstract class PgConnectionTest {
                         sendJob.cancel()
                     }
                     joinAll(sendJob, copyJob, delayTask)
+                    pipe.close()
                 }
             }
         }

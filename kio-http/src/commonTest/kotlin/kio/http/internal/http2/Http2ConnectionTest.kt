@@ -7,11 +7,11 @@ import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.Poller
 import kio.async.buffered
+import kio.async.io.AsyncRawConnection
+import kio.async.io.buffered
 import kio.async.readString
 import kio.async.runPollEventLoop
 import kio.http.internal.HttpResponseHead
-import kio.network.AsyncRawConnection
-import kio.network.buffered
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.TimeoutCancellationException

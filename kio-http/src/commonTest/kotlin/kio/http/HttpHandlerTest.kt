@@ -11,12 +11,12 @@ import kio.async.AsyncRawSource
 import kio.async.AsyncSource
 import kio.async.buffered
 import kio.async.inMemoryAsyncBuffer
+import kio.async.io.AsyncRawConnection
+import kio.async.io.buffered
 import kio.async.readString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
 import kio.http.internal.http1.parseResponseHead
-import kio.network.AsyncRawConnection
-import kio.network.buffered
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.Buffer
 import kotlinx.io.writeString

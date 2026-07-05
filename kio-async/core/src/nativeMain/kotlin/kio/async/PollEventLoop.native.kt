@@ -15,9 +15,13 @@ import kotlinx.io.IOException
 import platform.posix.CLOCK_MONOTONIC
 import platform.posix.EAGAIN
 import platform.posix.EWOULDBLOCK
+import platform.posix.F_GETFL
+import platform.posix.F_SETFL
+import platform.posix.O_NONBLOCK
 import platform.posix.clock_gettime
 import platform.posix.close
 import platform.posix.errno
+import platform.posix.fcntl
 import platform.posix.pipe
 import platform.posix.read
 import platform.posix.strerror
@@ -87,4 +91,9 @@ internal actual fun wakeupPipe() = memScoped {
     }
 }
 
-actual typealias PollHandle = Int
+private fun setNonBlocking(fd: Int): Int {
+    val flags = fcntl(fd, F_GETFL, 0)
+    if (flags < 0) return -1
+    if (fcntl(fd, F_SETFL, flags or O_NONBLOCK) < 0) return -1
+    return 0
+}

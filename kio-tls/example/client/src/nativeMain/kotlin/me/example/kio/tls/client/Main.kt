@@ -1,10 +1,10 @@
 package me.example.kio.tls.client
 
+import kio.async.io.openConnection
 import kio.async.poller.poll.PosixPoll
 import kio.async.readLine
 import kio.async.runPollEventLoop
 import kio.async.writeString
-import kio.network.openConnection
 import kio.tls.withClientTls
 
 fun main() = runPollEventLoop(PosixPoll) {

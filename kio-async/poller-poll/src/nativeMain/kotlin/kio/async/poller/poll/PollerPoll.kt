@@ -1,10 +1,11 @@
 package kio.async.poller.poll
 
 import kio.async.PollInterest
-import kio.async.PollInterestRead
-import kio.async.PollInterestWrite
+import kio.async.POLL_INTEREST_READ
+import kio.async.POLL_INTEREST_WRITE
 import kio.async.Poller
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.UnsafeNumber
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.get
@@ -26,37 +27,37 @@ private class NativePoller : Poller {
     private val pollFdRequestMap: MutableMap<Pair<Int, PollInterest>, PollFdRequest> =
         mutableMapOf()
 
-    private val scope = fun(fd: Int, event: PollInterest): Boolean {
-        val request = pollFdRequestMap[fd to event] ?: return false
-        return request.needContinue()
-    }
-
-    override fun register(handle: Int, event: PollInterest) {
+    override fun attach(handle: Any, event: PollInterest) {
+        handle as Int
         val fdRequest = when (event) {
-            PollInterestRead -> PollFdRequest(handle, POLLRDNORM)
-            PollInterestWrite -> PollFdRequest(handle, POLLWRNORM)
+            POLL_INTEREST_READ -> PollFdRequest(handle, POLLRDNORM)
+            POLL_INTEREST_WRITE -> PollFdRequest(handle, POLLWRNORM)
             else -> error("never")
         }
-
-        if (pollFdRequestMap.values.contains(fdRequest)) throw IllegalStateException("$handle already sleep.")
+// TODO: remove comment.
+//        if (pollFdRequestMap.values.contains(fdRequest)) throw IllegalStateException("$handle already sleep.")
         pollFdRequestMap[handle to event] = fdRequest
     }
 
-    override fun unRegister(handle: Int, event: PollInterest) {
+    override fun detach(handle: Any, event: PollInterest) {
         pollFdRequestMap.remove(handle to event)
     }
 
     override fun poll(
         timeoutMillis: Long,
-        block: Poller.PollScope.() -> Unit
+        onActive: (handle: Any, event: PollInterest) -> Unit
     ) {
         nativePoll(pollFdRequestMap.values.toList(), timeoutMillis)
-        block(scope)
+        pollFdRequestMap.forEach { entry ->
+            val (handle, event) = entry.key
+            val req = entry.value
+            if (req.needContinue()) onActive(handle, event)
+        }
     }
 
     override fun close() = Unit
 
-    @OptIn(ObsoleteWorkersApi::class, ExperimentalForeignApi::class)
+    @OptIn(ObsoleteWorkersApi::class, ExperimentalForeignApi::class, UnsafeNumber::class)
     private fun nativePoll(fds: List<PollFdRequest>, timeoutMillis: Long): Unit = memScoped {
 // TODO: avoid alloc memory in each poll
         val nativePollfd = allocArray<pollfd>(fds.size) { i ->

@@ -1,8 +1,10 @@
 package me.example.asyncechoclient
 
 import kio.async.AsyncSource
+import kio.async.io.AsyncConnection
+import kio.async.io.buffered
+import kio.async.io.openConnection
 import kio.async.runPollEventLoop
-import kio.network.openConnection
 import kio.websocket.ProtocolException
 import kio.websocket.WebSocketEvent
 import kotlinx.io.EOFException
@@ -10,8 +12,6 @@ import kotlinx.io.IOException
 import kio.async.poller.poll.PosixPoll
 import kio.async.readLine
 import kio.async.writeString
-import kio.network.AsyncConnection
-import kio.network.buffered
 import kio.websocket.asWsClientConnection
 import kio.websocket.sendTextMessage
 import org.kotlincrypto.hash.sha1.SHA1

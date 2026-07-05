@@ -3,11 +3,11 @@ package kio.http
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kio.async.buffered
+import kio.async.io.AsyncConnection
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.http1.chunked
 import kio.http.internal.http1.http1ResponseSink
 import kio.http.internal.limited
-import kio.network.AsyncConnection
 import kotlinx.coroutines.CancellationException
 
 internal suspend fun RouteScope.handleHttp1Request(

@@ -1,10 +1,10 @@
 package kio.async.poller.select
 
-import kio.async.PollInterestAccept
-import kio.async.PollInterestConnect
+import kio.async.POLL_INTEREST_ACCEPT
+import kio.async.POLL_INTEREST_CONNECT
 import kio.async.PollInterest
-import kio.async.PollInterestRead
-import kio.async.PollInterestWrite
+import kio.async.POLL_INTEREST_READ
+import kio.async.POLL_INTEREST_WRITE
 import kio.async.Poller
 import kio.async.SelectionKeyWrapper
 import java.nio.channels.SelectionKey
@@ -17,7 +17,8 @@ object Select : Poller.Factory {
 internal class PollerSelect : Poller {
     private val selector = Selector.open()
 
-    override fun register(handle: SelectionKeyWrapper, event: PollInterest) {
+    override fun attach(handle: Any, event: PollInterest) {
+        handle as SelectionKeyWrapper
         val op = event.toOp()
 
         val key = handle.channel.keyFor(selector)
@@ -29,9 +30,10 @@ internal class PollerSelect : Poller {
         }
     }
 
-    override fun unRegister(handle: SelectionKeyWrapper, event: PollInterest) {
+    override fun detach(handle: Any, event: PollInterest) {
+        handle as SelectionKeyWrapper
         val key = handle.channel.keyFor(selector)
-        if (!key.isValid) return
+        if (key == null || !key.isValid) return
 
         val op = event.toOp()
         val newOps = key.interestOps() and op.inv()
@@ -41,7 +43,7 @@ internal class PollerSelect : Poller {
 
     override fun poll(
         timeoutMillis: Long,
-        block: Poller.PollScope.() -> Unit,
+        onActive: (handle: Any, event: PollInterest) -> Unit
     ) {
         when (timeoutMillis) {
             -1L -> selector.select()
@@ -50,19 +52,21 @@ internal class PollerSelect : Poller {
         }
 
         val selectedKeys = selector.selectedKeys()
-        val awakeKeys = selectedKeys.toSet()
-        selectedKeys.clear()
+        for (key in selectedKeys) {
+            if (!key.isValid) continue
 
-        val scope = Poller.PollScope { handle, event ->
-            val key = handle.channel.keyFor(selector)
-
-            key != null &&
-                    key.isValid &&
-                    key in awakeKeys &&
-                    key.readyOps() and event.toOp() != 0
+            val channel = SelectionKeyWrapper(key.channel())
+            val readyOp = key.readyOps()
+            if (readyOp and SelectionKey.OP_READ != 0) {
+                onActive(channel, POLL_INTEREST_READ)
+            } else if (readyOp and SelectionKey.OP_ACCEPT != 0) {
+                onActive(channel, POLL_INTEREST_ACCEPT)
+            } else if (readyOp and SelectionKey.OP_WRITE != 0) {
+                onActive(channel, POLL_INTEREST_WRITE)
+            } else if (readyOp and SelectionKey.OP_CONNECT != 0) {
+                onActive(channel, POLL_INTEREST_CONNECT)
+            }
         }
-
-        block(scope)
     }
 
     override fun close() {
@@ -70,9 +74,10 @@ internal class PollerSelect : Poller {
     }
 
     private fun PollInterest.toOp(): Int = when (this) {
-        PollInterestRead -> SelectionKey.OP_READ
-        PollInterestWrite -> SelectionKey.OP_WRITE
-        PollInterestConnect -> SelectionKey.OP_CONNECT
-        PollInterestAccept -> SelectionKey.OP_ACCEPT
+        POLL_INTEREST_READ -> SelectionKey.OP_READ
+        POLL_INTEREST_WRITE -> SelectionKey.OP_WRITE
+        POLL_INTEREST_CONNECT -> SelectionKey.OP_CONNECT
+        POLL_INTEREST_ACCEPT -> SelectionKey.OP_ACCEPT
+        else -> error("invalid POLL_INTEREST $this")
     }
 }

@@ -2,9 +2,9 @@ package kio.postgres.conn
 
 import kio.async.AsyncSink
 import kio.async.AsyncSource
-import kio.network.AsyncConnection
-import kio.network.buffered
-import kio.network.openConnection
+import kio.async.io.AsyncConnection
+import kio.async.io.buffered
+import kio.async.io.openConnection
 import kio.postegre.protocol.ErrorField
 import kio.postegre.protocol.Message
 import kio.postegre.protocol.readMessage

@@ -5,8 +5,8 @@ import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.AsyncSink
 import kio.async.AsyncSource
+import kio.async.io.AsyncRawConnection
 import kio.http.internal.HttpRequestHead
-import kio.network.AsyncRawConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.io.Buffer
