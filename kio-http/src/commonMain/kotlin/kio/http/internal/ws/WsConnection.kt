@@ -2,10 +2,10 @@ package kio.websocket
 
 import kio.async.AsyncSink
 import kio.async.AsyncSource
+import kio.async.io.AsyncConnection
 import kio.async.readByteArray
 import kio.http.internal.ws.InvalidUtf8Exception
 import kio.http.internal.ws.readCodePointValueOrThrow
-import kio.network.AsyncConnection
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.IOException

@@ -1,7 +1,7 @@
 package kio.postgres.conn
 
-import kio.network.buffered
-import kio.network.openConnection
+import kio.async.io.buffered
+import kio.async.io.openConnection
 import kio.postegre.protocol.Message
 import kio.postegre.protocol.readMessage
 import kio.postegre.protocol.writePassword

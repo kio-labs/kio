@@ -3,11 +3,11 @@ package kio.http.internal.http1
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.parseHeaderValue
+import kio.async.io.AsyncConnection
 import kio.http.RouteScope
 import kio.http.handleHttp1Request
 import kio.http.handleWebsocketRequest
 import kio.http.internal.HttpRequestHead
-import kio.network.AsyncConnection
 import kotlin.text.equals
 
 internal suspend fun RouteScope.handleHttp1Connection(conn: AsyncConnection) {

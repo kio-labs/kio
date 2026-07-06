@@ -16,11 +16,6 @@ import kio.async.buffered
 import kio.async.writeString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
-import kio.http.internal.http1.chunked
-import kio.http.internal.http1.http1ResponseSink
-import kio.http.internal.limited
-import kio.network.AsyncConnection
-import kotlinx.coroutines.CancellationException
 import kotlin.text.equals
 
 typealias CallHandler = suspend CallContext.() -> Unit

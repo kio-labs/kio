@@ -1,0 +1,251 @@
+package kio.async.io
+
+import kio.async.AsyncRawSink
+import kio.async.AsyncRawSource
+import kio.async.POLL_INTEREST_READ
+import kio.async.POLL_INTEREST_WRITE
+import kio.async.Poller
+import kio.async.awaitIo
+import kio.async.poller
+import kotlinx.atomicfu.atomic
+import platform.posix.*
+import kotlinx.cinterop.*
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.io.Buffer
+import kotlinx.io.IOException
+import kotlin.Int
+
+@OptIn(ExperimentalForeignApi::class)
+actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection = memScoped {
+    val poller = currentCoroutineContext().poller
+    val hints = alloc<addrinfo> {
+        ai_family = AF_UNSPEC
+        ai_socktype = SOCK_STREAM
+        ai_protocol = IPPROTO_TCP
+        ai_flags = 0
+    }
+
+    val result = allocPointerTo<addrinfo>()
+
+    val rc = getaddrinfo(host, port.toString(), hints.ptr, result.ptr)
+    if (rc != 0) {
+        throw IOException("getaddrinfo failed: ${gai_strerror(rc)?.toKString()}")
+    }
+
+    try {
+        var lastError: String? = null
+        var ai = result.value
+
+        while (ai != null) {
+            val fd = socket(ai.pointed.ai_family, ai.pointed.ai_socktype, ai.pointed.ai_protocol)
+            if (fd < 0) {
+                lastError = errnoMessage()
+                ai = ai.pointed.ai_next
+                continue
+            }
+
+            try {
+                if (setNonBlocking(fd) < 0) {
+                    throw IOException("could not set socket non-blocking: ${errnoMessage()}")
+                }
+
+                poller.attach(fd, POLL_INTEREST_WRITE)
+                val ret = connect(
+                    fd,
+                    ai.pointed.ai_addr,
+                    ai.pointed.ai_addrlen,
+                )
+
+                if (ret == 0) {
+                    return@memScoped FdRawAsyncConnection(poller = poller, fd = fd)
+                }
+
+                if (errno == EINPROGRESS) {
+                    awaitIo(fd, POLL_INTEREST_WRITE)
+
+                    val socketError = getSocketError(fd)
+                    if (socketError == 0) {
+                        return@memScoped FdRawAsyncConnection(poller = poller, fd = fd)
+                    }
+
+                    lastError = strerror(socketError)?.toKString()
+                } else {
+                    lastError = errnoMessage()
+                }
+            } catch (e: Throwable) {
+                close(fd)
+                poller.detach(fd, POLL_INTEREST_WRITE)
+                throw e
+            }
+
+            close(fd)
+            ai = ai.pointed.ai_next
+        }
+
+        throw IOException("connect failed: ${lastError ?: "unknown error"}")
+    } finally {
+        freeaddrinfo(result.value)
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class, UnsafeNumber::class)
+actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
+    val poller = currentCoroutineContext().poller
+    val backlog: Int = 128
+// TODO: Judge IP type form host.
+    val serverFd = socket(AF_INET, SOCK_STREAM, 0)
+    if (serverFd < 0) {
+        throw IOException("could not create server socket: ${errnoMessage()}")
+    }
+
+    try {
+        val yes = alloc<IntVar> { value = 1 }
+
+        if (setsockopt(
+                serverFd,
+                SOL_SOCKET,
+                SO_REUSEADDR,
+                yes.ptr,
+                sizeOf<IntVar>().convert()
+            ) < 0
+        ) {
+            throw IOException("could not configure SO_REUSEADDR: ${errnoMessage()}")
+        }
+
+        if (setNonBlocking(serverFd) < 0) {
+            throw IOException("could not set server socket non-blocking: ${errnoMessage()}")
+        }
+
+        val ip = inet_addr(host)
+        if (ip == INADDR_NONE) {
+            throw IOException("invalid IPv4 address: $host")
+        }
+
+        val serverAddr = alloc<sockaddr_in> {
+            sin_family = AF_INET.convert()
+            sin_port = htons(port.convert())
+            sin_addr.s_addr = ip
+        }
+
+        if (bind(serverFd, serverAddr.ptr.reinterpret(), sizeOf<sockaddr_in>().convert()) < 0) {
+            throw IOException("could not bind $host:$port: ${errnoMessage()}")
+        }
+
+        if (listen(serverFd, backlog) < 0) {
+            throw IOException("could not listen $host:$port: ${errnoMessage()}")
+        }
+
+        FdServerSocket(poller, serverFd)
+    } catch (t: Throwable) {
+        close(serverFd)
+        throw t
+    }
+}
+
+internal expect fun inet_addr(host: String?): UInt
+
+private class FdServerSocket(
+    private val poller: Poller,
+    private val serverFd: Int,
+) : ServerSocket {
+    init {
+        poller.attach(serverFd, POLL_INTEREST_READ)
+    }
+
+    @OptIn(ExperimentalForeignApi::class)
+    override suspend fun accept(): AsyncRawConnection = memScoped {
+        awaitIo(serverFd, POLL_INTEREST_READ)
+
+        val clientAddr = alloc<sockaddr_in> {}
+        val clientAddrLen = alloc<UIntVar> { value = sizeOf<sockaddr_in>().convert() }
+        val clientFd =
+            accept(serverFd, clientAddr.ptr.reinterpret(), clientAddrLen.ptr.reinterpret())
+
+        if (clientFd < 0) {
+            throw IOException("ERROR: could not accept connection from client: ${errnoMessage()}")
+        }
+
+        try {
+            if (setNonBlocking(clientFd) < 0) {
+                throw IOException("ERROR: could not set client socket non-blocking: ${errnoMessage()}\n")
+            }
+
+            FdRawAsyncConnection(poller, clientFd)
+        } catch (t: Throwable) {
+            close(clientFd)
+            throw t
+        }
+    }
+
+    override fun close() {
+        poller.detach(serverFd, POLL_INTEREST_READ)
+    }
+}
+
+private class FdRawAsyncConnection(
+    private val poller: Poller,
+    private val fd: Int,
+    override val source: AsyncRawSource = asyncFdRawSource(fd),
+    override val sink: AsyncRawSink = asyncFdRawSink(fd)
+) : AsyncRawConnection {
+    init {
+        poller.attach(fd, POLL_INTEREST_WRITE)
+        poller.attach(fd, POLL_INTEREST_READ)
+    }
+
+    private val closed = atomic(false)
+
+    override suspend fun close() {
+        if (!closed.compareAndSet(expect = false, update = true)) return
+
+        shutdown(fd, SHUT_WR)
+
+        try {
+            // drain source buffer
+            val buf = Buffer()
+            while (true) {
+                val read = source.readAtMostTo(buf, 1024)
+                if (read == -1L) break
+            }
+        } finally {
+            poller.detach(fd, POLL_INTEREST_WRITE)
+            poller.detach(fd, POLL_INTEREST_READ)
+
+            close(fd)
+        }
+    }
+}
+
+internal fun setNonBlocking(fd: Int): Int {
+    val flags = fcntl(fd, F_GETFL, 0)
+    if (flags < 0) return -1
+    if (fcntl(fd, F_SETFL, flags or O_NONBLOCK) < 0) return -1
+    return 0
+}
+
+@OptIn(ExperimentalForeignApi::class)
+private fun getSocketError(fd: Int): Int = memScoped {
+    val error = alloc<IntVar>()
+    val len = alloc<socklen_tVar>()
+    len.value = sizeOf<IntVar>().convert()
+
+    val rc = getsockopt(
+        fd,
+        SOL_SOCKET,
+        SO_ERROR,
+        error.ptr,
+        len.ptr,
+    )
+
+    if (rc < 0) errno else error.value
+}
+
+private fun htons(value: UShort): UShort {
+    val v = value.toInt()
+    return (((v and 0xFF) shl 8) or ((v ushr 8) and 0xFF)).toUShort()
+}
+
+@OptIn(ExperimentalForeignApi::class)
+internal fun errnoMessage(): String {
+    return strerror(errno)?.toKString() ?: "Unknown errno: $errno"
+}

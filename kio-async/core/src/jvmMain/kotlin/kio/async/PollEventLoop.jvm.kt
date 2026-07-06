@@ -4,11 +4,9 @@ import java.nio.ByteBuffer
 import java.nio.channels.Pipe
 import java.nio.channels.SelectableChannel
 
-class SelectionKeyWrapper(
+data class SelectionKeyWrapper constructor(
     val channel: SelectableChannel,
 )
-
-actual typealias PollHandle = SelectionKeyWrapper
 
 internal actual fun nowMillis(): Long {
     return System.nanoTime() / 1_000_000L
@@ -24,7 +22,7 @@ internal actual fun wakeupPipe(): WakeupPipe {
     writeChannel.configureBlocking(false)
 
     return object : WakeupPipe {
-        override val wakeupReadFD: PollHandle = SelectionKeyWrapper(readChannel)
+        override val wakeupReadFD = SelectionKeyWrapper(readChannel)
 
         override fun drainWakeup() {
             val buffer = ByteBuffer.allocate(64)

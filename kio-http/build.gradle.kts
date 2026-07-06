@@ -5,6 +5,7 @@ plugins {
 kotlin {
     jvm()
     macosArm64()
+    linuxX64()
 
     sourceSets {
         compilerOptions {
@@ -12,7 +13,7 @@ kotlin {
         }
         commonMain.dependencies {
             api(libs.ktor.http)
-            implementation(project(":kio-network"))
+            implementation(project(":kio-async:io"))
             implementation(project(":kio-compression"))
         }
 

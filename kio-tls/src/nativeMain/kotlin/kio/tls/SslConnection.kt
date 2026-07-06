@@ -7,9 +7,9 @@ import kio.async.AsyncRawSource
 import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.buffered
-import kio.network.AsyncConnection
-import kio.network.AsyncRawConnection
-import kio.network.buffered
+import kio.async.io.AsyncConnection
+import kio.async.io.AsyncRawConnection
+import kio.async.io.buffered
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf

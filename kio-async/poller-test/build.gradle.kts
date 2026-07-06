@@ -9,9 +9,10 @@ plugins {
 kotlin {
     jvm()
     macosArm64()
+    linuxX64()
     sourceSets {
         commonTest.dependencies {
-            implementation(project(":kio-async:core"))
+            implementation(project(":kio-async:io"))
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }
@@ -20,6 +21,8 @@ kotlin {
         }
         nativeTest.dependencies {
             implementation(project(":kio-async:poller-poll"))
+        }
+        macosTest.dependencies {
             implementation(project(":kio-async:poller-kqueue"))
         }
     }

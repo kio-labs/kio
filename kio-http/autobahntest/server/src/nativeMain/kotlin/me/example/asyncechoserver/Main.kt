@@ -1,12 +1,12 @@
 package me.example.asyncechoserver
 
+import kio.async.io.tcpBind
 import kio.async.poller.poll.PosixPoll
 import kio.async.runPollEventLoop
 import kio.http.httpServer
 import kio.http.sendBinary
 import kio.http.sendText
 import kio.http.websocket
-import kio.network.tcpBind
 import kio.websocket.WebSocketEvent
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.posix.SIGPIPE

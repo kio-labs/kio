@@ -1,11 +1,11 @@
 package kio.http
 
 import io.ktor.http.HttpMethod
+import kio.async.io.AsyncConnection
+import kio.async.io.AsyncRawConnection
+import kio.async.io.ServerSocket
+import kio.async.io.buffered
 import kio.http.internal.http2.http2Connection
-import kio.network.AsyncConnection
-import kio.network.AsyncRawConnection
-import kio.network.ServerSocket
-import kio.network.buffered
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.io.IOException

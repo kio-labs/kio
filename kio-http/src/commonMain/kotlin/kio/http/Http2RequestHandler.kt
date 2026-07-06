@@ -2,12 +2,9 @@ package kio.http
 
 import io.ktor.http.HttpStatusCode
 import kio.async.buffered
-import kio.http.internal.HttpRequestHead
 import kio.http.internal.http2.Http2Connection
 import kio.http.internal.http2.Http2ResponseSink
 import kio.http.internal.http2.Http2Stream
-import kio.network.AsyncConnection
-import kio.network.buffered
 import kotlinx.coroutines.CancellationException
 
 context(_: Http2Connection)
