@@ -22,6 +22,9 @@ kotlin {
         nativeTest.dependencies {
             implementation(project(":kio-async:poller-poll"))
         }
+        linuxMain.dependencies {
+            implementation(project(":kio-async:poller-linux-epoll"))
+        }
         macosTest.dependencies {
             implementation(project(":kio-async:poller-kqueue"))
         }
