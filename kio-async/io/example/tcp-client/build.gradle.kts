@@ -7,13 +7,12 @@ plugins {
 }
 
 kotlin {
-    jvm() {
-        mainRun {
-
-        }
-    }
-    macosArm64 {
-        binaries {
+    jvm()
+    listOf(
+        macosArm64(),
+        linuxX64()
+    ).forEach {
+        it.binaries {
             executable {
                 entryPoint("me.example.tcpclient.main")
             }

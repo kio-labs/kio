@@ -15,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toCollection
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.datetime.LocalDateTime
 import kotlinx.io.Buffer
 import kotlinx.io.readString
@@ -404,8 +405,10 @@ abstract class PgConnectionTest {
         runPollEventLoop(pollerFactory) {
             val HOST_IP = "localhost"
             val PORT = 5432
-            val conn = openPgConnection(HOST_IP, PORT, "test_clear", database = "postgres", password = "test123")
-            conn.block()
-            conn.close()
+            withTimeout(1.seconds) {
+                val conn = openPgConnection(HOST_IP, PORT, "test_clear", database = "postgres", password = "test123")
+                conn.block()
+                conn.close()
+            }
         }
 }

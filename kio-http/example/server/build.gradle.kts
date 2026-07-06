@@ -3,8 +3,11 @@ plugins {
 }
 
 kotlin {
-    macosArm64 {
-        binaries {
+    listOf(
+        linuxX64(),
+        macosArm64()
+    ).forEach {
+        it.binaries {
             executable {
                 entryPoint("me.example.httpserver.main")
             }
