@@ -6,6 +6,7 @@ serialization = "1.11.0"
 kotlinxDatetime = "0.8.0"
 hash = "0.5.6"
 ktorHttp = "3.5.1"
+linuxUring = "2.15"
 
 [libraries]
 kotlinx-io = { group = "org.jetbrains.kotlinx", name = "kotlinx-io-core", version.ref = "kotlinx-io" }
@@ -17,6 +18,7 @@ hash-sha1 = { group = "org.kotlincrypto.hash", name = "sha1", version.ref = "has
 ktor-http = { group = "io.ktor", name = "ktor-http", version.ref = "ktorHttp" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.ref = "kotlin" }
+linux-uring = { group = "io.github.kio-labs", name = "linux-uring", version.ref = "linuxUring" }
 
 [plugins]
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

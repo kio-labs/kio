@@ -24,6 +24,7 @@ kotlin {
         }
         linuxMain.dependencies {
             implementation(project(":kio-async:poller-linux-epoll"))
+            implementation(project(":kio-async:poller-linux-uring"))
         }
         macosTest.dependencies {
             implementation(project(":kio-async:poller-kqueue"))

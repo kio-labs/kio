@@ -23,11 +23,13 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "kio"
+include(":t")
 include(":kio-async:core")
 include(":kio-async:poller-poll")
 include(":kio-async:poller-kqueue")
 include(":kio-async:poller-jvm-select")
 include(":kio-async:poller-linux-epoll")
+include(":kio-async:poller-linux-uring")
 include(":kio-async:poller-test")
 include(":kio-async:io")
 include(":kio-async:io:example:async-echo-server")

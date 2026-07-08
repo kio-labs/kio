@@ -5,8 +5,9 @@ plugins {
 kotlin {
     linuxX64()
     sourceSets {
-        commonMain.dependencies {
+        linuxMain.dependencies {
             api(project(":kio-async:core"))
+            implementation(libs.linux.uring)
         }
     }
 }
