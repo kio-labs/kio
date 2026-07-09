@@ -11,3 +11,4 @@ data class SelectionKeyWrapper constructor(
 internal actual fun nowMillis(): Long {
     return System.nanoTime() / 1_000_000L
 }
+

@@ -4,6 +4,7 @@ import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
+import kio.async.SuspendIo
 import kio.async.poller
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.IntVar
@@ -17,7 +18,7 @@ import platform.posix.pipe
 @OptIn(ExperimentalForeignApi::class)
 actual suspend fun openPipe(): AsyncRawConnection = memScoped {
     val poller = currentCoroutineContext().poller
-
+    val suspendIo = poller as SuspendIo
     val fds = allocArray<IntVar>(2)
     check(pipe(fds) == 0)
 
@@ -32,9 +33,9 @@ actual suspend fun openPipe(): AsyncRawConnection = memScoped {
 
     return@memScoped object : AsyncRawConnection {
         override val source: AsyncRawSource =
-            asyncFdRawSource(readFd)
+            asyncFdRawSource(readFd, suspendIo)
         override val sink: AsyncRawSink =
-            asyncFdRawSink(writeFd)
+            asyncFdRawSink(writeFd, suspendIo)
 
         private var closed = false
 

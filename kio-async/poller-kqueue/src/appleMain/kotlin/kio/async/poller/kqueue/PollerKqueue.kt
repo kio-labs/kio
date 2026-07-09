@@ -4,6 +4,8 @@ import kio.async.PollInterest
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.Poller
+import kio.async.PollerFactory
+import kio.async.SuspendSyscallIo
 import kotlinx.cinterop.Arena
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
@@ -12,6 +14,7 @@ import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.toKString
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.io.IOException
 import platform.darwin.EVFILT_READ
 import platform.darwin.EVFILT_WRITE
@@ -23,13 +26,16 @@ import platform.darwin.kqueue
 import platform.posix.errno
 import platform.posix.strerror
 import platform.posix.timespec
+import kotlin.collections.set
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.resume
 
-object Kqueue : Poller.Factory {
+object Kqueue : PollerFactory {
     override fun create(): Poller = KqueuePoller()
 }
 
-private class KqueuePoller : Poller {
+private class KqueuePoller : Poller, SuspendSyscallIo {
     private val kq = kqueue()
 
     @OptIn(ExperimentalForeignApi::class)
@@ -37,13 +43,13 @@ private class KqueuePoller : Poller {
 
     @OptIn(ExperimentalForeignApi::class)
     private val events = arean.allocArray<kevent>(EVENT_CAPACITY)
+    private val continuationMap: MutableMap<Pair<Any, PollInterest>, Continuation<Unit>> =
+        mutableMapOf()
 
     @OptIn(ExperimentalForeignApi::class, ExperimentalAtomicApi::class)
-    override fun attach(handle: Any, event: PollInterest): Unit = memScoped {
-        handle as Int
-
+    override fun attach(fd: Int, event: PollInterest): Unit = memScoped {
         val change = alloc<kevent> {
-            ident = handle.toULong()
+            ident = fd.toULong()
             filter = event.filter()
             flags = (EV_ADD or EV_ENABLE).toUShort()
             fflags = 0U
@@ -57,11 +63,9 @@ private class KqueuePoller : Poller {
     }
 
     @OptIn(ExperimentalForeignApi::class, ExperimentalAtomicApi::class)
-    override fun detach(handle: Any, event: PollInterest): Unit = memScoped {
-        handle as Int
-
+    override fun detach(fd: Int, event: PollInterest): Unit = memScoped {
         val change = alloc<kevent> {
-            ident = handle.toULong()
+            ident = fd.toULong()
             filter = event.filter()
             flags = (EV_DELETE).toUShort()
             fflags = 0U
@@ -75,10 +79,16 @@ private class KqueuePoller : Poller {
         }
     }
 
+    override suspend fun awaitIo(handle: Int, interest: PollInterest) = suspendCancellableCoroutine { c ->
+        continuationMap[handle to interest] = c
+        c.invokeOnCancellation {
+            continuationMap.remove(handle to interest)
+        }
+    }
+
     @OptIn(ExperimentalForeignApi::class)
     override fun poll(
-        timeoutMillis: Long,
-        onActive: (handle: Any, event: PollInterest) -> Unit
+        timeoutMillis: Long
     ) = memScoped {
         val timeoutPtr = when {
             timeoutMillis < 0 -> null
@@ -104,7 +114,8 @@ private class KqueuePoller : Poller {
                 else -> continue
             }
 
-            onActive(fd, pollInterest)
+            val c = continuationMap.remove(fd to pollInterest)
+            c?.resume(Unit)
         }
     }
 

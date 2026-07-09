@@ -5,7 +5,7 @@ import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.AsyncSink
 import kio.async.AsyncSource
-import kio.async.Poller
+import kio.async.PollerFactory
 import kio.async.buffered
 import kio.async.io.AsyncRawConnection
 import kio.async.io.buffered
@@ -38,7 +38,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlin.math.min
 
 abstract class Http2ConnectionTest {
-    abstract val poller: Poller.Factory
+    abstract val poller: PollerFactory
 
     @Test
     fun canAckPing() = withHttp2Test {
