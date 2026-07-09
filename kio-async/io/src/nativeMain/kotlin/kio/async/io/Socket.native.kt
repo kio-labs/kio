@@ -165,8 +165,8 @@ private class FdServerSocket(
 private class FdRawAsyncConnection(
     private val poller: Poller,
     private val fd: Int,
-    override val source: AsyncRawSource = asyncFdRawSource(fd, poller),
-    override val sink: AsyncRawSink = asyncFdRawSink(fd, poller)
+    override val source: AsyncRawSource = poller.asyncRawSource(fd),
+    override val sink: AsyncRawSink = poller.asyncRawSink(fd)
 ) : AsyncRawConnection {
     init {
         poller.attach(fd, POLL_INTEREST_WRITE)

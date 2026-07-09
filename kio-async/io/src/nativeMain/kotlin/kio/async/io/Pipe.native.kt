@@ -33,9 +33,9 @@ actual suspend fun openPipe(): AsyncRawConnection = memScoped {
 
     return@memScoped object : AsyncRawConnection {
         override val source: AsyncRawSource =
-            asyncFdRawSource(readFd, suspendIo)
+            suspendIo.asyncRawSource(readFd)
         override val sink: AsyncRawSink =
-            asyncFdRawSink(writeFd, suspendIo)
+            suspendIo.asyncRawSink(writeFd)
 
         private var closed = false
 

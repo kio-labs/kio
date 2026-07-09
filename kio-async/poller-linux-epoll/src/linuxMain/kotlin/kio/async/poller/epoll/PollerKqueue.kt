@@ -5,7 +5,7 @@ import kio.async.POLL_INTEREST_WRITE
 import kio.async.PollInterest
 import kio.async.Poller
 import kio.async.PollerFactory
-import kio.async.SuspendSyscallIo
+import kio.async.polling.PollingSuspendIo
 import kotlinx.cinterop.Arena
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
@@ -35,7 +35,7 @@ object EPoll : PollerFactory {
 
 private const val EVENT_CAPACITY = 64
 
-private class EpollPoller : Poller, SuspendSyscallIo {
+private class EpollPoller : Poller, PollingSuspendIo {
     val epollfd = epoll_create1(0)
 
     @OptIn(ExperimentalForeignApi::class)

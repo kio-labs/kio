@@ -7,12 +7,11 @@ plugins {
 }
 
 kotlin {
+    linuxX64()
     macosArm64()
-
     sourceSets {
-        commonMain.dependencies {
+        nativeMain.dependencies {
             api(project(":kio-async:core"))
-            implementation(project(":kio-async:polling-io"))
         }
     }
 }

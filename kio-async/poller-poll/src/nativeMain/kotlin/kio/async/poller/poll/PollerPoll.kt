@@ -5,7 +5,7 @@ import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.Poller
 import kio.async.PollerFactory
-import kio.async.SuspendSyscallIo
+import kio.async.polling.PollingSuspendIo
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.UnsafeNumber
 import kotlinx.cinterop.allocArray
@@ -28,7 +28,7 @@ object PosixPoll : PollerFactory {
     override fun create(): Poller = NativePoller()
 }
 
-private class NativePoller :Poller, SuspendSyscallIo {
+private class NativePoller :Poller, PollingSuspendIo {
     private val pollFdRequestMap: MutableMap<Pair<Int, PollInterest>, PollFdRequest> =
         mutableMapOf()
     private val continuationMap: MutableMap<Pair<Int, PollInterest>, Continuation<Unit>> =

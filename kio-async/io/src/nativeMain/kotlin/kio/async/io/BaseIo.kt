@@ -17,10 +17,10 @@ import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
 import platform.posix.*
 
-fun asyncFdRawSink(fd: Int, suspendIo: SuspendIo): AsyncRawSink = AsyncFdRawSink(fd, suspendIo)
-fun asyncFdRawSource(fd: Int, suspendIo: SuspendIo): AsyncRawSource = AsyncFdRawSource(fd, suspendIo)
+fun SuspendIo.asyncRawSink(fd: Int): AsyncRawSink = DefaultAsyncRawSink(fd, this)
+fun SuspendIo.asyncRawSource(fd: Int): AsyncRawSource = DefaultAsyncRawSource(fd, this)
 
-private class AsyncFdRawSink(
+private class DefaultAsyncRawSink(
     private val fd: Int,
     private val suspendIo: SuspendIo
 ) : AsyncRawSink {
@@ -68,7 +68,7 @@ private inline fun doWrite(
     }
 }
 
-private class AsyncFdRawSource(
+private class DefaultAsyncRawSource(
     private val fd: Int,
     private val suspendIo: SuspendIo
 ) : AsyncRawSource {
