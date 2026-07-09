@@ -93,17 +93,10 @@ internal class AsyncPollEventDispatcher(
             ContinuationInterceptor,
             { it as? AsyncPollEventDispatcher })
 
-
     private val continuationMap: MutableMap<Pair<Any, PollInterest>, Continuation<Unit>> =
         mutableMapOf()
     private val timerRequestMap: MutableMap<TimerRequest, Runnable> = mutableMapOf()
     private val taskQueue = ArrayDeque<Runnable>()
-
-    private val wakeupPipe = wakeupPipe()
-
-    init {
-        nativePoller.attach(wakeupPipe.wakeupReadFD, POLL_INTEREST_READ)
-    }
 
     override fun dispatch(
         context: CoroutineContext,
@@ -163,8 +156,6 @@ internal class AsyncPollEventDispatcher(
         nativePoller.poll(timeout, ::resumeSleepingFd)
 
         resumeTimers()
-
-        wakeupPipe.drainWakeup()
     }
 
     private fun getNearestTimeout(): Long {
@@ -192,12 +183,12 @@ internal class AsyncPollEventDispatcher(
         }
     }
 
-    fun registerTimer(req: TimerRequest, c: Runnable) {
+    private fun registerTimer(req: TimerRequest, c: Runnable) {
         if (timerRequestMap.contains(req)) throw IllegalStateException("$req already sleep.")
         timerRequestMap[req] = c
     }
 
-    fun unRegisterTimer(req: TimerRequest) {
+    private fun unRegisterTimer(req: TimerRequest) {
         timerRequestMap.remove(req)
     }
 
@@ -207,7 +198,6 @@ internal class AsyncPollEventDispatcher(
 
     fun unRegisterHandle(handle: Any, event: PollInterest) {
         continuationMap.remove(handle to event)
-        wakeupPipe.wakeup()
     }
 
     fun processNextEvent(): Boolean {
@@ -217,7 +207,6 @@ internal class AsyncPollEventDispatcher(
 
     override fun close() {
         nativePoller.close()
-        wakeupPipe.close()
     }
 }
 
@@ -300,5 +289,3 @@ private class BlockingAIOCoroutine<T>(
 }
 
 internal expect fun nowMillis(): Long
-
-internal expect fun wakeupPipe(): WakeupPipe
