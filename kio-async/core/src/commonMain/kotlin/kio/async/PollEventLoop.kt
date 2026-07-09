@@ -64,6 +64,12 @@ interface Poller {
     fun close()
 }
 
+interface AttachablePoller {
+    fun attach(handle: Any, event: PollInterest) {}
+    fun detach(handle: Any, event: PollInterest) {}
+    suspend fun awaitIo(handle: Any, interest: PollInterest)
+}
+
 typealias PollInterest = Int
 
 const val POLL_INTEREST_READ = 1

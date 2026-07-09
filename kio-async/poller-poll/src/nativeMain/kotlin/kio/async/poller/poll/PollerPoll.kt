@@ -34,8 +34,8 @@ private class NativePoller : Poller {
             POLL_INTEREST_WRITE -> PollFdRequest(handle, POLLWRNORM)
             else -> error("never")
         }
-// TODO: remove comment.
-//        if (pollFdRequestMap.values.contains(fdRequest)) throw IllegalStateException("$handle already sleep.")
+
+        if (pollFdRequestMap.values.contains(fdRequest)) throw IllegalStateException("$handle already sleep.")
         pollFdRequestMap[handle to event] = fdRequest
     }
 
