@@ -1,6 +1,6 @@
 package kio.postgres.conn
 
-import kio.async.Poller
+import kio.async.PollerFactory
 import kio.async.io.buffered
 import kio.async.io.openPipe
 import kio.async.runPollEventLoop
@@ -31,7 +31,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.measureTime
 
 abstract class PgConnectionTest {
-    abstract val pollerFactory: Poller.Factory
+    abstract val pollerFactory: PollerFactory
 
     @Test
     fun execTest() = withTestPgDatabase {

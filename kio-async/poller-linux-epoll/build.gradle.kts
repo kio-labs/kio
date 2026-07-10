@@ -11,6 +11,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":kio-async:core"))
+            implementation(project(":kio-async:polling-io"))
         }
     }
 }

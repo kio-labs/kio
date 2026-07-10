@@ -24,9 +24,9 @@ actual suspend fun openPipe(): AsyncRawConnection {
 
     return object : AsyncRawConnection {
         override val source: AsyncRawSource =
-            asyncChannelRawSource(sourceChannel, sourceChannel)
+            asyncChannelRawSource(sourceChannel, sourceChannel,poller)
         override val sink: AsyncRawSink =
-            asyncChannelRawSink(sinkChannel, sinkChannel)
+            asyncChannelRawSink(sinkChannel, sinkChannel, poller)
 
         override suspend fun close() {
             poller.detach(readHandle, POLL_INTEREST_READ)

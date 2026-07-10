@@ -1,6 +1,6 @@
 package kio.async.poller.test
 
-import kio.async.Poller
+import kio.async.PollerFactory
 import kio.async.io.buffered
 import kio.async.io.openPipe
 import kio.async.runPollEventLoop
@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 
 abstract class PollEventLoopTest {
-    abstract val factory : Poller.Factory
+    abstract val factory : PollerFactory
 
     @Test
     fun awaitReadIoResumeWhenPipeReadable() = runPollEventLoop(factory) {
