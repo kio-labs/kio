@@ -13,7 +13,6 @@ import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.disposeOnCancellation
 import kotlinx.coroutines.newCoroutineContext
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.iterator
@@ -21,7 +20,6 @@ import kotlin.collections.set
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.AbstractCoroutineContextKey
-import kotlin.coroutines.Continuation
 import kotlin.coroutines.ContinuationInterceptor
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
@@ -29,7 +27,7 @@ import kotlin.coroutines.resume
 
 @OptIn(DelicateCoroutinesApi::class)
 fun <T> runPollEventLoop(
-    factory: Poller.Factory,
+    factory: PollerFactory,
     context: CoroutineContext = EmptyCoroutineContext,
     block: suspend CoroutineScope.() -> T
 ): T {
@@ -43,14 +41,13 @@ fun <T> runPollEventLoop(
 val CoroutineContext.poller: Poller
     get() = get(ContinuationInterceptor) as? Poller ?: error("No poller registered.")
 
-interface Poller {
-    interface Factory {
-        fun create(): Poller
-    }
+expect interface SuspendIo
 
-    fun attach(handle: Any, event: PollInterest)
-    fun detach(handle: Any, event: PollInterest)
+interface PollerFactory {
+    fun create(): Poller
+}
 
+interface Poller: SuspendIo {
     /**
      * Blocks the current thread until this fd becomes ready or the timeout expires.
      *
@@ -59,7 +56,7 @@ interface Poller {
      * - `0` means return immediately.
      * - `> 0` means wait up to the given milliseconds.
      */
-    fun poll(timeoutMillis: Long, onActive: (handle: Any, event: PollInterest) -> Unit)
+    fun poll(timeoutMillis: Long)
 
     fun close()
 }
@@ -73,18 +70,9 @@ const val POLL_INTEREST_WRITE = 2
 const val POLL_INTEREST_CONNECT = 4
 const val POLL_INTEREST_ACCEPT = 8
 
-suspend fun awaitIo(handle: Any, interest: PollInterest): Unit = suspendCancellableCoroutine { c ->
-    val dispatcher = c.context[AsyncPollEventDispatcher] ?: error("not in async poll event")
-    dispatcher.registerHandle(handle, interest, c)
-
-    c.invokeOnCancellation {
-        dispatcher.unRegisterHandle(handle, interest)
-    }
-}
-
 @OptIn(InternalCoroutinesApi::class)
 internal class AsyncPollEventDispatcher(
-    factory: Poller.Factory,
+    factory: PollerFactory,
     private val nativePoller: Poller = factory.create()
 ) : CoroutineDispatcher(), Delay, Poller by nativePoller {
     @OptIn(ExperimentalStdlibApi::class)
@@ -93,17 +81,8 @@ internal class AsyncPollEventDispatcher(
             ContinuationInterceptor,
             { it as? AsyncPollEventDispatcher })
 
-
-    private val continuationMap: MutableMap<Pair<Any, PollInterest>, Continuation<Unit>> =
-        mutableMapOf()
     private val timerRequestMap: MutableMap<TimerRequest, Runnable> = mutableMapOf()
     private val taskQueue = ArrayDeque<Runnable>()
-
-    private val wakeupPipe = wakeupPipe()
-
-    init {
-        nativePoller.attach(wakeupPipe.wakeupReadFD, POLL_INTEREST_READ)
-    }
 
     override fun dispatch(
         context: CoroutineContext,
@@ -160,11 +139,9 @@ internal class AsyncPollEventDispatcher(
         }
 
         // block
-        nativePoller.poll(timeout, ::resumeSleepingFd)
+        nativePoller.poll(timeout)
 
         resumeTimers()
-
-        wakeupPipe.drainWakeup()
     }
 
     private fun getNearestTimeout(): Long {
@@ -172,11 +149,6 @@ internal class AsyncPollEventDispatcher(
             .minBy { it.deadlineMillis }
             .deadlineMillis
         return (nearestDeadline - nowMillis()).coerceAtLeast(0)
-    }
-
-    private fun resumeSleepingFd(handle: Any, interest: PollInterest) {
-        val c = continuationMap.remove(handle to interest)
-        c?.resume(Unit)
     }
 
     private fun resumeTimers() {
@@ -192,22 +164,13 @@ internal class AsyncPollEventDispatcher(
         }
     }
 
-    fun registerTimer(req: TimerRequest, c: Runnable) {
+    private fun registerTimer(req: TimerRequest, c: Runnable) {
         if (timerRequestMap.contains(req)) throw IllegalStateException("$req already sleep.")
         timerRequestMap[req] = c
     }
 
-    fun unRegisterTimer(req: TimerRequest) {
+    private fun unRegisterTimer(req: TimerRequest) {
         timerRequestMap.remove(req)
-    }
-
-    fun registerHandle(handle: Any, event: PollInterest, c: Continuation<Unit>) {
-        continuationMap[handle to event] = c
-    }
-
-    fun unRegisterHandle(handle: Any, event: PollInterest) {
-        continuationMap.remove(handle to event)
-        wakeupPipe.wakeup()
     }
 
     fun processNextEvent(): Boolean {
@@ -217,7 +180,6 @@ internal class AsyncPollEventDispatcher(
 
     override fun close() {
         nativePoller.close()
-        wakeupPipe.close()
     }
 }
 
@@ -256,14 +218,6 @@ internal class TimerRequest(
     }
 }
 
-internal interface WakeupPipe {
-    val wakeupReadFD: Any
-    fun drainWakeup()
-    fun wakeup()
-
-    fun close()
-}
-
 @OptIn(InternalCoroutinesApi::class)
 private class BlockingAIOCoroutine<T>(
     parentContext: CoroutineContext,
@@ -300,5 +254,3 @@ private class BlockingAIOCoroutine<T>(
 }
 
 internal expect fun nowMillis(): Long
-
-internal expect fun wakeupPipe(): WakeupPipe

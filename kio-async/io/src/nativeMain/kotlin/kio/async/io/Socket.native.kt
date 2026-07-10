@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalForeignApi::class)
+
 package kio.async.io
 
 import kio.async.AsyncRawSink
@@ -5,7 +7,6 @@ import kio.async.AsyncRawSource
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.Poller
-import kio.async.awaitIo
 import kio.async.poller
 import kotlinx.atomicfu.atomic
 import platform.posix.*
@@ -29,17 +30,18 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
 
     val rc = getaddrinfo(host, port.toString(), hints.ptr, result.ptr)
     if (rc != 0) {
+        freeaddrinfo(result.value)
         throw IOException("getaddrinfo failed: ${gai_strerror(rc)?.toKString()}")
     }
 
     try {
-        var lastError: String? = null
+        var lastError: Throwable? = null
         var ai = result.value
 
         while (ai != null) {
             val fd = socket(ai.pointed.ai_family, ai.pointed.ai_socktype, ai.pointed.ai_protocol)
             if (fd < 0) {
-                lastError = errnoMessage()
+                lastError = IOException(errnoMessage())
                 ai = ai.pointed.ai_next
                 continue
             }
@@ -50,39 +52,19 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
                 }
 
                 poller.attach(fd, POLL_INTEREST_WRITE)
-                val ret = connect(
-                    fd,
-                    ai.pointed.ai_addr,
-                    ai.pointed.ai_addrlen,
-                )
 
-                if (ret == 0) {
-                    return@memScoped FdRawAsyncConnection(poller = poller, fd = fd)
-                }
+                poller.suspendConnect(fd, ai.pointed.ai_addr, ai.pointed.ai_addrlen)
 
-                if (errno == EINPROGRESS) {
-                    awaitIo(fd, POLL_INTEREST_WRITE)
-
-                    val socketError = getSocketError(fd)
-                    if (socketError == 0) {
-                        return@memScoped FdRawAsyncConnection(poller = poller, fd = fd)
-                    }
-
-                    lastError = strerror(socketError)?.toKString()
-                } else {
-                    lastError = errnoMessage()
-                }
-            } catch (e: Throwable) {
-                close(fd)
+                return@memScoped FdRawAsyncConnection(poller = poller, fd = fd)
+            } catch (t: Throwable) {
+                lastError = t
                 poller.detach(fd, POLL_INTEREST_WRITE)
-                throw e
+                close(fd)
+                ai = ai.pointed.ai_next
             }
-
-            close(fd)
-            ai = ai.pointed.ai_next
         }
 
-        throw IOException("connect failed: ${lastError ?: "unknown error"}")
+        throw IOException(lastError)
     } finally {
         freeaddrinfo(result.value)
     }
@@ -152,14 +134,12 @@ private class FdServerSocket(
         poller.attach(serverFd, POLL_INTEREST_READ)
     }
 
-    @OptIn(ExperimentalForeignApi::class)
     override suspend fun accept(): AsyncRawConnection = memScoped {
-        awaitIo(serverFd, POLL_INTEREST_READ)
-
         val clientAddr = alloc<sockaddr_in> {}
         val clientAddrLen = alloc<UIntVar> { value = sizeOf<sockaddr_in>().convert() }
+
         val clientFd =
-            accept(serverFd, clientAddr.ptr.reinterpret(), clientAddrLen.ptr.reinterpret())
+            poller.suspendAccept(serverFd, clientAddr.ptr.reinterpret(), clientAddrLen.ptr.reinterpret())
 
         if (clientFd < 0) {
             throw IOException("ERROR: could not accept connection from client: ${errnoMessage()}")
@@ -185,8 +165,8 @@ private class FdServerSocket(
 private class FdRawAsyncConnection(
     private val poller: Poller,
     private val fd: Int,
-    override val source: AsyncRawSource = asyncFdRawSource(fd),
-    override val sink: AsyncRawSink = asyncFdRawSink(fd)
+    override val source: AsyncRawSource = poller.asyncRawSource(fd),
+    override val sink: AsyncRawSink = poller.asyncRawSink(fd)
 ) : AsyncRawConnection {
     init {
         poller.attach(fd, POLL_INTEREST_WRITE)
@@ -223,7 +203,6 @@ internal fun setNonBlocking(fd: Int): Int {
     return 0
 }
 
-@OptIn(ExperimentalForeignApi::class)
 private fun getSocketError(fd: Int): Int = memScoped {
     val error = alloc<IntVar>()
     val len = alloc<socklen_tVar>()
@@ -245,7 +224,6 @@ private fun htons(value: UShort): UShort {
     return (((v and 0xFF) shl 8) or ((v ushr 8) and 0xFF)).toUShort()
 }
 
-@OptIn(ExperimentalForeignApi::class)
 internal fun errnoMessage(): String {
     return strerror(errno)?.toKString() ?: "Unknown errno: $errno"
 }

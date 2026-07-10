@@ -8,7 +8,6 @@ import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.Poller
 import kio.async.SelectionKeyWrapper
-import kio.async.awaitIo
 import kio.async.poller
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.io.Buffer
@@ -31,7 +30,7 @@ actual suspend fun openConnection(
         channel.connect(InetSocketAddress(host, port))
 
         while (true) {
-            awaitIo(SelectionKeyWrapper(channel), POLL_INTEREST_CONNECT)
+            poller.suspendConnect(channel)
 
             if (channel.finishConnect()) {
                 break
@@ -50,8 +49,8 @@ actual suspend fun openConnection(
 internal class ChannelRawAsyncConnection(
     private val poller: Poller,
     private val channel: SocketChannel,
-    override val source: AsyncRawSource = asyncChannelRawSource(channel, channel),
-    override val sink: AsyncRawSink = asyncChannelRawSink(channel, channel),
+    override val source: AsyncRawSource = asyncChannelRawSource(channel, channel, poller),
+    override val sink: AsyncRawSink = asyncChannelRawSink(channel, channel,poller),
 ) : AsyncRawConnection {
     private val readHandle = SelectionKeyWrapper(channel)
     private val writeHandle = SelectionKeyWrapper(channel)
@@ -124,7 +123,7 @@ private class ChannelServerSocket(
 
     override suspend fun accept(): AsyncRawConnection {
         while (true) {
-            awaitIo(SelectionKeyWrapper(serverChannel), POLL_INTEREST_ACCEPT)
+            poller.suspendAccept(serverChannel)
 
             val client = serverChannel.accept()
 

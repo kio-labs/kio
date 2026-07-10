@@ -4,11 +4,14 @@ import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.PollInterest
 import kio.async.Poller
+import kio.async.PollerFactory
+import kio.async.polling.PollingSuspendIo
 import kotlinx.cinterop.Arena
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.cValue
 import kotlinx.cinterop.get
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.io.IOException
 import platform.linux.EPOLLERR
 import platform.linux.EPOLLHUP
@@ -22,15 +25,17 @@ import platform.linux.epoll_create1
 import platform.linux.epoll_ctl
 import platform.linux.epoll_event
 import platform.linux.epoll_wait
-import platform.posix.pollfd
+import kotlin.collections.set
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.resume
 
-object EPoll : Poller.Factory {
+object EPoll : PollerFactory {
     override fun create(): Poller = EpollPoller()
 }
 
 private const val EVENT_CAPACITY = 64
 
-private class EpollPoller : Poller {
+private class EpollPoller : Poller, PollingSuspendIo {
     val epollfd = epoll_create1(0)
 
     @OptIn(ExperimentalForeignApi::class)
@@ -42,6 +47,9 @@ private class EpollPoller : Poller {
     // map of fd and events
     val registeredEvents: MutableMap<Int, UInt> = mutableMapOf()
 
+    private val continuationMap: MutableMap<Pair<Int, PollInterest>, Continuation<Unit>> =
+        mutableMapOf()
+
     init {
         if (epollfd == -1) {
             throw IOException("Exception when create epollfd.")
@@ -49,8 +57,7 @@ private class EpollPoller : Poller {
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    override fun attach(handle: Any, event: PollInterest) {
-        val fd = handle as Int
+    override fun attach(fd: Int, event: PollInterest) {
         val oldEvents = registeredEvents[fd] ?: 0U
         val newEvents = oldEvents or event.toEvent()
 
@@ -72,8 +79,7 @@ private class EpollPoller : Poller {
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    override fun detach(handle: Any, event: PollInterest) {
-        val fd = handle as Int
+    override fun detach(fd: Int, event: PollInterest) {
         val oldEvents = registeredEvents[fd] ?: return
 
         val newEvents = oldEvents and event.toEvent().inv()
@@ -94,11 +100,15 @@ private class EpollPoller : Poller {
         }
     }
 
+    override suspend fun awaitIo(handle: Int, interest: PollInterest) = suspendCancellableCoroutine { c ->
+        continuationMap[handle to interest] = c
+        c.invokeOnCancellation {
+            continuationMap.remove(handle to interest)
+        }
+    }
+
     @OptIn(ExperimentalForeignApi::class)
-    override fun poll(
-        timeoutMillis: Long,
-        onActive: (handle: Any, event: PollInterest) -> Unit
-    ) {
+    override fun poll(timeoutMillis: Long) {
         val nfd = epoll_wait(epollfd, events, EVENT_CAPACITY, timeoutMillis.toInt())
         if (nfd == -1) {
             throw IOException("error happened when epoll_wait")
@@ -110,15 +120,17 @@ private class EpollPoller : Poller {
             val events = event.events
 
             if ((events and (EPOLLERR or EPOLLHUP or EPOLLRDHUP)) != 0U) {
-                onActive(fd, POLL_INTEREST_READ)
-                onActive(fd, POLL_INTEREST_WRITE)
+                continuationMap.remove(fd to POLL_INTEREST_READ)?.resume(Unit)
+                continuationMap.remove(fd to POLL_INTEREST_WRITE)?.resume(Unit)
                 continue
             }
             if ((events and EPOLLOUT) != 0U) {
-                onActive(fd, POLL_INTEREST_WRITE)
+                val c = continuationMap.remove(fd to POLL_INTEREST_WRITE)
+                c?.resume(Unit)
             }
             if ((events and EPOLLIN) != 0U) {
-                onActive(fd, POLL_INTEREST_READ)
+                val c = continuationMap.remove(fd to POLL_INTEREST_READ)
+                c?.resume(Unit)
             }
         }
     }

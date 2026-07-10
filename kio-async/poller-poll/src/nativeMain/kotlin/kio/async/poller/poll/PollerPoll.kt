@@ -4,6 +4,8 @@ import kio.async.PollInterest
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.Poller
+import kio.async.PollerFactory
+import kio.async.polling.PollingSuspendIo
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.UnsafeNumber
 import kotlinx.cinterop.allocArray
@@ -11,47 +13,57 @@ import kotlinx.cinterop.convert
 import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.toKString
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.io.IOException
 import platform.posix.POLLRDNORM
 import platform.posix.POLLWRNORM
 import platform.posix.errno
 import platform.posix.pollfd
 import platform.posix.strerror
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.resume
 import kotlin.native.concurrent.ObsoleteWorkersApi
 
-object PosixPoll : Poller.Factory {
+object PosixPoll : PollerFactory {
     override fun create(): Poller = NativePoller()
 }
 
-private class NativePoller : Poller {
+private class NativePoller :Poller, PollingSuspendIo {
     private val pollFdRequestMap: MutableMap<Pair<Int, PollInterest>, PollFdRequest> =
         mutableMapOf()
+    private val continuationMap: MutableMap<Pair<Int, PollInterest>, Continuation<Unit>> =
+        mutableMapOf()
 
-    override fun attach(handle: Any, event: PollInterest) {
-        handle as Int
+    override fun attach(fd: Int, event: PollInterest) {
         val fdRequest = when (event) {
-            POLL_INTEREST_READ -> PollFdRequest(handle, POLLRDNORM)
-            POLL_INTEREST_WRITE -> PollFdRequest(handle, POLLWRNORM)
+            POLL_INTEREST_READ -> PollFdRequest(fd, POLLRDNORM)
+            POLL_INTEREST_WRITE -> PollFdRequest(fd, POLLWRNORM)
             else -> error("never")
         }
-// TODO: remove comment.
-//        if (pollFdRequestMap.values.contains(fdRequest)) throw IllegalStateException("$handle already sleep.")
-        pollFdRequestMap[handle to event] = fdRequest
+
+        pollFdRequestMap[fd to event] = fdRequest
     }
 
-    override fun detach(handle: Any, event: PollInterest) {
-        pollFdRequestMap.remove(handle to event)
+    override fun detach(fd: Int, event: PollInterest) {
+        pollFdRequestMap.remove(fd to event)
     }
 
-    override fun poll(
-        timeoutMillis: Long,
-        onActive: (handle: Any, event: PollInterest) -> Unit
-    ) {
+    override suspend fun awaitIo(handle: Int, interest: PollInterest) = suspendCancellableCoroutine { c ->
+        continuationMap[handle to interest] = c
+        c.invokeOnCancellation {
+            continuationMap.remove(handle to interest)
+        }
+    }
+
+    override fun poll(timeoutMillis: Long) {
         nativePoll(pollFdRequestMap.values.toList(), timeoutMillis)
         pollFdRequestMap.forEach { entry ->
             val (handle, event) = entry.key
             val req = entry.value
-            if (req.needContinue()) onActive(handle, event)
+            if (req.needContinue()) {
+                val c = continuationMap.remove(handle to event)
+                c?.resume(Unit)
+            }
         }
     }
 
