@@ -6,7 +6,7 @@ import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.PollInterest
 import kio.async.SuspendIo
-import kotlinx.cinterop.CValuesRef
+import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.UIntVarOf
@@ -14,6 +14,7 @@ import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.sizeOf
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.value
@@ -27,6 +28,7 @@ import platform.posix.errno
 import platform.posix.getsockopt
 import platform.posix.read
 import platform.posix.sockaddr
+import platform.posix.sockaddr_in
 import platform.posix.socklen_tVar
 import platform.posix.strerror
 import platform.posix.write
@@ -34,26 +36,26 @@ import platform.posix.write
 interface PollingSuspendIo : SuspendIo {
     suspend fun awaitIo(handle: Int, interest: PollInterest)
 
-    override suspend fun suspendWrite(fd: Int, buf: CValuesRef<*>?, byte: ULong): Long {
+    override suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Long {
         awaitIo(fd, POLL_INTEREST_WRITE)
         return write(fd, buf, byte)
     }
 
-    override suspend fun suspendRead(fd: Int, bytes: CValuesRef<*>?, nbyte: ULong): Long {
+    override suspend fun suspendRead(fd: Int, bytes: CPointer<*>, nbyte: ULong): Long {
         awaitIo(fd, POLL_INTEREST_READ)
         return read(fd, bytes, nbyte)
     }
 
     override suspend fun suspendAccept(
         fd: Int,
-        addr: CValuesRef<sockaddr>,
-        addrLen: CValuesRef<UIntVarOf<UInt>>
+        addr: CPointer<sockaddr_in>,
+        addrLen: CPointer<UIntVarOf<UInt>>
     ): Int {
         awaitIo(fd, POLL_INTEREST_READ)
-        return accept(fd, addr, addrLen)
+        return accept(fd, addr.reinterpret(), addrLen)
     }
 
-    override suspend fun suspendConnect(fd: Int, addr: CValuesRef<sockaddr>?, len: UInt) {
+    override suspend fun suspendConnect(fd: Int, addr: CPointer<sockaddr>, len: UInt) {
         val ret = connect(fd, addr, len)
 
         if (ret == 0) {

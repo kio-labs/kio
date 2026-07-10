@@ -1,9 +1,9 @@
-name: Publish to Maven Central
+name: LinuxX64 Test
 
 on:
-  push:
-    branches:
-      - linux-uring
+  pull_request:
+    branches: [ "main" ]
+
   workflow_dispatch:
 
 jobs:
@@ -28,5 +28,5 @@ jobs:
         with:
           gradle-version: wrapper
 
-      - name: test
-        run: ./gradlew :t:runDebugExecutableLinuxX64
+      - name: linuxX64Test
+        run: ./gradlew :kio-async:poller-test:linuxX64Test :kio-http:linuxX64Test

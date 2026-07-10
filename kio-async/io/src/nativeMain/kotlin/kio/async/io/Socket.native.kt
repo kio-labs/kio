@@ -51,9 +51,9 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
                     throw IOException("could not set socket non-blocking: ${errnoMessage()}")
                 }
 
+                val aiAddr = ai.pointed.ai_addr ?: throw IOException("no ai_addr value")
                 poller.attach(fd, POLL_INTEREST_WRITE)
-
-                poller.suspendConnect(fd, ai.pointed.ai_addr, ai.pointed.ai_addrlen)
+                poller.suspendConnect(fd, aiAddr, ai.pointed.ai_addrlen)
 
                 return@memScoped FdRawAsyncConnection(poller = poller, fd = fd)
             } catch (t: Throwable) {
@@ -134,12 +134,16 @@ private class FdServerSocket(
         poller.attach(serverFd, POLL_INTEREST_READ)
     }
 
+    override val boundPort: Int by lazy {
+        getBoundPort(serverFd)
+    }
+
     override suspend fun accept(): AsyncRawConnection = memScoped {
         val clientAddr = alloc<sockaddr_in> {}
         val clientAddrLen = alloc<UIntVar> { value = sizeOf<sockaddr_in>().convert() }
 
         val clientFd =
-            poller.suspendAccept(serverFd, clientAddr.ptr.reinterpret(), clientAddrLen.ptr.reinterpret())
+            poller.suspendAccept(serverFd, clientAddr.ptr, clientAddrLen.ptr)
 
         if (clientFd < 0) {
             throw IOException("ERROR: could not accept connection from client: ${errnoMessage()}")
@@ -203,20 +207,27 @@ internal fun setNonBlocking(fd: Int): Int {
     return 0
 }
 
-private fun getSocketError(fd: Int): Int = memScoped {
-    val error = alloc<IntVar>()
-    val len = alloc<socklen_tVar>()
-    len.value = sizeOf<IntVar>().convert()
+private fun getBoundPort(fd: Int): Int = memScoped {
+    val addr = alloc<sockaddr_in>()
+    val addrLen = alloc<socklen_tVar>().apply {
+        value = sizeOf<sockaddr_in>().convert()
+    }
 
-    val rc = getsockopt(
-        fd,
-        SOL_SOCKET,
-        SO_ERROR,
-        error.ptr,
-        len.ptr,
+    check(
+        getsockname(
+            fd,
+            addr.ptr.reinterpret(),
+            addrLen.ptr
+        ) == 0
     )
 
-    if (rc < 0) errno else error.value
+    ntohs(addr.sin_port).toInt()
+}
+
+private fun ntohs(value: UShort): UShort {
+    val v = value.toUInt()
+    return (((v and 0x00FFu) shl 8) or
+            ((v and 0xFF00u) shr 8)).toUShort()
 }
 
 private fun htons(value: UShort): UShort {

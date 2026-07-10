@@ -5,6 +5,7 @@ package kio.async.io
 import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.SuspendIo
+import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CValuesRef
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -44,7 +45,7 @@ private class DefaultAsyncRawSink(
 private inline fun doWrite(
     fd: Int,
     source: Buffer, byteCount: Long,
-    nativeWrite: (fd: Int, buf: CValuesRef<*>?, byte: ULong) -> Long
+    nativeWrite: (fd: Int, buf: CPointer<*>, byte: ULong) -> Long
 ) {
     checkOffsetAndCount(source.size, 0, byteCount)
     var remaining = byteCount
@@ -87,7 +88,7 @@ private class DefaultAsyncRawSource(
 @OptIn(UnsafeIoApi::class)
 private inline fun doRead(
     fd: Int, sink: Buffer, byteCount: Long,
-    nativeRead: (fd: Int, bytes: CValuesRef<*>?, nbyte: ULong) -> Long
+    nativeRead: (fd: Int, bytes: CPointer<*>, nbyte: ULong) -> Long
 ): Long {
     if (byteCount == 0L) return 0L
     require(byteCount >= 0) { "byteCount ($byteCount) < 0" }

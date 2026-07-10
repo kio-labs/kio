@@ -9,5 +9,5 @@ class EpollEventLoopTest: PollEventLoopTest() {
 }
 
 class UringEventLoopTest: PollEventLoopTest() {
-    override val factory: Poller.Factory = LinuxUring
+    override val factory: PollerFactory = LinuxUring
 }

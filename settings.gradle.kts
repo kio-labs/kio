@@ -23,7 +23,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "kio"
-include(":t")
 include(":kio-async:core")
 include(":kio-async:polling-io")
 include(":kio-async:poller-poll")

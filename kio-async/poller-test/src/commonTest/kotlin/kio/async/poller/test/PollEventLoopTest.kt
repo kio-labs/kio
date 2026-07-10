@@ -2,7 +2,9 @@ package kio.async.poller.test
 
 import kio.async.PollerFactory
 import kio.async.io.buffered
+import kio.async.io.openConnection
 import kio.async.io.openPipe
+import kio.async.io.tcpBind
 import kio.async.runPollEventLoop
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -182,5 +184,18 @@ abstract class PollEventLoopTest {
         } finally {
             pipe.close()
         }
+    }
+
+    @Test
+    fun acceptRealConnection(): Unit = runPollEventLoop(factory) {
+        val server = tcpBind("127.0.0.1", 0)
+        val clientJob = launch {
+            val conn = openConnection("127.0.0.1", server.boundPort).buffered()
+            conn.sink.writeInt(122)
+            conn.sink.flush()
+        }
+
+        val clientConn = server.accept()
+        assertEquals(122, clientConn.buffered().source.readInt())
     }
 }
