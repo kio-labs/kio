@@ -1,4 +1,4 @@
-name: LinuxX64 Test
+name: Test
 
 on:
   pull_request:
@@ -10,6 +10,17 @@ jobs:
   publish:
     name: Build
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pgx_test
+          POSTGRES_HOST_AUTH_METHOD: password
+        ports:
+          - 5432:5432
 
     steps:
       - name: Checkout Code
@@ -29,4 +40,20 @@ jobs:
           gradle-version: wrapper
 
       - name: linuxX64Test
-        run: ./gradlew :kio-async:poller-test:linuxX64Test :kio-http:linuxX64Test
+        run: ./gradlew :kio-async:poller-test:linuxX64Test :kio-http:linuxX64Test :kio-postgres:conn:linuxX64Test :kio-http:linuxX64Test
+        env:
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pgx_test
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linuxX64-test-report
+          path: |
+            kio-http/build/reports/tests/linuxX64Test/
+            kio-postgres/conn/build/reports/tests/linuxX64Test/
+            kio-async/poller-test/build/reports/tests/linuxX64Test/
