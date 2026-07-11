@@ -121,6 +121,10 @@ private class ChannelServerSocket(
         poller.attach(acceptHandle, POLL_INTEREST_ACCEPT)
     }
 
+    override val boundPort: Int by lazy {
+        (serverChannel.localAddress as InetSocketAddress).port
+    }
+
     override suspend fun accept(): AsyncRawConnection {
         while (true) {
             poller.suspendAccept(serverChannel)
