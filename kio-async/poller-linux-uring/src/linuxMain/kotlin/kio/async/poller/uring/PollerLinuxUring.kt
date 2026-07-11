@@ -142,7 +142,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
                     }
                 }
                 is UringReq.Accept -> req.c.resume(result)
-                is UringReq.Cancel -> requestMap.remove(req.requestId) ?: error("try to cancel ${req.requestId} but not exist.")
+                is UringReq.Cancel -> requestMap.remove(req.requestId)
             }
         } finally {
             io_uring_cqe_seen(ring.ptr, cqeVar.value)

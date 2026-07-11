@@ -387,10 +387,10 @@ abstract class PgConnectionTest {
                 exec("listen foo")
 
                 launch {
-                    assertEquals("bar",waitNotification().message)
+                    assertEquals("bar", waitNotification().message)
                 }
                 launch {
-                    assertEquals("bar",waitNotification().message)
+                    assertEquals("bar", waitNotification().message)
                 }
 
                 exec("notify foo, 'bar'")
@@ -399,16 +399,25 @@ abstract class PgConnectionTest {
         }
     }
 
-
-
     private fun withTestPgDatabase(block: suspend PgConnection.() -> Unit) =
         runPollEventLoop(pollerFactory) {
-            val HOST_IP = "localhost"
-            val PORT = 5432
+            val host = getEnv("POSTGRES_HOST") ?: "127.0.0.1"
+            val port = getEnv("POSTGRES_PORT")?.toInt() ?: 5432
+            val user = getEnv("POSTGRES_USER")  ?: error("no value found: POSTGRES_USER")
+            val password = getEnv("POSTGRES_PASSWORD")  ?: error("no value found: POSTGRES_PASSWORD")
+            val database = getEnv("POSTGRES_DB") ?: error("no value found: POSTGRES_DB")
             withTimeout(1.seconds) {
-                val conn = openPgConnection(HOST_IP, PORT, "test_clear", database = "postgres", password = "test123")
+                val conn = openPgConnection(
+                    host = host,
+                    port = port,
+                    user = user,
+                    password = password,
+                    database = database
+                )
                 conn.block()
                 conn.close()
             }
         }
 }
+
+expect fun getEnv(key: String): String?

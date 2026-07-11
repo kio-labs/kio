@@ -142,7 +142,7 @@ abstract class PollEventLoopTest {
         val result = mutableListOf<Int>()
 
         val job1 = launch {
-            delay(3.milliseconds)
+            delay(10.milliseconds)
             result += 1
         }
 

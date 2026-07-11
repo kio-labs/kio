@@ -26,6 +26,7 @@ kotlin {
         }
         linuxTest.dependencies {
             implementation(project(":kio-async:poller-linux-epoll"))
+            implementation(project(":kio-async:poller-linux-uring"))
         }
         jvmTest.dependencies {
             implementation(project(":kio-async:poller-jvm-select"))
