@@ -35,11 +35,10 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.test.runTest
 import kotlin.math.min
 
-abstract class Http2ConnectionTest {
-    abstract val poller: PollerFactory
-
+class Http2ConnectionTest {
     @Test
     fun canAckPing() = withHttp2Test {
         peerSendPing(4, 23)
@@ -422,7 +421,7 @@ abstract class Http2ConnectionTest {
     }
 
     private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
-        runPollEventLoop(poller) {
+        runTest {
             supervisorScope {
                 val mock = MockHttpClientServerConnection(this)
                 val scop = Http2TestScope(mock, this.coroutineContext)
