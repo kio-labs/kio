@@ -1,4 +1,0 @@
-headers = openssl/ssl.h openssl/err.h
-compilerOpts = -I/opt/homebrew/opt/openssl@3/include
-linkerOpts = -L/opt/homebrew/opt/openssl@3/lib -lssl -lcrypto
-package = openssl
