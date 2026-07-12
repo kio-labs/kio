@@ -21,20 +21,5 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }
-
-        nativeTest.dependencies {
-            implementation(project(":kio-async:poller-poll"))
-        }
-        linuxTest.dependencies {
-            implementation(project(":kio-async:poller-linux-epoll"))
-            implementation(project(":kio-async:poller-linux-uring"))
-        }
-        jvmTest.dependencies {
-            implementation(project(":kio-async:poller-jvm-select"))
-        }
-
-        macosTest.dependencies {
-            implementation(project(":kio-async:poller-kqueue"))
-        }
     }
 }

@@ -40,7 +40,7 @@ jobs:
           gradle-version: wrapper
 
       - name: linuxX64Test
-        run: ./gradlew :kio-async:poller-test:linuxX64Test :kio-http:linuxX64Test :kio-postgres:conn:linuxX64Test :kio-http:linuxX64Test
+        run: ./gradlew :kio-integration-test:linuxX64Test
         env:
           POSTGRES_HOST: 127.0.0.1
           POSTGRES_PORT: "5432"
@@ -54,6 +54,4 @@ jobs:
         with:
           name: linuxX64-test-report
           path: |
-            kio-http/build/reports/tests/linuxX64Test/
-            kio-postgres/conn/build/reports/tests/linuxX64Test/
-            kio-async/poller-test/build/reports/tests/linuxX64Test/
+            kio-integration-test/build/reports/tests/linuxX64Test/
