@@ -3,21 +3,13 @@ plugins {
 }
 
 kotlin {
-    macosArm64 {
-        compilations.getByName("main") {
-            cinterops {
-                val openssl by creating {
-                    defFile(project.file("src/nativeInterop/cinterop/openssl.def"))
-                }
-            }
-        }
-    }
+    macosArm64()
+    linuxX64()
 
     sourceSets {
         commonMain.dependencies {
             api(project(":kio-async:io"))
-            implementation(project(":kio-async:core"))
-            implementation(libs.kotlinx.io)
+            implementation(libs.openssl)
         }
 
         commonTest.dependencies {
