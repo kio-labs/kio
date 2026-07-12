@@ -26,27 +26,14 @@ import kotlinx.io.unsafe.UnsafeBufferOperations
 import kotlinx.io.unsafe.withData
 import openssl.*
 
-fun AsyncRawConnection.withClientTls(
+actual fun AsyncRawConnection.withClientTls(
     host: String,
 ): AsyncConnection = InternalSslClientConnection(host, this)
 
-fun AsyncRawConnection.withServerTls(
+actual fun AsyncRawConnection.withServerTls(
     certificate: CertificateFile,
     privateKeyFile: CertificateFile,
 ): AsyncConnection = InternalSslServerConnection(certificate, privateKeyFile, this)
-
-data class CertificateFile(
-    val file: String,
-    val type: CertificateFileType,
-)
-
-val String.pem get() = CertificateFile(this, CertificateFileType.PEM)
-val String.asn1 get() = CertificateFile(this, CertificateFileType.ASN1)
-
-enum class CertificateFileType {
-    PEM,
-    ASN1
-}
 
 internal class InternalSslClientConnection(
     host: String,
@@ -268,36 +255,4 @@ internal fun opensslErrorString(): String {
 private fun CertificateFileType.toType() = when (this) {
     CertificateFileType.PEM -> SSL_FILETYPE_PEM
     CertificateFileType.ASN1 -> SSL_FILETYPE_ASN1
-}
-
-private fun AsyncRawSource.withReadHook(onRead: suspend () -> Unit): AsyncRawSource =
-    ReadHookAsyncSource(onRead, this)
-
-private fun AsyncRawSink.withWriteHook(onWrite: suspend () -> Unit): AsyncRawSink =
-    WriteHookAsyncSink(onWrite, this)
-
-private class ReadHookAsyncSource(
-    private val onRead: suspend () -> Unit,
-    private val delegate: AsyncRawSource
-): AsyncRawSource by delegate {
-
-    override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
-        onRead()
-        return delegate.readAtMostTo(sink, byteCount)
-    }
-}
-
-private class WriteHookAsyncSink(
-    private val onWrite: suspend () -> Unit,
-    private val delegate: AsyncRawSink
-): AsyncRawSink by delegate {
-    override suspend fun write(source: Buffer, byteCount: Long) {
-        onWrite()
-        delegate.write(source, byteCount)
-    }
-
-    override suspend fun flush() {
-        onWrite()
-        delegate.flush()
-    }
 }

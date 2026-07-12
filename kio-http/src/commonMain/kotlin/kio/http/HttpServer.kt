@@ -56,7 +56,6 @@ class RouteScope {
     }
 }
 
-@OptIn(ExperimentalNativeApi::class)
 private suspend fun CoroutineScope.startHttpServer(
     routeScope: RouteScope,
     serverSocket: ServerSocket,
