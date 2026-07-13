@@ -1,15 +1,29 @@
-
 package kio.tls
 
 import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.io.AsyncConnection
 import kio.async.io.AsyncRawConnection
+import kotlinx.coroutines.CancellationException
 import kotlinx.io.Buffer
+import kotlinx.io.IOException
 
-expect fun AsyncRawConnection.withClientTls(host: String): AsyncConnection
+interface SslConnection : AsyncConnection {
+    @Throws(IOException::class, CancellationException::class)
+    suspend fun handShake()
 
-expect fun AsyncRawConnection.withServerTls(certificate: CertificateFile, privateKeyFile: CertificateFile): AsyncConnection
+    fun getSelectedAlpn(): String?
+}
+
+expect fun AsyncRawConnection.withClientTls(
+    host: String,
+    alpnProtos: List<String> = listOf(),
+): SslConnection
+
+expect fun AsyncRawConnection.withServerTls(
+    certificate: CertificateFile,
+    privateKeyFile: CertificateFile
+): AsyncConnection
 
 data class CertificateFile(
     val file: String,
@@ -33,7 +47,7 @@ internal fun AsyncRawSink.withWriteHook(onWrite: suspend () -> Unit): AsyncRawSi
 private class ReadHookAsyncSource(
     private val onRead: suspend () -> Unit,
     private val delegate: AsyncRawSource
-): AsyncRawSource by delegate {
+) : AsyncRawSource by delegate {
 
     override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
         onRead()
@@ -44,7 +58,7 @@ private class ReadHookAsyncSource(
 private class WriteHookAsyncSink(
     private val onWrite: suspend () -> Unit,
     private val delegate: AsyncRawSink
-): AsyncRawSink by delegate {
+) : AsyncRawSink by delegate {
     override suspend fun write(source: Buffer, byteCount: Long) {
         onWrite()
         delegate.write(source, byteCount)

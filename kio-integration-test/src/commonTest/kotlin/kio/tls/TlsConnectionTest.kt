@@ -12,12 +12,33 @@ abstract class TlsConnectionTest {
     abstract val pollerFactory: PollerFactory
 
     @Test
-    fun tlsTest() = runPollEventLoop(pollerFactory) {
+    fun smokeTest() = runPollEventLoop(pollerFactory) {
         val server = tcpBind("127.0.0.1", 0)
 
         val clientJob = launch {
             val conn = openConnection("127.0.0.1", server.boundPort)
                 .withClientTls("127.0.0.1")
+            conn.sink.writeInt(122)
+            conn.sink.flush()
+        }
+
+        val clientConn = server.accept().withServerTls(
+            certificate = "server.crt".pem,
+            privateKeyFile = "server.key".pem,
+        )
+        assertEquals(122, clientConn.source.readInt())
+    }
+
+    @Test
+    fun clientSetAlpnTest() = runPollEventLoop(pollerFactory) {
+        val server = tcpBind("127.0.0.1", 0)
+        val clientJob = launch {
+            val conn = openConnection("127.0.0.1", server.boundPort)
+                .withClientTls(
+                    "127.0.0.1",
+                    listOf("http/1.1")
+                )
+            conn.handShake()
             conn.sink.writeInt(122)
             conn.sink.flush()
         }

@@ -3,7 +3,10 @@ package kio.tls
 import kio.async.io.AsyncConnection
 import kio.async.io.AsyncRawConnection
 
-actual fun AsyncRawConnection.withClientTls(host: String): kio.async.io.AsyncConnection {
+actual fun AsyncRawConnection.withClientTls(
+    host: String,
+    alpnProtos: List<String>
+): SslConnection {
     TODO("Not yet implemented")
 }
 
