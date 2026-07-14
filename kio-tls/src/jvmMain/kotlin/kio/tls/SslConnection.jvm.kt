@@ -12,7 +12,8 @@ actual fun AsyncRawConnection.withClientTls(
 
 actual fun AsyncRawConnection.withServerTls(
     certificate: CertificateFile,
-    privateKeyFile: CertificateFile
-): AsyncConnection {
+    privateKeyFile: CertificateFile,
+    supportAlpnProtocols: List<String>,
+): SslConnection {
     TODO("Not yet implemented")
 }

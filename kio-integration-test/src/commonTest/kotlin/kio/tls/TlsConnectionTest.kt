@@ -30,15 +30,17 @@ abstract class TlsConnectionTest {
     }
 
     @Test
-    fun clientSetAlpnTest() = runPollEventLoop(pollerFactory) {
+    fun serverSelectAlpnTest() = runPollEventLoop(pollerFactory) {
         val server = tcpBind("127.0.0.1", 0)
         val clientJob = launch {
             val conn = openConnection("127.0.0.1", server.boundPort)
                 .withClientTls(
                     "127.0.0.1",
-                    listOf("http/1.1")
+                    listOf("http/1.1", "h2")
                 )
+            assertEquals(null, conn.getSelectedAlpn())
             conn.handShake()
+            assertEquals("h2", conn.getSelectedAlpn())
             conn.sink.writeInt(122)
             conn.sink.flush()
         }
@@ -46,7 +48,11 @@ abstract class TlsConnectionTest {
         val clientConn = server.accept().withServerTls(
             certificate = "server.crt".pem,
             privateKeyFile = "server.key".pem,
+            supportAlpnProtocols = listOf("h2")
         )
+        assertEquals(null, clientConn.getSelectedAlpn())
+        clientConn.handShake()
+        assertEquals("h2", clientConn.getSelectedAlpn())
         assertEquals(122, clientConn.source.readInt())
     }
 }

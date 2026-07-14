@@ -13,13 +13,18 @@ import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.StableRef
 import kotlinx.cinterop.UByteVar
 import kotlinx.cinterop.UIntVar
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
+import kotlinx.cinterop.asStableRef
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.cstr
+import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.plus
+import kotlinx.cinterop.pointed
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.staticCFunction
@@ -44,7 +49,8 @@ actual fun AsyncRawConnection.withClientTls(
 actual fun AsyncRawConnection.withServerTls(
     certificate: CertificateFile,
     privateKeyFile: CertificateFile,
-): AsyncConnection = InternalSslServerConnection(certificate, privateKeyFile, this)
+    supportAlpnProtocols: List<String>,
+): SslConnection = InternalSslServerConnection(certificate, privateKeyFile, supportAlpnProtocols, this)
 
 internal class InternalSslClientConnection(
     host: String,
@@ -138,15 +144,20 @@ internal class InternalSslClientConnection(
     }
 }
 
+private const val PROTOCOL_SEPARATOR = ";"
+
 internal class InternalSslServerConnection(
     certificate: CertificateFile,
     privateKeyFile: CertificateFile,
+    private val supportProtocols: List<String>,
     rawConnection: AsyncRawConnection,
-) : AsyncConnection {
+) : SslConnection {
     private val bufferedConnection = rawConnection.buffered()
 
     private val ctx: CPointer<SSL_CTX> = SSL_CTX_new(TLS_server_method())
         ?: error("SSL_CTX_new failed")
+
+    private val supportProtocolsRef = StableRef.create(supportProtocols.joinToString(separator = PROTOCOL_SEPARATOR))
 
     init {
         if (SSL_CTX_use_certificate_file(ctx, certificate.file, certificate.type.toType()) != 1) {
@@ -156,7 +167,7 @@ internal class InternalSslServerConnection(
         if (SSL_CTX_use_PrivateKey_file(ctx, privateKeyFile.file, privateKeyFile.type.toType()) != 1) {
             throw IOException(opensslErrorString())
         }
-        SSL_CTX_set_alpn_select_cb(ctx, getAlpnSelectCallBack(), null)
+        SSL_CTX_set_alpn_select_cb(ctx, getAlpnSelectCallBack(), supportProtocolsRef.asCPointer())
         SSL_CTX_set_info_callback(ctx, getSslInfoCallBack())
     }
 
@@ -174,6 +185,15 @@ internal class InternalSslServerConnection(
     }
 
     private var handshakeDone = false
+
+
+    override suspend fun handShake() {
+        doHandshakeIfNeeded()
+    }
+
+    override fun getSelectedAlpn(): String? {
+        return getSelectedAlpn(ssl)
+    }
 
     override val source = SslSource(
         rbio = rbio,
@@ -218,10 +238,43 @@ internal class InternalSslServerConnection(
                 clientProtocolsLength,
                 arg,
             ->
-            if (ssl == null || out == null || outLen == null || clientProtocols == null) return@staticCFunction SSL_TLSEXT_ERR_ALERT_FATAL
+            if (ssl == null || out == null || outLen == null || clientProtocols == null || arg == null) return@staticCFunction SSL_TLSEXT_ERR_ALERT_FATAL
 
-// TODO("implement alpn select")
-            SSL_TLSEXT_ERR_NOACK
+            val supportProtocols = arg.asStableRef<String>().get().split(PROTOCOL_SEPARATOR)
+            var offset = 0
+            val totalLength = clientProtocolsLength.toInt()
+
+            while (offset < totalLength) {
+                val protocolLength = clientProtocols.get(offset).toInt() and 0xFF
+                offset += 1
+
+                if (
+                    protocolLength == 0 ||
+                    offset + protocolLength > totalLength
+                ) {
+                    return@staticCFunction SSL_TLSEXT_ERR_ALERT_FATAL
+                }
+
+                val protocolPtr = clientProtocols.plus(offset)
+                    ?: return@staticCFunction SSL_TLSEXT_ERR_ALERT_FATAL
+
+                val protocol = protocolPtr
+                    .readBytes(protocolLength)
+                    .decodeToString()
+
+                if (protocol in supportProtocols) {
+                    out.pointed.value = protocolPtr
+                    outLen.pointed.value = protocolLength.toUByte()
+
+                    println("selected ALPN: $protocol")
+
+                    return@staticCFunction SSL_TLSEXT_ERR_OK
+                }
+
+                offset += protocolLength
+            }
+
+            return@staticCFunction SSL_TLSEXT_ERR_NOACK
         }
 }
 

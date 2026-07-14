@@ -22,8 +22,9 @@ expect fun AsyncRawConnection.withClientTls(
 
 expect fun AsyncRawConnection.withServerTls(
     certificate: CertificateFile,
-    privateKeyFile: CertificateFile
-): AsyncConnection
+    privateKeyFile: CertificateFile,
+    supportAlpnProtocols: List<String> = listOf(),
+): SslConnection
 
 data class CertificateFile(
     val file: String,
