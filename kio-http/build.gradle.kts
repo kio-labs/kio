@@ -13,6 +13,7 @@ kotlin {
         }
         commonMain.dependencies {
             api(libs.ktor.http)
+            implementation(project(":kio-tls"))
             implementation(project(":kio-async:io"))
             implementation(project(":kio-compression"))
         }

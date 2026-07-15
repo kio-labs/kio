@@ -23,7 +23,6 @@ internal suspend fun doHandleHttp1Request(
     head: HttpRequestHead,
     conn: AsyncConnection,
     handler: CallHandler?,
-    isTest: Boolean = false
 ) {
     val contentLength = head.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
     val encoding = head.headers[HttpHeaders.TransferEncoding]
@@ -48,7 +47,6 @@ internal suspend fun doHandleHttp1Request(
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (t: Throwable) {
-        if (isTest) throw t
         println("exception happened $t")
         callContext.respond(HttpStatusCode.InternalServerError, t.toString())
     } finally {
