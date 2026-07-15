@@ -10,7 +10,7 @@ import kio.http.handleWebsocketRequest
 import kio.http.internal.HttpRequestHead
 import kotlin.text.equals
 
-internal suspend fun RouteScope.handleHttp1Connection(conn: AsyncConnection) {
+internal suspend fun RouteScope.http1Connection(conn: AsyncConnection) {
     while (true) {
         val requestHead = conn.source.parseRequestHead()
 

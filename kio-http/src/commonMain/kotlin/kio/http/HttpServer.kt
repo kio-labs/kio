@@ -5,11 +5,12 @@ import kio.async.io.AsyncConnection
 import kio.async.io.AsyncRawConnection
 import kio.async.io.ServerSocket
 import kio.async.io.buffered
+import kio.http.internal.http1.http1Connection
 import kio.http.internal.http2.http2Connection
+import kio.tls.SslConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.io.IOException
-import kotlin.experimental.ExperimentalNativeApi
 
 suspend fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
@@ -62,15 +63,25 @@ private suspend fun CoroutineScope.startHttpServer(
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection,
 ) {
     while (true) {
-        val raw = serverSocket.accept()
+        val raw = try {
+            serverSocket.accept()
+        } catch (t: IOException) {
+            println("failed when accept new connection $t")
+            continue
+        }
+
         val conn = raw.connectionWrapper()
         launch {
             try {
-// TODO: check current protocol?
-//                routeScope.handleHttp1Connection(conn)
-                routeScope.http2Connection(conn)
+                val sslConnection = conn as? SslConnection
+                sslConnection?.handShake()
+                val selectedAlpn = sslConnection?.getSelectedAlpn()
+                when (selectedAlpn) {
+                    "h2" -> routeScope.http2Connection(conn)
+                    else -> routeScope.http1Connection(conn)
+                }
             } catch (e: IOException) {
-                println("exception when try to keep connection alive $e")
+                println("Connection processing failed: $e")
             } finally {
                 conn.close()
             }

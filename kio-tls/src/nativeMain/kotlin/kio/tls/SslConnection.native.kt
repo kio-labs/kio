@@ -161,11 +161,11 @@ internal class InternalSslServerConnection(
 
     init {
         if (SSL_CTX_use_certificate_file(ctx, certificate.file, certificate.type.toType()) != 1) {
-            throw IOException(opensslErrorString())
+            throw IOException("error when set ca file: ${opensslErrorString()}")
         }
 
         if (SSL_CTX_use_PrivateKey_file(ctx, privateKeyFile.file, privateKeyFile.type.toType()) != 1) {
-            throw IOException(opensslErrorString())
+            throw IOException("error when set pk file: ${opensslErrorString()}")
         }
         SSL_CTX_set_alpn_select_cb(ctx, getAlpnSelectCallBack(), supportProtocolsRef.asCPointer())
         SSL_CTX_set_info_callback(ctx, getSslInfoCallBack())
@@ -292,7 +292,7 @@ internal suspend fun doHandshake(
             if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
                 // ignore
             } else {
-                throw IOException(opensslErrorString())
+                throw IOException("error when handshake: ${opensslErrorString()}")
             }
         }
 

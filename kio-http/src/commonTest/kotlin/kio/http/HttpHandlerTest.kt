@@ -103,7 +103,6 @@ internal suspend fun request(
         head = requestHead,
         conn = bufferedConn,
         handler = handler?.let { foldCallInterceptor(interceptors, it) },
-        isTest = true
     )
 
     val responseHead = conn.responseBuffer.parseResponseHead()

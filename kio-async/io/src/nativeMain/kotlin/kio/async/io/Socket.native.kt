@@ -191,6 +191,8 @@ private class FdRawAsyncConnection(
                 val read = source.readAtMostTo(buf, 1024)
                 if (read == -1L) break
             }
+        } catch (e: IOException) {
+            // Ignore exception when close.
         } finally {
             poller.detach(fd, POLL_INTEREST_WRITE)
             poller.detach(fd, POLL_INTEREST_READ)

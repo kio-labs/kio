@@ -13,6 +13,8 @@ import kio.http.respondText
 import kio.http.sendBinary
 import kio.http.sendText
 import kio.http.websocket
+import kio.tls.pem
+import kio.tls.withServerTls
 import kio.websocket.WebSocketEvent
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.posix.SIGPIPE
@@ -30,7 +32,16 @@ fun main(): Unit = runPollEventLoop(PosixPoll) {
 
     println("INFO: server (${server}) is listening to , $HOST_IP, $PORT")
 
-    httpServer(server) {
+    httpServer(
+        server,
+        connectionWrapper = {
+            withServerTls(
+                certificate = "server.crt".pem,
+                privateKeyFile = "server.key".pem,
+                supportAlpnProtocols = listOf("h2", "http/1.1")
+            )
+        }
+    ) {
         inject(RequestBodyDecodeInterceptor) {
             inject(RespondedBodyEncodeInterceptor) {
                 post("/hello") { call ->

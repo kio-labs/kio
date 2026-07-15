@@ -17,6 +17,7 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":kio-async:poller-poll"))
             implementation(project(":kio-http"))
+            implementation(project(":kio-tls"))
         }
     }
 }
