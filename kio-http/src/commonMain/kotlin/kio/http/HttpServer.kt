@@ -42,19 +42,6 @@ class RouteScope {
     internal fun getCallHandler(key: RouteKey): CallHandler? {
         return httpCallHandlers[key]
     }
-
-    internal val websocketHandlers = mutableMapOf<String, WebsocketHandler>()
-
-    internal fun registerWebsocketHandler(uri: String, handler: WebsocketHandler) {
-        val key = RouteKey(HttpMethod.Get, uri)
-        if (httpCallHandlers.contains(key)) error("route ($key) already registered.")
-
-        websocketHandlers[uri] = handler
-    }
-
-    internal fun getWebsocketHandler(uri: String): WebsocketHandler? {
-        return websocketHandlers[uri]
-    }
 }
 
 private suspend fun CoroutineScope.startHttpServer(

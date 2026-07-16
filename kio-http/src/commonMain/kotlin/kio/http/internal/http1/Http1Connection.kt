@@ -1,39 +1,50 @@
 package kio.http.internal.http1
 
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
-import io.ktor.http.parseHeaderValue
+import io.ktor.http.HttpStatusCode
+import kio.async.buffered
 import kio.async.io.AsyncConnection
+import kio.http.CallContext
 import kio.http.RouteScope
-import kio.http.handleHttp1Request
-import kio.http.handleWebsocketRequest
-import kio.http.internal.HttpRequestHead
-import kotlin.text.equals
+import kio.http.internal.limited
+import kio.http.respond
+import kotlinx.coroutines.CancellationException
 
 internal suspend fun RouteScope.http1Connection(conn: AsyncConnection) {
-    while (true) {
-        val requestHead = conn.source.parseRequestHead()
+    val head = conn.source.parseRequestHead()
+    val handler = getCallHandler(RouteScope.RouteKey(head.method, head.uri))
 
-        when {
-            requestHead.isWebSocketUpgrade() -> {
-                handleWebsocketRequest(requestHead, conn)
-                // websocket closed, break the loop to close this connection.
-                break
-            }
+    val contentLength = head.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
+    val encoding = head.headers[HttpHeaders.TransferEncoding]
 
-            // Fall back to normal http request handle
-            else -> handleHttp1Request(requestHead, conn)
-        }
+// TODO: do wrap source in CallInterceptor.
+    val body = when {
+        encoding == "chunked" -> conn.source.chunked()
+        contentLength > 0 -> conn.source.limited(contentLength)
+        else -> null
     }
-}
 
-private fun HttpRequestHead.isWebSocketUpgrade(): Boolean {
-    val connection = parseHeaderValue(headers[HttpHeaders.Connection])
-    val upgrade = headers[HttpHeaders.Upgrade]
+    val callContext = CallContext(
+        conn,
+        head, body,
+        responseSink = { head, trailer ->
+// TODO: send trailer for http1
+            conn.sink.http1ResponseSink(head).buffered()
+        }
+    )
 
-    return method == HttpMethod.Get &&
-            connection.map { it.value.lowercase() }.contains("upgrade") &&
-            upgrade.equals("websocket", ignoreCase = true) &&
-            headers[HttpHeaders.SecWebSocketKey] != null &&
-            headers[HttpHeaders.SecWebSocketVersion] == "13"
+    try {
+        handler?.invoke(callContext)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (t: Throwable) {
+        println("exception happened $t")
+        callContext.respond(HttpStatusCode.InternalServerError, t.toString())
+    } finally {
+        callContext.requestBody?.close()
+    }
+
+    // write response
+    callContext.responseSink.flush()
+    callContext.responseSink.close()
 }

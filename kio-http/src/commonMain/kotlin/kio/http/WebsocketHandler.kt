@@ -1,7 +1,7 @@
 package kio.http
 
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpProtocolVersion
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.websocket.websocketServerAccept
 import kio.async.buffered
@@ -23,7 +23,26 @@ import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
 
 fun RouteScope.websocket(uri: String, handler: suspend (WebsocketContext) -> Unit) {
-    registerWebsocketHandler(uri, handler)
+    registerCallHandler(RouteScope.RouteKey(HttpMethod.Get, uri)) {
+        val key = requestHeaders[HttpHeaders.SecWebSocketKey]
+
+        // Do handshake
+        responseHead.apply {
+            statusCode = HttpStatusCode.SwitchingProtocols
+            headers[HttpHeaders.Upgrade] = "websocket"
+            headers[HttpHeaders.Connection] = "Upgrade"
+            if (key != null) {
+                headers[HttpHeaders.SecWebSocketAccept] = websocketServerAccept(key)
+            }
+        }
+
+        responseSink.flush()
+
+        val wsConnection = conn.upgradeToWsConnection()
+        val context = WebsocketContext()
+
+        doWebsocketConnection(wsConnection, context, handler)
+    }
 }
 
 typealias WebsocketHandler = suspend WebsocketContext.() -> Unit
@@ -42,44 +61,6 @@ suspend fun WebsocketContext.sendText(text: String) {
 
 suspend fun WebsocketContext.sendBinary(buffer: Buffer) {
     outgoing.send(WebSocketEvent.Binary(buffer))
-}
-
-internal suspend fun RouteScope.handleWebsocketRequest(
-    head: HttpRequestHead,
-    conn: AsyncConnection
-) {
-    val responseHead = HttpResponseHead.Builder()
-    val sink = conn.sink.http1ResponseSink(responseHead).buffered()
-
-    val handler = getWebsocketHandler(head.uri)
-    if (handler == null) {
-// TODO: Is it correct to send Status code 404?
-        responseHead.statusCode = HttpStatusCode.NotFound
-        sink.flush()
-        return
-    }
-
-    val key = head.headers[HttpHeaders.SecWebSocketKey]
-    if (key == null) {
-        responseHead.statusCode = HttpStatusCode.BadRequest
-        sink.flush()
-        return
-    }
-
-    // Do handshake
-    responseHead.apply {
-        statusCode = HttpStatusCode.SwitchingProtocols
-        headers[HttpHeaders.Upgrade] = "websocket"
-        headers[HttpHeaders.Connection] = "Upgrade"
-        headers[HttpHeaders.SecWebSocketAccept] = websocketServerAccept(key)
-    }
-
-    sink.flush()
-
-    val wsConnection = conn.upgradeToWsConnection()
-    val context = WebsocketContext()
-
-    doWebsocketConnection(wsConnection, context, handler)
 }
 
 private suspend fun doWebsocketConnection(
