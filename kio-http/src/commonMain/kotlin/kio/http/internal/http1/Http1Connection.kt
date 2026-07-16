@@ -2,17 +2,19 @@ package kio.http.internal.http1
 
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.parameters
 import kio.async.buffered
 import kio.async.io.AsyncConnection
 import kio.http.CallContext
-import kio.http.RouteScope
+import kio.http.Route
 import kio.http.internal.limited
+import kio.http.resolveHandler
 import kio.http.respond
 import kotlinx.coroutines.CancellationException
 
-internal suspend fun RouteScope.http1Connection(conn: AsyncConnection) {
+internal suspend fun Route.http1Connection(conn: AsyncConnection) {
     val head = conn.source.parseRequestHead()
-    val handler = getCallHandler(RouteScope.RouteKey(head.method, head.uri))
+    val (params, handler) = this.resolveHandler(head.uri, head.method)
 
     val contentLength = head.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
     val encoding = head.headers[HttpHeaders.TransferEncoding]
@@ -27,6 +29,7 @@ internal suspend fun RouteScope.http1Connection(conn: AsyncConnection) {
     val callContext = CallContext(
         conn,
         head, body,
+        parameters = params,
         responseSink = { head, trailer ->
 // TODO: send trailer for http1
             conn.sink.http1ResponseSink(head).buffered()

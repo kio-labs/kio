@@ -4,17 +4,19 @@ import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.parseQueryString
 import kio.async.buffered
 import kio.async.io.AsyncConnection
 import kio.async.io.buffered
 import kio.http.CallContext
-import kio.http.RouteScope
+import kio.http.Route
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
 import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Settings.Companion.DEFAULT_INITIAL_WINDOW_SIZE
+import kio.http.resolveHandler
 import kio.http.respond
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -37,7 +39,7 @@ class StreamResetCancellationException(
     val errorCode: ErrorCode,
 ) : CancellationException("stream was reset: $errorCode")
 
-internal suspend fun RouteScope.http2Connection(conn: AsyncConnection) {
+internal suspend fun Route.http2Connection(conn: AsyncConnection) {
     http2Connection(conn) { conn, stream ->
         // handle http2 stream in a launched coroutine.
         with(conn) {
@@ -400,10 +402,10 @@ internal fun parseHttpResponseHead(headers: List<Header>): HttpResponseHead {
 }
 
 context(http2Connection: Http2Connection)
-private suspend fun RouteScope.handleHttp2Request(
+private suspend fun Route.handleHttp2Request(
     stream: Http2Stream,
 ) {
-    val handler = getCallHandler(RouteScope.RouteKey(stream.requestHead.method, stream.requestHead.uri))
+    val (params, handler) = this.resolveHandler(stream.requestHead.uri, stream.requestHead.method)
 
     val conn = stream.buffered()
     val callContext = CallContext(
@@ -411,6 +413,7 @@ private suspend fun RouteScope.handleHttp2Request(
         requestHead = stream.requestHead,
         body = conn.source,
         getRequestTrailers = { stream.trailers },
+        parameters = params,
         responseSink = { head, trailer ->
             Http2ResponseSink(
                 stream = stream,
