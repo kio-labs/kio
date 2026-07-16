@@ -4,15 +4,18 @@ import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.HttpStatusCode
+import kio.async.buffered
 import kio.async.io.AsyncConnection
+import kio.async.io.buffered
+import kio.http.CallContext
 import kio.http.RouteScope
-import kio.http.handleHttp2Request
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
 import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Settings.Companion.DEFAULT_INITIAL_WINDOW_SIZE
+import kio.http.respond
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -394,4 +397,44 @@ internal fun parseHttpResponseHead(headers: List<Header>): HttpResponseHead {
     }
 
     return builder.build()
+}
+
+context(http2Connection: Http2Connection)
+private suspend fun RouteScope.handleHttp2Request(
+    stream: Http2Stream,
+) {
+    val handler = getCallHandler(RouteScope.RouteKey(stream.requestHead.method, stream.requestHead.uri))
+
+    val conn = stream.buffered()
+    val callContext = CallContext(
+        conn,
+        requestHead = stream.requestHead,
+        body = conn.source,
+        getRequestTrailers = { stream.trailers },
+        responseSink = { head, trailer ->
+            Http2ResponseSink(
+                stream = stream,
+                head = head,
+                trailer = trailer,
+                connection = http2Connection
+                // TODO: add header commit callback.
+            ).buffered()
+        }
+    )
+
+    try {
+        handler?.invoke(callContext)
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (t: Throwable) {
+        println("exception happened $t")
+// TODO: response 500 only if header has not commit yet.
+        callContext.respond(HttpStatusCode.InternalServerError, t.toString())
+    } finally {
+        callContext.requestBody?.close()
+    }
+
+    // write response
+    callContext.responseSink.flush()
+    callContext.responseSink.close()
 }

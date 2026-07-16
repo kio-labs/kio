@@ -13,6 +13,7 @@ import io.ktor.utils.io.charsets.Charsets
 import kio.async.AsyncRawSource
 import kio.async.AsyncSink
 import kio.async.buffered
+import kio.async.io.AsyncConnection
 import kio.async.writeString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
@@ -42,6 +43,7 @@ fun RouteScope.post(uri: String, block: suspend (CallContext) -> Unit) {
 }
 
 class CallContext internal constructor(
+    internal val conn: AsyncConnection,
     requestHead: HttpRequestHead,
     body: AsyncRawSource?,
     private val getRequestTrailers: () -> Headers? = { null },
@@ -99,7 +101,7 @@ private fun HeadersBuilder.canWriteContentLength(): Boolean {
     return !this[HttpHeaders.TransferEncoding].equals("chunked", ignoreCase = true)
 }
 
-private fun RouteScope.registerCall(
+internal fun RouteScope.registerCall(
     method: HttpMethod,
     uri: String,
     block: CallHandler
