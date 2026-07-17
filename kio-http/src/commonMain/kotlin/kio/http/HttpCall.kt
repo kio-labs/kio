@@ -7,6 +7,8 @@ import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.LinkHeader
+import io.ktor.http.Parameters
 import io.ktor.http.charset
 import io.ktor.http.withCharset
 import io.ktor.utils.io.charsets.Charsets
@@ -17,6 +19,7 @@ import kio.async.io.AsyncConnection
 import kio.async.writeString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
+import kotlinx.io.Segment
 import kotlin.text.equals
 
 typealias CallHandler = suspend CallContext.() -> Unit
@@ -28,17 +31,11 @@ fun interface CallInterceptor {
     )
 }
 
-fun RouteScope.inject(interceptor: CallInterceptor, block: () -> Unit) {
-    httpCallInterceptors.addLast(interceptor)
-    block()
-    httpCallInterceptors.removeLast()
-}
-
-fun RouteScope.get(uri: String, block: suspend (CallContext) -> Unit) {
+fun Route.get(uri: String, block: suspend (CallContext) -> Unit) {
     registerCall(HttpMethod.Get, uri, block)
 }
 
-fun RouteScope.post(uri: String, block: suspend (CallContext) -> Unit) {
+fun Route.post(uri: String, block: suspend (CallContext) -> Unit) {
     registerCall(HttpMethod.Post, uri, block)
 }
 
@@ -46,9 +43,11 @@ class CallContext internal constructor(
     internal val conn: AsyncConnection,
     requestHead: HttpRequestHead,
     body: AsyncRawSource?,
+    parameters: Parameters = Parameters.Empty,
     private val getRequestTrailers: () -> Headers? = { null },
     responseSink: (header: HttpResponseHead.Builder, trailer: HeadersBuilder) -> AsyncSink,
 ) {
+    val parameters: Parameters = parameters
     val requestHeaders: Headers = requestHead.headers
     val requestTrailers: Headers?
         get() = getRequestTrailers()
@@ -99,16 +98,6 @@ suspend fun CallContext.respondText(
 
 private fun HeadersBuilder.canWriteContentLength(): Boolean {
     return !this[HttpHeaders.TransferEncoding].equals("chunked", ignoreCase = true)
-}
-
-internal fun RouteScope.registerCall(
-    method: HttpMethod,
-    uri: String,
-    block: CallHandler
-) {
-    val foldedCallHandler = foldCallInterceptor(httpCallInterceptors, block)
-
-    registerCallHandler(RouteScope.RouteKey(method, uri), foldedCallHandler)
 }
 
 internal fun foldCallInterceptor(

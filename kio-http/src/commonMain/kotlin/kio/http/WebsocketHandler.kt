@@ -4,11 +4,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.websocket.websocketServerAccept
-import kio.async.buffered
-import kio.async.io.AsyncConnection
-import kio.http.internal.HttpRequestHead
-import kio.http.internal.HttpResponseHead
-import kio.http.internal.http1.http1ResponseSink
 import kio.websocket.CloseCode
 import kio.websocket.ProtocolException
 import kio.websocket.WebSocketEvent
@@ -22,26 +17,28 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
 
-fun RouteScope.websocket(uri: String, handler: suspend (WebsocketContext) -> Unit) {
-    registerCallHandler(RouteScope.RouteKey(HttpMethod.Get, uri)) {
-        val key = requestHeaders[HttpHeaders.SecWebSocketKey]
+fun Route.websocket(uri: String, handler: suspend (WebsocketContext) -> Unit) {
+    route(uri) {
+        registerCallHandler(HttpMethod.Get) {
+            val key = requestHeaders[HttpHeaders.SecWebSocketKey]
 
-        // Do handshake
-        responseHead.apply {
-            statusCode = HttpStatusCode.SwitchingProtocols
-            headers[HttpHeaders.Upgrade] = "websocket"
-            headers[HttpHeaders.Connection] = "Upgrade"
-            if (key != null) {
-                headers[HttpHeaders.SecWebSocketAccept] = websocketServerAccept(key)
+            // Do handshake
+            responseHead.apply {
+                statusCode = HttpStatusCode.SwitchingProtocols
+                headers[HttpHeaders.Upgrade] = "websocket"
+                headers[HttpHeaders.Connection] = "Upgrade"
+                if (key != null) {
+                    headers[HttpHeaders.SecWebSocketAccept] = websocketServerAccept(key)
+                }
             }
+
+            responseSink.flush()
+
+            val wsConnection = conn.upgradeToWsConnection()
+            val context = WebsocketContext()
+
+            doWebsocketConnection(wsConnection, context, handler)
         }
-
-        responseSink.flush()
-
-        val wsConnection = conn.upgradeToWsConnection()
-        val context = WebsocketContext()
-
-        doWebsocketConnection(wsConnection, context, handler)
     }
 }
 

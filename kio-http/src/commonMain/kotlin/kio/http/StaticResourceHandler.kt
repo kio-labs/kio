@@ -2,7 +2,7 @@ package kio.http
 
 import io.ktor.http.HttpMethod
 
-fun RouteScope.staticResource(uri: String) {
+fun Route.staticResource(uri: String) {
     registerCall(HttpMethod.Get, uri) {
 
     }

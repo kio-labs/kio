@@ -1,6 +1,5 @@
 package kio.http
 
-import io.ktor.http.HttpMethod
 import kio.async.io.AsyncConnection
 import kio.async.io.AsyncRawConnection
 import kio.async.io.ServerSocket
@@ -15,10 +14,10 @@ import kotlinx.io.IOException
 suspend fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection = { buffered() },
-    registerBlock: suspend RouteScope.() -> Unit
+    block: suspend Route.() -> Unit
 ) {
-    val scope = RouteScope()
-    scope.registerBlock()
+    val scope = Route(RootSegment, ArrayDeque())
+    scope.block()
 
     startHttpServer(
         scope,
@@ -27,25 +26,8 @@ suspend fun CoroutineScope.httpServer(
     )
 }
 
-class RouteScope {
-    data class RouteKey(val method: HttpMethod, val uri: String)
-
-    internal val httpCallInterceptors: ArrayDeque<CallInterceptor> = ArrayDeque()
-
-    private val httpCallHandlers = mutableMapOf<RouteKey, CallHandler>()
-
-    internal fun registerCallHandler(key: RouteKey, handler: CallHandler) {
-        if (httpCallHandlers.contains(key)) error("route ($key) already registered.")
-        httpCallHandlers[key] = handler
-    }
-
-    internal fun getCallHandler(key: RouteKey): CallHandler? {
-        return httpCallHandlers[key]
-    }
-}
-
 private suspend fun CoroutineScope.startHttpServer(
-    routeScope: RouteScope,
+    route: Route,
     serverSocket: ServerSocket,
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection,
 ) {
@@ -64,8 +46,8 @@ private suspend fun CoroutineScope.startHttpServer(
                 sslConnection?.handShake()
                 val selectedAlpn = sslConnection?.getSelectedAlpn()
                 when (selectedAlpn) {
-                    "h2" -> routeScope.http2Connection(conn)
-                    else -> routeScope.http1Connection(conn)
+                    "h2" -> route.http2Connection(conn)
+                    else -> route.http1Connection(conn)
                 }
             } catch (e: IOException) {
                 println("Connection processing failed: $e")
