@@ -1,7 +1,5 @@
 package kio.async
 
-import java.nio.ByteBuffer
-import java.nio.channels.Pipe
 import java.nio.channels.SelectableChannel
 
 data class SelectionKeyWrapper constructor(

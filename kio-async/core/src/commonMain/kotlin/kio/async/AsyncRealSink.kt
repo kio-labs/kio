@@ -30,7 +30,7 @@ internal class AsyncRealSink(
         hintEmit()
     }
 
-    override suspend fun transferFrom(source: RawSource): Long {
+    override suspend fun transferFrom(source: AsyncRawSource): Long {
         checkNotClosed()
         var totalBytesRead = 0L
         while (true) {

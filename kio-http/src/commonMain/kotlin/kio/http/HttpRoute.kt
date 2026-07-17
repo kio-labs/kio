@@ -219,17 +219,14 @@ private fun Route.resolveChildRoute(path: String): Pair<Route, Parameters>? {
 }
 
 private fun Route.findMatchedRoute(segments: List<String>): Pair<Route?, MatchResult> {
-    var route: Route? = null
-    var ret: MatchResult = MatchResult.Failed
     for (child in childRoutes) {
         when (val result = child.segment.match(segments)) {
             is MatchResult.Success -> {
-                route = child
-                ret = result
-                break
+                return child to result
             }
             MatchResult.Failed -> continue
         }
     }
-    return route to ret
+
+    return null to MatchResult.Failed
 }
