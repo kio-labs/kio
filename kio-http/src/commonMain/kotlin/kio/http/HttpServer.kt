@@ -16,11 +16,11 @@ suspend fun CoroutineScope.httpServer(
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection = { buffered() },
     block: suspend Route.() -> Unit
 ) {
-    val scope = Route(RootSegment, ArrayDeque())
-    scope.block()
+    val route = Route(RootSegment, ArrayDeque())
+    route.block()
 
     startHttpServer(
-        scope,
+        route,
         serverSocket,
         connectionWrapper,
     )
