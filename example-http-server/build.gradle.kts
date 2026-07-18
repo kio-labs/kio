@@ -10,7 +10,7 @@ kotlin {
     ).forEach {
         it.binaries {
             executable {
-                entryPoint("main")
+                entryPoint("me.example.httpserver.main")
             }
         }
     }

@@ -8,7 +8,7 @@ public sealed interface AsyncSink : AsyncRawSink {
 
     public suspend fun write(source: ByteArray, startIndex: Int = 0, endIndex: Int = source.size)
 
-    public suspend fun transferFrom(source: RawSource): Long
+    public suspend fun transferFrom(source: AsyncRawSource): Long
 
     public suspend fun write(source: RawSource, byteCount: Long)
 
