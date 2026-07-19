@@ -35,4 +35,3 @@ internal object WindowBits {
     const val GZIP = 31
 }
 
-internal const val CHUNK_SIZE = 8192
