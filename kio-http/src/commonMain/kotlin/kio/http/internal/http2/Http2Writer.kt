@@ -1,7 +1,7 @@
 package kio.http.internal.http2
 
 import kio.async.AsyncSink
-import kio.http.debug
+import kio.http.trace
 import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.FLAG_END_STREAM
 import kio.http.internal.http2.Http2.FLAG_NONE
@@ -159,7 +159,7 @@ internal suspend fun AsyncSink.frameHeader(
     flags: Int,
 ) {
     if (type != Http2.TYPE_WINDOW_UPDATE) {
-        conn.h2Logger.debug(frameLog(false, streamId, length, type, flags))
+        conn.h2Logger.trace(frameLog(false, streamId, length, type, flags))
     }
     val maxFrameSize = conn.maxFrameSize
     require(length <= maxFrameSize) { "FRAME_SIZE_ERROR length > $maxFrameSize: $length" }

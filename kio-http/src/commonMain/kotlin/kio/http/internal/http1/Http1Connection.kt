@@ -7,14 +7,23 @@ import kio.async.buffered
 import kio.async.io.AsyncConnection
 import kio.http.CallContext
 import kio.http.Route
+import kio.http.currentLoggingBackend
 import kio.http.internal.limited
+import kio.http.newLogger
 import kio.http.resolveHandler
 import kio.http.respond
+import kio.http.trace
+import kio.http.warn
 import kotlinx.coroutines.CancellationException
 
 internal suspend fun Route.http1Connection(conn: AsyncConnection) {
+    val logger = currentLoggingBackend().newLogger("HTTP1")
+
     val head = conn.source.parseRequestHead()
     val (params, handler) = this.resolveHandler(head.uri, head.method)
+
+    val fields = mapOf("method" to head.method, "target" to head.uri)
+    logger.trace("request head decoded.", fields)
 
     val contentLength = head.headers[HttpHeaders.ContentLength]?.toLongOrNull() ?: 0L
     val encoding = head.headers[HttpHeaders.TransferEncoding]
@@ -38,10 +47,11 @@ internal suspend fun Route.http1Connection(conn: AsyncConnection) {
 
     try {
         handler?.invoke(callContext)
+        logger.trace("handled request success.")
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (t: Throwable) {
-        println("exception happened $t")
+        logger.warn("handled request failed.", t, fields)
         callContext.respond(HttpStatusCode.InternalServerError, t.toString())
     } finally {
         callContext.requestBody?.close()
@@ -50,4 +60,6 @@ internal suspend fun Route.http1Connection(conn: AsyncConnection) {
     // write response
     callContext.responseSink.flush()
     callContext.responseSink.close()
+
+    logger.trace("handled request finished.")
 }

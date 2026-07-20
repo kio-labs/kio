@@ -107,7 +107,6 @@ internal class InternalWebSocket(
             needSendCloseEvent = false
         } catch (t: Throwable) {
             // ignore exception because in close
-            println("exception when sendCloseEventIfNeeded $t")
         }
 
         conn.close()

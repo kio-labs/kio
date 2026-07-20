@@ -602,7 +602,6 @@ private class MockHttpClientServerConnection(
             val handle = CompletableDeferred<Unit>()
             createdHttp2Stream.send(it to handle)
             handle.await()
-            println("stream handle of $it finished")
         }
     }
 }

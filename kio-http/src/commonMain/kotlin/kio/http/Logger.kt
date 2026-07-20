@@ -4,6 +4,10 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 
+suspend fun currentLoggerOrNull(): Logger? {
+    return currentCoroutineContext()[CoroutineLogger]?.logger
+}
+
 suspend fun currentLogger(): Logger {
     return currentCoroutineContext()[CoroutineLogger]?.logger ?: error("logger not set")
 }
@@ -29,7 +33,7 @@ internal data class CoroutineLoggingBackend(
 }
 
 enum class LogLevel {
-    DEBUG,
+    TRACE,
     INFO,
     WARN,
     ERROR,
@@ -69,21 +73,23 @@ interface LoggingBackEnd {
     )
 }
 
-fun Logger.debug(message: String) =
-    log(LogLevel.DEBUG, message)
+fun Logger.trace(message: String, fields: Map<String, Any?> = emptyMap()) =
+    log(LogLevel.TRACE, message, null, fields)
 
-fun Logger.info(message: String) =
-    log(LogLevel.INFO, message)
+fun Logger.info(message: String, fields: Map<String, Any?> = emptyMap()) =
+    log(LogLevel.INFO, message, null, fields)
 
 fun Logger.warn(
     message: String,
     cause: Throwable? = null,
-) = log(LogLevel.WARN, message, cause)
+    fields: Map<String, Any?> = emptyMap()
+) = log(LogLevel.WARN, message, cause, fields)
 
 fun Logger.error(
     message: String,
     cause: Throwable? = null,
-) = log(LogLevel.ERROR, message, cause)
+    fields: Map<String, Any?> = emptyMap()
+) = log(LogLevel.ERROR, message, cause, fields)
 
 object ConsoleLogging : LoggingBackEnd {
     override fun log(
@@ -93,14 +99,15 @@ object ConsoleLogging : LoggingBackEnd {
         cause: Throwable?,
         fields: Map<String, Any?>
     ) {
-        val fieldString = if (fields.isEmpty()) {
-            ""
-        } else {
-            fields
-                .map { (key, value) -> "$key=$value" }
-                .joinToString(separator = ",", prefix = "[", postfix = "]")
-        }
-        println("[$level] [$name] $fieldString - $message")
+        val fieldString =
+            fields.entries.joinToString(
+                separator = " ",
+                prefix = if (fields.isEmpty()) "" else " ",
+            ) { (key, value) ->
+                "$key=$value"
+            }
+
+        println("${level.name.padEnd(5)} $name: $message$fieldString")
         cause?.printStackTrace()
     }
 }

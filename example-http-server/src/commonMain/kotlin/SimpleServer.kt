@@ -4,15 +4,13 @@ import kio.async.io.ServerSocket
 import kio.async.readString
 import kio.http.CallIdInterceptor
 import kio.http.CallInterceptor
-import kio.http.ConsoleLogging
 import kio.http.CoroutineLogger
-import kio.http.Logger
 import kio.http.RequestBodyDecodeInterceptor
 import kio.http.RespondedBodyEncodeInterceptor
 import kio.http.currentCallId
 import kio.http.currentLogger
 import kio.http.currentLoggingBackend
-import kio.http.debug
+import kio.http.trace
 import kio.http.get
 import kio.http.httpServer
 import kio.http.newLogger
@@ -51,8 +49,7 @@ suspend fun CoroutineScope.simpleServer(
             RespondedBodyEncodeInterceptor
         ) {
             get("/") { call ->
-                currentLogger().debug("first log")
-                val a = currentLogger()
+                currentLogger().trace("first log")
                 call.respondText("hello back; foo value is [${call.parameters["foo"]}]")
             }
 

@@ -10,26 +10,32 @@ import kio.tls.SslConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.io.EOFException
 import kotlinx.io.IOException
 
-suspend fun CoroutineScope.httpServer(
+suspend fun httpServer(
     serverSocket: ServerSocket,
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection = { buffered() },
     loggingBackEnd: LoggingBackEnd = ConsoleLogging,
     block: suspend Route.() -> Unit
 ) {
     withContext(CoroutineLoggingBackend(loggingBackEnd)) {
+        val logger = loggingBackEnd.newLogger("Server")
+
+        logger.info("start")
+
         val route = Route(RootSegment, ArrayDeque())
         route.block()
 
-        startHttpServer(
-            route,
-            serverSocket,
-            connectionWrapper,
-        )
+        logger.info("setup route complete")
+
+        with(logger) { startHttpServer(route, serverSocket, connectionWrapper) }
+
+        logger.info("stop")
     }
 }
 
+context(logger: Logger)
 private suspend fun CoroutineScope.startHttpServer(
     route: Route,
     serverSocket: ServerSocket,
@@ -39,24 +45,40 @@ private suspend fun CoroutineScope.startHttpServer(
         val raw = try {
             serverSocket.accept()
         } catch (t: IOException) {
-            println("failed when accept new connection $t")
+            logger.warn("failed when accept new connection", t)
             continue
         }
+
+        logger.info("Connection accepted")
 
         val conn = raw.connectionWrapper()
         launch {
             try {
                 val sslConnection = conn as? SslConnection
-                sslConnection?.handShake()
+                sslConnection?.let { ssl ->
+                    logger.info("tls handshake started")
+                    try {
+                        ssl.handShake()
+                        val fields = mapOf("alpn" to ssl.getSelectedAlpn())
+                        logger.info("tls handshake completed", fields)
+                    } catch (e: IOException) {
+                        logger.warn("tls handshake failed", e)
+                        throw e
+                    }
+                }
+
                 val selectedAlpn = sslConnection?.getSelectedAlpn()
                 when (selectedAlpn) {
                     "h2" -> route.http2Connection(conn)
                     else -> route.http1Connection(conn)
                 }
+            } catch (_: EOFException) {
+                logger.trace("connection closed by peer")
             } catch (e: IOException) {
-                println("Connection processing failed: $e")
+                logger.warn("connection disconnected with exception", e)
             } finally {
                 conn.close()
+                logger.info("connection closed")
             }
         }
     }
