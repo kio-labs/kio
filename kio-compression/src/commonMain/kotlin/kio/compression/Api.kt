@@ -41,3 +41,5 @@ expect fun AsyncSink.gzipSink(level: Int = DEFAULT_COMPRESSION): AsyncRawSink
 
 internal expect val DEFAULT_COMPRESSION : Int
 
+internal const val CHUNK_SIZE = 8192
+

@@ -1,12 +1,13 @@
 package kio.http
 
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.parseHeaderValue
 import kio.async.AsyncSink
 import kio.async.buffered
 import kio.compression.gzipSink
 import kio.compression.zlibSink
-import kio.http.internal.http1.chunked
+import kio.http.internal.http1.wrapChunkedResponseSink
 
 val RespondedBodyEncodeInterceptor = CallInterceptor { context, proceed ->
     context.encodeResponseBodyIfNeeded()
@@ -50,10 +51,10 @@ private fun CallContext.encodeResponseBodyIfNeeded() {
 
     val encoder = encoders.first()
 
-    // Always write compressed data by chunk in HTTP/1
-    responseHead.headers.remove(HttpHeaders.ContentLength)
-    responseHead.headers[HttpHeaders.TransferEncoding] = "chunked"
-    wrapResponseSink { chunked().buffered()}
+    if (requestProtocolVersion == HttpProtocolVersion.HTTP_1_1) {
+        wrapChunkedResponseSink()
+    }
+
     responseHead.headers[HttpHeaders.ContentEncoding] = encoder.name
     wrapResponseSink { encoder.encode(this) }
 }

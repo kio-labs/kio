@@ -70,6 +70,9 @@ internal class HttpServerTestScope {
         )
         handler?.invoke(callContext)
 
+        callContext.responseSink.flush()
+        callContext.responseSink.close()
+
         val responseHead = callContext.responseHead.build()
         return HttpResponse(responseHead, clientSource)
     }
