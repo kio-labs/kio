@@ -9,13 +9,19 @@ import kio.async.buffered
 import kio.async.io.AsyncConnection
 import kio.async.io.buffered
 import kio.http.CallContext
+import kio.http.Logger
 import kio.http.Route
+import kio.http.currentLoggingBackend
+import kio.http.debug
+import kio.http.error
+import kio.http.info
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
 import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.INITIAL_MAX_FRAME_SIZE
 import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Settings.Companion.DEFAULT_INITIAL_WINDOW_SIZE
+import kio.http.newLogger
 import kio.http.resolveHandler
 import kio.http.respond
 import kotlinx.coroutines.CancellationException
@@ -52,17 +58,19 @@ internal suspend fun http2Connection(
     conn: AsyncConnection,
     handleHttp2Request: suspend CoroutineScope.(Http2Connection, Http2Stream) -> Unit
 ) {
+    val h2Logger = currentLoggingBackend().newLogger("HTTP2")
     // Uncaught exceptions from stream coroutines are reported here.
     // Normal stream failures should be handled inside each stream coroutine.
     // This handler is only a last-resort logger.
     val streamExceptionHandler = CoroutineExceptionHandler { context, t ->
-        println("streamExceptionHandler $t")
+        h2Logger.error("streamExceptionHandler", cause = t)
     }
     withContext(streamExceptionHandler) {
         supervisorScope {
             val http2Connection = Http2Connection(
                 socketConn = conn,
                 connectionScope = this,
+                h2Logger = h2Logger
             ).also { connection ->
                 connection.handleStreamConnection = { stream ->
                     handleHttp2Request.invoke(this, connection, stream)
@@ -70,7 +78,7 @@ internal suspend fun http2Connection(
             }
             http2Connection.doInitSetting()
             http2Connection.frameReadLoop()
-            println("http2Connection.frameReadLoop() finished")
+            h2Logger.debug("exit http2 connection")
         }
     }
 }
@@ -78,6 +86,7 @@ internal suspend fun http2Connection(
 internal class Http2Connection constructor(
     val socketConn: AsyncConnection,
     private val connectionScope: CoroutineScope,
+    val h2Logger: Logger,
 ) {
     lateinit var handleStreamConnection: suspend CoroutineScope.(Http2Stream) -> Unit
 
@@ -115,7 +124,7 @@ internal class Http2Connection constructor(
     private var isShutdown = false
 
     suspend fun doInitSetting() {
-        socketConn.source.readPreface()
+        with(h2Logger) { socketConn.source.readPreface() }
 
         socketConn.sink.writeSetting(http2Settings)
         val windowSize = http2Settings.initialWindowSize
@@ -149,7 +158,7 @@ internal class Http2Connection constructor(
         )
 
         streams[streamId] = stream
-        println("Stream[$streamId] created.")
+        h2Logger.info("Stream[$streamId] created.")
 
         connectionScope.launch {
             handleStreamConnection(stream)
@@ -158,7 +167,7 @@ internal class Http2Connection constructor(
         }.invokeOnCompletion {
             val stream = streams.remove(streamId)
                 ?: error("try to remove stream but Stream[$streamId] not exist.")
-            println("Stream[$streamId] closed. exception=$it")
+            h2Logger.info("Stream[$streamId] closed. exception=$it")
         }
     }
 
@@ -219,7 +228,7 @@ internal class Http2Connection constructor(
 
     fun receiveGoAway(lastGoodStreamId: Int, errorCode: ErrorCode, debugData: ByteString) {
         if (debugData.isNotEmpty()) {
-            println("receive GoAway from peer: ${debugData.decodeToString()}")
+            h2Logger.info("receive GoAway from peer: ${debugData.decodeToString()}")
         }
 
         streams.forEach { (streamId, stream) ->
@@ -308,13 +317,13 @@ internal suspend inline fun Http2Connection.writeFrameNonCancellable(crossinline
 internal suspend fun Http2Connection.frameReadLoop(onFrame: () -> Unit = {}) {
     val http2Connection = this
     val source = http2Connection.socketConn.source
-    val continuation = ContinuationSource(source)
+    val continuation = ContinuationSource(source, h2Logger)
     val hpackReader: Hpack.Reader =
         Hpack.Reader(
             source = continuation,
             headerTableSizeSetting = 4096,
         )
-    context(hpackReader, continuation) {
+    context(hpackReader, continuation, h2Logger) {
         while (true) {
             when (val frame = source.nextFrame()) {
                 is Frame.Headers -> {

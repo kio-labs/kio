@@ -5,12 +5,12 @@ import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.AsyncSink
 import kio.async.AsyncSource
-import kio.async.PollerFactory
 import kio.async.buffered
 import kio.async.io.AsyncRawConnection
 import kio.async.io.buffered
 import kio.async.readString
-import kio.async.runPollEventLoop
+import kio.http.LogLevel
+import kio.http.Logger
 import kio.http.internal.HttpResponseHead
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -423,8 +423,12 @@ class Http2ConnectionTest {
     private fun withHttp2Test(block: suspend Http2TestScope.() -> Unit) =
         runTest {
             supervisorScope {
-                val mock = MockHttpClientServerConnection(this)
-                val scop = Http2TestScope(mock, this.coroutineContext)
+                val mockLogger = object : Logger {
+                    override val loggerName: String = ""
+                    override fun log(level: LogLevel, message: String, cause: Throwable?, fields: Map<String, Any?>) {}
+                }
+                val mock = MockHttpClientServerConnection(this, mockLogger)
+                val scop = Http2TestScope(mock, this.coroutineContext, mockLogger)
 
                 val job = launch {
                     mock.http2Conn.frameReadLoop(
@@ -440,7 +444,8 @@ class Http2ConnectionTest {
 
 private class Http2TestScope(
     private val mockConn: MockHttpClientServerConnection,
-    override val coroutineContext: CoroutineContext
+    override val coroutineContext: CoroutineContext,
+    private val mockLogger: Logger
 ) : CoroutineScope {
     val conn: Http2Connection = mockConn.http2Conn
     val peerConn: Http2Connection = mockConn.peerConn
@@ -518,7 +523,7 @@ private class Http2TestScope(
         }
     }
 
-    private val continuation = ContinuationSource(mockConn.serverWriteBackSource)
+    private val continuation = ContinuationSource(mockConn.serverWriteBackSource, mockLogger)
     private val hpackReader: Hpack.Reader =
         Hpack.Reader(
             source = continuation,
@@ -526,7 +531,7 @@ private class Http2TestScope(
         )
 
     suspend fun takeFrame(block: suspend Frame.(AsyncSource) -> Unit) {
-        val frame = context(hpackReader, continuation) {
+        val frame = context(hpackReader, continuation, mockLogger) {
             withTimeout(100.milliseconds) {
                 mockConn.serverWriteBackSource.nextFrame()
             }
@@ -550,7 +555,8 @@ private class Http2TestScope(
 }
 
 private class MockHttpClientServerConnection(
-    testScope: CoroutineScope
+    testScope: CoroutineScope,
+    mockLogger: Logger
 ) {
     private val clientPipeConn = openInMemoryPipe()
     private val serverPipeConn = openInMemoryPipe()
@@ -582,11 +588,13 @@ private class MockHttpClientServerConnection(
     val http2Conn = Http2Connection(
         serverConnection.buffered(),
         testScope,
+        mockLogger
     )
 
     val peerConn = Http2Connection(
         clientConnection.buffered(),
-        testScope
+        testScope,
+        mockLogger
     )
 
     init {

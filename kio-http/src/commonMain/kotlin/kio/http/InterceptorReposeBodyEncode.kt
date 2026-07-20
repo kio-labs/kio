@@ -34,7 +34,7 @@ private val supportedEncoders = mapOf(
     "deflate" to DeflateEncoder,
 )
 
-private fun CallContext.encodeResponseBodyIfNeeded() {
+private suspend fun CallContext.encodeResponseBodyIfNeeded() {
     val acceptEncodingRaw = requestHeaders[HttpHeaders.AcceptEncoding] ?: return
     val encoders = parseHeaderValue(acceptEncodingRaw)
         .filter { it.value == "*" || it.value.lowercase() in supportedEncoders }
@@ -49,6 +49,8 @@ private fun CallContext.encodeResponseBodyIfNeeded() {
     if (encoders.isEmpty()) return
 
     val encoder = encoders.first()
+
+    currentLogger()?.debug("Encode response with encoder[${encoder.name}]")
 
     // Always write compressed data by chunk in HTTP/1
     responseHead.headers.remove(HttpHeaders.ContentLength)

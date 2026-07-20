@@ -9,21 +9,25 @@ import kio.http.internal.http2.http2Connection
 import kio.tls.SslConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.io.IOException
 
 suspend fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection = { buffered() },
+    loggingBackEnd: LoggingBackEnd = ConsoleLogging,
     block: suspend Route.() -> Unit
 ) {
-    val route = Route(RootSegment, ArrayDeque())
-    route.block()
+    withContext(CoroutineLoggingBackend(loggingBackEnd)) {
+        val route = Route(RootSegment, ArrayDeque())
+        route.block()
 
-    startHttpServer(
-        route,
-        serverSocket,
-        connectionWrapper,
-    )
+        startHttpServer(
+            route,
+            serverSocket,
+            connectionWrapper,
+        )
+    }
 }
 
 private suspend fun CoroutineScope.startHttpServer(

@@ -12,17 +12,37 @@ val RequestBodyDecodeInterceptor: CallInterceptor = CallInterceptor { context, p
     proceed(context)
 }
 
-private typealias Decoder = (AsyncSource) -> AsyncSource
+private interface Decoder {
+    val name: String
+    fun decode(source: AsyncSource) : AsyncSource
+}
 
-private val GzipDecoder: Decoder = { it.gzipSource().buffered() }
-private val DeflateDecoder: Decoder = { it.zlibSource().buffered() }
+private val GzipDecoder: Decoder = object : Decoder {
+    override val name: String = "gzip"
+
+    override fun decode(source: AsyncSource): AsyncSource {
+        return source.gzipSource().buffered()
+    }
+
+    override fun toString(): String = name
+}
+
+private val DeflateDecoder: Decoder = object : Decoder {
+    override val name: String = "deflate"
+
+    override fun decode(source: AsyncSource): AsyncSource {
+        return source.zlibSource().buffered()
+    }
+
+    override fun toString(): String = name
+}
 
 private val supportDecoder = mapOf(
     "gzip" to GzipDecoder,
     "deflate" to DeflateDecoder,
 )
 
-private fun CallContext.decodeRequestBodyIfNeeded() {
+private suspend fun CallContext.decodeRequestBodyIfNeeded() {
     val encodingRaw = requestHeaders[HttpHeaders.ContentEncoding] ?: return
 
     val encoding = parseHeaderValue(encodingRaw)
@@ -31,8 +51,10 @@ private fun CallContext.decodeRequestBodyIfNeeded() {
             ?: error("Unsupported Content-Encoding: ${encoding.value}")
     }
 
+    currentLogger()?.debug("Decode request with decoders[${decoders}]")
+
     val baseSource = requestBody ?: error("no body when decode request body")
     requestBody = decoders.foldRight(baseSource) { decoder, acc ->
-        decoder(acc)
+        decoder.decode(acc)
     }
 }

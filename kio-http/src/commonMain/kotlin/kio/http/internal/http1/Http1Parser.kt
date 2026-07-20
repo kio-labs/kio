@@ -5,11 +5,9 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.parsing.ParseException
 import io.ktor.http.HttpProtocolVersion
-import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.indexOf
 import kio.async.readString
-import kio.async.writeString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
 import kotlinx.io.EOFException
