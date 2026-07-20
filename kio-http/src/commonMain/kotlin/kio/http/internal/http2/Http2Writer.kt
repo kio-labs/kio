@@ -1,6 +1,7 @@
 package kio.http.internal.http2
 
 import kio.async.AsyncSink
+import kio.http.debug
 import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.FLAG_END_STREAM
 import kio.http.internal.http2.Http2.FLAG_NONE
@@ -158,7 +159,7 @@ internal suspend fun AsyncSink.frameHeader(
     flags: Int,
 ) {
     if (type != Http2.TYPE_WINDOW_UPDATE) {
-        println(frameLog(false, streamId, length, type, flags))
+        conn.h2Logger.debug(frameLog(false, streamId, length, type, flags))
     }
     val maxFrameSize = conn.maxFrameSize
     require(length <= maxFrameSize) { "FRAME_SIZE_ERROR length > $maxFrameSize: $length" }
@@ -198,9 +199,7 @@ private suspend fun waitUntilCanWrite(remainByteCount: Long): Int {
     val ret: Int
     while (true) {
         if (calculateWriteSize(remainByteCount) == 0) {
-            println("conn.awaitWindowUpdateEvent() E ${calculateWriteSize(remainByteCount)}")
             conn.awaitWindowUpdateEvent()
-            println("conn.awaitWindowUpdateEvent() X ${calculateWriteSize(remainByteCount)}")
         }
 
         val writeSize = calculateWriteSize(remainByteCount)

@@ -19,6 +19,8 @@ import kio.async.AsyncRawSource
 import kio.async.AsyncSource
 import kio.async.readByteArray
 import kio.async.readByteString
+import kio.http.Logger
+import kio.http.debug
 import kio.http.internal.http2.Http2.FLAG_ACK
 import kio.http.internal.http2.Http2.frameLog
 import kio.http.internal.http2.Http2.frameLogWindowUpdate
@@ -27,10 +29,12 @@ import kotlinx.io.IOException
 import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.decodeToString
 import kotlinx.io.readByteString
+import kotlin.math.log
 
+context(logger: Logger)
 internal suspend fun AsyncSource.readPreface() {
     val connectionPreface = ByteString(readByteArray(Http2.CONNECTION_PREFACE.size))
-    println("<< CONNECTION $connectionPreface")
+    logger.debug("<< CONNECTION $connectionPreface")
     if (connectionPreface != Http2.CONNECTION_PREFACE) {
         throw IOException("Expected a connection header but was ${connectionPreface.decodeToString()}")
     }
@@ -80,7 +84,7 @@ sealed interface Frame {
     ): Frame
 }
 
-context(_: Hpack.Reader, _: ContinuationSource)
+context(_: Hpack.Reader, _: ContinuationSource, logger: Logger)
 internal suspend fun AsyncSource.nextFrame(): Frame {
     // Frame header size.
     require(9)
@@ -107,7 +111,7 @@ internal suspend fun AsyncSource.nextFrame(): Frame {
     val streamId = readInt() and 0x7fffffff // Ignore reserved bit.
 
     if (type != Http2.TYPE_WINDOW_UPDATE) {
-        println(frameLog(true, streamId, length, type, flags))
+        logger.debug(frameLog(true, streamId, length, type, flags))
     }
 
     return when (type) {
@@ -236,6 +240,7 @@ private suspend fun AsyncSource.readRstStream(
     return Frame.RstStream(streamId, errorCode)
 }
 
+context(logger: Logger)
 private suspend fun AsyncSource.readWindowUpdate(
     length: Int,
     flags: Int,
@@ -247,17 +252,10 @@ private suspend fun AsyncSource.readWindowUpdate(
         increment = readInt() and 0x7fffffffL
         if (increment == 0L) throw IOException("windowSizeIncrement was 0")
     } catch (e: Exception) {
-        println(frameLog(true, streamId, length, Http2.TYPE_WINDOW_UPDATE, flags))
+        logger.debug(frameLog(true, streamId, length, Http2.TYPE_WINDOW_UPDATE, flags))
         throw e
     }
-    println(
-        frameLogWindowUpdate(
-            inbound = true,
-            streamId = streamId,
-            length = length,
-            windowSizeIncrement = increment,
-        )
-    )
+    logger.debug(frameLogWindowUpdate(inbound = true, streamId = streamId, length = length, windowSizeIncrement = increment))
     return Frame.WindowUpdate(streamId, increment)
 }
 
@@ -318,6 +316,7 @@ private suspend fun AsyncSource.readPriority(
  */
 internal class ContinuationSource(
     private val source: AsyncSource,
+    private val logger: Logger
 ) : AsyncRawSource {
     var flags: Int = 0
     var streamId: Int = 0
@@ -347,7 +346,7 @@ internal class ContinuationSource(
         left = length
         val type = source.readByte() and 0xff
         flags = source.readByte() and 0xff
-        println(frameLog(true, streamId, length, type, flags))
+        logger.debug(frameLog(true, streamId, length, type, flags))
         streamId = source.readInt() and 0x7fffffff
         if (type != Http2.TYPE_CONTINUATION) throw IOException("$type != TYPE_CONTINUATION")
         if (streamId != previousStreamId) throw IOException("TYPE_CONTINUATION streamId changed")

@@ -28,6 +28,12 @@ class Route internal constructor(
         block()
         httpCallInterceptors.removeLast()
     }
+
+    fun inject(vararg interceptors: CallInterceptor, block: () -> Unit) {
+        interceptors.forEach { httpCallInterceptors.addLast(it) }
+        block()
+        repeat(interceptors.size) { httpCallInterceptors.removeLast() }
+    }
 }
 
 internal val RootSegment = PathSegment.Const("/")
