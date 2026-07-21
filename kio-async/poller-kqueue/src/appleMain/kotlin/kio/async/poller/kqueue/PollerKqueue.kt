@@ -75,7 +75,6 @@ private class KqueuePoller : Poller, PollingSuspendIo {
 
         if (kevent(kq, change.ptr, 1, null, 0, null) == -1) {
             // Ignore error when unregister.
-            println("error when unregister change list: ${errnoMessage()}")
         }
     }
 

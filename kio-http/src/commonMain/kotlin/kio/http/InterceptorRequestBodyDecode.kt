@@ -51,7 +51,7 @@ private suspend fun CallContext.decodeRequestBodyIfNeeded() {
             ?: error("Unsupported Content-Encoding: ${encoding.value}")
     }
 
-    currentLogger()?.debug("Decode request with decoders[${decoders}]")
+    currentLoggerOrNull()?.trace("Decode request with decoders[${decoders}]")
 
     val baseSource = requestBody ?: error("no body when decode request body")
     requestBody = decoders.foldRight(baseSource) { decoder, acc ->

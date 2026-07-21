@@ -4,7 +4,6 @@ import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.parseQueryString
 import kio.async.buffered
 import kio.async.io.AsyncConnection
 import kio.async.io.buffered
@@ -12,7 +11,7 @@ import kio.http.CallContext
 import kio.http.Logger
 import kio.http.Route
 import kio.http.currentLoggingBackend
-import kio.http.debug
+import kio.http.trace
 import kio.http.error
 import kio.http.info
 import kio.http.internal.HttpRequestHead
@@ -24,6 +23,7 @@ import kio.http.internal.http2.Settings.Companion.DEFAULT_INITIAL_WINDOW_SIZE
 import kio.http.newLogger
 import kio.http.resolveHandler
 import kio.http.respond
+import kio.http.warn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -46,19 +46,21 @@ class StreamResetCancellationException(
 ) : CancellationException("stream was reset: $errorCode")
 
 internal suspend fun Route.http2Connection(conn: AsyncConnection) {
-    http2Connection(conn) { conn, stream ->
-        // handle http2 stream in a launched coroutine.
-        with(conn) {
-            handleHttp2Request(stream)
+    val h2Logger = currentLoggingBackend().newLogger("HTTP2")
+
+    with(h2Logger) {
+        http2Connection(conn) { conn, stream ->
+            // handle http2 stream in a launched coroutine.
+            with(conn) { handleHttp2Request(stream) }
         }
     }
 }
 
+context(h2Logger: Logger)
 internal suspend fun http2Connection(
     conn: AsyncConnection,
     handleHttp2Request: suspend CoroutineScope.(Http2Connection, Http2Stream) -> Unit
 ) {
-    val h2Logger = currentLoggingBackend().newLogger("HTTP2")
     // Uncaught exceptions from stream coroutines are reported here.
     // Normal stream failures should be handled inside each stream coroutine.
     // This handler is only a last-resort logger.
@@ -67,6 +69,7 @@ internal suspend fun http2Connection(
     }
     withContext(streamExceptionHandler) {
         supervisorScope {
+            h2Logger.trace("enter http2 connection")
             val http2Connection = Http2Connection(
                 socketConn = conn,
                 connectionScope = this,
@@ -78,7 +81,7 @@ internal suspend fun http2Connection(
             }
             http2Connection.doInitSetting()
             http2Connection.frameReadLoop()
-            h2Logger.debug("exit http2 connection")
+            h2Logger.trace("exit http2 connection")
         }
     }
 }
@@ -414,12 +417,16 @@ context(http2Connection: Http2Connection)
 private suspend fun Route.handleHttp2Request(
     stream: Http2Stream,
 ) {
-    val (params, handler) = this.resolveHandler(stream.requestHead.uri, stream.requestHead.method)
+    val logger = http2Connection.h2Logger
+    val head = stream.requestHead
+    val fields = mapOf("method" to head.method, "target" to head.uri)
+    logger.trace("request head decoded.", fields)
+    val (params, handler) = this.resolveHandler(head.uri, head.method)
 
     val conn = stream.buffered()
     val callContext = CallContext(
         conn,
-        requestHead = stream.requestHead,
+        requestHead = head,
         body = conn.source,
         getRequestTrailers = { stream.trailers },
         parameters = params,
@@ -436,10 +443,11 @@ private suspend fun Route.handleHttp2Request(
 
     try {
         handler?.invoke(callContext)
+        logger.trace("handled request success.")
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (t: Throwable) {
-        println("exception happened $t")
+        logger.warn("handled request failed.", t, fields)
 // TODO: response 500 only if header has not commit yet.
         callContext.respond(HttpStatusCode.InternalServerError, t.toString())
     } finally {
@@ -449,4 +457,6 @@ private suspend fun Route.handleHttp2Request(
     // write response
     callContext.responseSink.flush()
     callContext.responseSink.close()
+
+    logger.trace("handled request finished.")
 }
