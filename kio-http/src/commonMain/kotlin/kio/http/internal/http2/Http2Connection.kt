@@ -22,7 +22,6 @@ import kio.http.internal.http2.Http2.TYPE_SETTINGS
 import kio.http.internal.http2.Settings.Companion.DEFAULT_INITIAL_WINDOW_SIZE
 import kio.http.newLogger
 import kio.http.resolveHandler
-import kio.http.respond
 import kio.http.warn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -435,8 +434,10 @@ private suspend fun Route.handleHttp2Request(
                 stream = stream,
                 head = head,
                 trailer = trailer,
-                connection = http2Connection
-                // TODO: add header commit callback.
+                connection = http2Connection,
+                onHeaderCommit = {
+                    isHeaderCommit = true
+                }
             ).buffered()
         }
     )
@@ -448,8 +449,6 @@ private suspend fun Route.handleHttp2Request(
         throw cancellation
     } catch (t: Throwable) {
         logger.warn("handled request failed.", t, fields)
-// TODO: response 500 only if header has not commit yet.
-        callContext.respond(HttpStatusCode.InternalServerError, t.toString())
     } finally {
         callContext.requestBody?.close()
     }

@@ -2,11 +2,12 @@ package me.example.httpserver
 
 import kio.async.io.ServerSocket
 import kio.async.readString
-import kio.http.CallIdInterceptor
+import kio.http.CallId
 import kio.http.CallInterceptor
 import kio.http.CoroutineLogger
-import kio.http.RequestBodyDecodeInterceptor
-import kio.http.RespondedBodyEncodeInterceptor
+import kio.http.DefaultExceptionHandler
+import kio.http.RequestBodyDecode
+import kio.http.RespondedBodyEncode
 import kio.http.currentCallId
 import kio.http.currentLogger
 import kio.http.currentLoggingBackend
@@ -26,7 +27,7 @@ import kotlinx.coroutines.withContext
 
 private fun IndexedCallIdInterceptor(): CallInterceptor {
     var index: Int = 0
-    return CallIdInterceptor {
+    return CallId {
         (index++).toString()
     }
 }
@@ -38,18 +39,18 @@ private fun LoggerInterceptor(): CallInterceptor = CallInterceptor { context, pr
     }
 }
 
-suspend fun CoroutineScope.simpleServer(
+suspend fun simpleServer(
     serverSocket: ServerSocket,
 ) {
     httpServer(serverSocket) {
         inject(
             IndexedCallIdInterceptor(),
             LoggerInterceptor(),
-            RequestBodyDecodeInterceptor,
-            RespondedBodyEncodeInterceptor
+            DefaultExceptionHandler,
+            RequestBodyDecode,
+            RespondedBodyEncode
         ) {
             get("/") { call ->
-                currentLogger().trace("first log")
                 call.respondText("hello back; foo value is [${call.parameters["foo"]}]")
             }
 

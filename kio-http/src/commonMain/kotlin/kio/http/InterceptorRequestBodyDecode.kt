@@ -7,7 +7,7 @@ import kio.async.buffered
 import kio.compression.gzipSource
 import kio.compression.zlibSource
 
-val RequestBodyDecodeInterceptor: CallInterceptor = CallInterceptor { context, proceed ->
+val RequestBodyDecode: CallInterceptor = CallInterceptor { context, proceed ->
     context.decodeRequestBodyIfNeeded()
     proceed(context)
 }

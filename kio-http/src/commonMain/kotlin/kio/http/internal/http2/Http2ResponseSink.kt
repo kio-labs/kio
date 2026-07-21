@@ -12,7 +12,8 @@ internal class Http2ResponseSink(
     private val stream: Http2Stream,
     private val head: HttpResponseHead.Builder,
     private val trailer: HeadersBuilder,
-    private val connection: Http2Connection
+    private val connection: Http2Connection,
+    private val onHeaderCommit: () -> Unit = {}
 ) : AsyncRawSink {
     private val socketConnSink = connection.socketConn.sink
     private val streamingSink = stream.sink.buffered()
@@ -25,6 +26,7 @@ internal class Http2ResponseSink(
             with(connection) {
                 socketConnSink.writeHeaders(outFinished = false, stream.streamId, headers.toHeaders())
             }
+            onHeaderCommit()
         }
     }
 

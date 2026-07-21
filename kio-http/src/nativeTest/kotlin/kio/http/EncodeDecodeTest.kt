@@ -13,7 +13,7 @@ class EncodeDecodeTest {
     @Test
     fun gzipEncodedRequestTest() = withHttpServerTest {
         server {
-            inject(RequestBodyDecodeInterceptor) {
+            inject(RequestBodyDecode) {
                 post {
                     it.respondText("Response: ${it.requestBody?.readString()}")
                 }
@@ -33,7 +33,7 @@ class EncodeDecodeTest {
     @Test
     fun gzipDecodedResponseTest() = withHttpServerTest {
         server {
-            inject(RespondedBodyEncodeInterceptor) {
+            inject(RespondedBodyEncode) {
                 get {
                     it.respondText("Hello world")
                 }

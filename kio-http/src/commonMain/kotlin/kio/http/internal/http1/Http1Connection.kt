@@ -41,7 +41,13 @@ internal suspend fun Route.http1Connection(conn: AsyncConnection) {
         parameters = params,
         responseSink = { head, trailer ->
 // TODO: send trailer for http1
-            conn.sink.http1ResponseSink(head).buffered()
+            Http1ResponseSink(
+                head = head,
+                sink = conn.sink,
+                onHeaderCommit = {
+                    isHeaderCommit = true
+                }
+            ).buffered()
         }
     )
 
@@ -52,7 +58,6 @@ internal suspend fun Route.http1Connection(conn: AsyncConnection) {
         throw cancellation
     } catch (t: Throwable) {
         logger.warn("handled request failed.", t, fields)
-        callContext.respond(HttpStatusCode.InternalServerError, t.toString())
     } finally {
         callContext.requestBody?.close()
     }
