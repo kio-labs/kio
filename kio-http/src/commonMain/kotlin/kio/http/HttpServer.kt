@@ -7,6 +7,7 @@ import kio.async.io.buffered
 import kio.http.internal.http1.http1Connection
 import kio.http.internal.http2.http2Connection
 import kio.tls.SslConnection
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -76,6 +77,10 @@ private suspend fun CoroutineScope.startHttpServer(
                 logger.trace("connection closed by peer")
             } catch (e: IOException) {
                 logger.warn("connection disconnected with exception", e)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                logger.error("connection failed with exception", t)
             } finally {
                 conn.close()
                 logger.info("connection closed")

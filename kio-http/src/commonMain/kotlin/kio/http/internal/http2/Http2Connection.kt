@@ -445,10 +445,6 @@ private suspend fun Route.handleHttp2Request(
     try {
         handler?.invoke(callContext)
         logger.trace("handled request success.")
-    } catch (cancellation: CancellationException) {
-        throw cancellation
-    } catch (t: Throwable) {
-        logger.warn("handled request failed.", t, fields)
     } finally {
         callContext.requestBody?.close()
     }
