@@ -8,19 +8,19 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.LinkHeader
 import io.ktor.http.Parameters
 import io.ktor.http.charset
 import io.ktor.http.withCharset
 import io.ktor.utils.io.charsets.Charsets
 import kio.async.AsyncRawSource
 import kio.async.AsyncSink
+import kio.async.AsyncSource
 import kio.async.buffered
+import kio.async.emptyAsyncRawSource
 import kio.async.io.AsyncConnection
 import kio.async.writeString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
-import kotlinx.io.Segment
 import kotlin.text.equals
 
 typealias CallHandler = suspend CallContext.() -> Unit
@@ -43,7 +43,7 @@ fun Route.post(uri: String = "", block: suspend (CallContext) -> Unit) {
 class CallContext internal constructor(
     internal val conn: AsyncConnection,
     requestHead: HttpRequestHead,
-    body: AsyncRawSource?,
+    body: AsyncRawSource = emptyAsyncRawSource(),
     parameters: Parameters = Parameters.Empty,
     private val getRequestTrailers: () -> Headers? = { null },
     responseSink: (header: HttpResponseHead.Builder, trailer: HeadersBuilder) -> AsyncSink,
@@ -53,8 +53,11 @@ class CallContext internal constructor(
     val requestHeaders: Headers = requestHead.headers
     val requestTrailers: Headers?
         get() = getRequestTrailers()
-    var requestBody = body?.buffered()
-        internal set
+
+    val requestBody: AsyncSource by lazy {
+        _requestBody.buffered()
+    }
+    private var _requestBody: AsyncRawSource = body
 
     internal val responseHead = HttpResponseHead.Builder()
     internal val responseTrailer = HeadersBuilder()
@@ -62,8 +65,12 @@ class CallContext internal constructor(
     internal var responseSink: AsyncSink = responseSink(responseHead, responseTrailer)
         private set
 
-    internal fun wrapResponseSink(block: AsyncSink.() -> AsyncSink) {
+    internal fun wrapResponseSink(block: (AsyncSink) -> AsyncSink) {
         responseSink = block(responseSink)
+    }
+
+    internal fun wrapRequestSource(block: (AsyncRawSource) -> AsyncRawSource) {
+        _requestBody = block(_requestBody)
     }
 }
 

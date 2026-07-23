@@ -2,8 +2,8 @@ package kio.http.internal.http1
 
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.parameters
 import kio.async.buffered
+import kio.async.emptyAsyncRawSource
 import kio.async.io.AsyncConnection
 import kio.http.CallContext
 import kio.http.Route
@@ -32,7 +32,7 @@ internal suspend fun Route.http1Connection(conn: AsyncConnection) {
     val body = when {
         encoding == "chunked" -> conn.source.chunked()
         contentLength > 0 -> conn.source.limited(contentLength)
-        else -> null
+        else -> emptyAsyncRawSource()
     }
 
     val callContext = CallContext(

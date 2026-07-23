@@ -2,6 +2,7 @@ package kio.http
 
 import io.ktor.http.HttpHeaders
 import io.ktor.http.parseHeaderValue
+import kio.async.AsyncRawSource
 import kio.async.AsyncSource
 import kio.async.buffered
 import kio.compression.gzipSource
@@ -14,14 +15,14 @@ val RequestBodyDecodeInterceptor: CallInterceptor = CallInterceptor { context, p
 
 private interface Decoder {
     val name: String
-    fun decode(source: AsyncSource) : AsyncSource
+    fun decode(source: AsyncRawSource) : AsyncRawSource
 }
 
 private val GzipDecoder: Decoder = object : Decoder {
     override val name: String = "gzip"
 
-    override fun decode(source: AsyncSource): AsyncSource {
-        return source.gzipSource().buffered()
+    override fun decode(source: AsyncRawSource): AsyncRawSource {
+        return source.buffered().gzipSource()
     }
 
     override fun toString(): String = name
@@ -30,8 +31,8 @@ private val GzipDecoder: Decoder = object : Decoder {
 private val DeflateDecoder: Decoder = object : Decoder {
     override val name: String = "deflate"
 
-    override fun decode(source: AsyncSource): AsyncSource {
-        return source.zlibSource().buffered()
+    override fun decode(source: AsyncRawSource): AsyncRawSource {
+        return source.buffered().zlibSource()
     }
 
     override fun toString(): String = name
@@ -53,8 +54,9 @@ private suspend fun CallContext.decodeRequestBodyIfNeeded() {
 
     currentLoggerOrNull()?.trace("Decode request with decoders[${decoders}]")
 
-    val baseSource = requestBody ?: error("no body when decode request body")
-    requestBody = decoders.foldRight(baseSource) { decoder, acc ->
-        decoder.decode(acc)
+    wrapRequestSource { src ->
+        decoders.foldRight(src) { decoder, acc ->
+            decoder.decode(acc)
+        }
     }
 }

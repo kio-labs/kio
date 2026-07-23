@@ -12,7 +12,7 @@ internal fun CallContext.wrapChunkedResponseSink() {
     // Always write compressed data by chunk in HTTP/1
     responseHead.headers.remove(HttpHeaders.ContentLength)
     responseHead.headers[HttpHeaders.TransferEncoding] = "chunked"
-    wrapResponseSink { ChunkedSink(this).buffered() }
+    wrapResponseSink { src -> ChunkedSink(src).buffered() }
 }
 
 internal class ChunkedSink(
