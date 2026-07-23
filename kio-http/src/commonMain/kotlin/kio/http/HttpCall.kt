@@ -46,7 +46,7 @@ class CallContext internal constructor(
     body: AsyncRawSource?,
     parameters: Parameters = Parameters.Empty,
     private val getRequestTrailers: () -> Headers? = { null },
-    responseSink: (header: HttpResponseHead.Builder, trailer: HeadersBuilder) -> AsyncSink,
+    responseSink: CallContext.(header: HttpResponseHead.Builder, trailer: HeadersBuilder) -> AsyncSink,
 ) {
     val parameters: Parameters = parameters
     val requestProtocolVersion: HttpProtocolVersion = requestHead.version
@@ -61,6 +61,8 @@ class CallContext internal constructor(
 
     internal var responseSink: AsyncSink = responseSink(responseHead, responseTrailer)
         private set
+
+    internal var isHeaderCommit: Boolean = false
 
     internal fun wrapResponseSink(block: AsyncSink.() -> AsyncSink) {
         responseSink = block(responseSink)

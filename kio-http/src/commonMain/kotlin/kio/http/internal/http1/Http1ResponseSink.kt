@@ -7,12 +7,10 @@ import kio.async.writeString
 import kio.http.internal.HttpResponseHead
 import kotlinx.io.Buffer
 
-internal fun AsyncSink.http1ResponseSink(head: HttpResponseHead.Builder): AsyncRawSink =
-    Http1ResponseSink(head, this)
-
-private class Http1ResponseSink(
+internal class Http1ResponseSink(
     private val head: HttpResponseHead.Builder,
     private val sink: AsyncSink,
+    private val onHeaderCommit: () -> Unit = {}
 ) : AsyncRawSink {
     private var headCommit = false
 
@@ -20,6 +18,7 @@ private class Http1ResponseSink(
         if (!headCommit) {
             sink.writeResponseHead(head.build())
             headCommit = true
+            onHeaderCommit()
         }
 
         sink.write(source, byteCount)
@@ -29,6 +28,7 @@ private class Http1ResponseSink(
         if (!headCommit) {
             sink.writeResponseHead(head.build())
             headCommit = true
+            onHeaderCommit()
         }
 
         sink.flush()
