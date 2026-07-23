@@ -1,5 +1,6 @@
 package kio.http
 
+import io.ktor.http.HttpStatusCode
 import kio.async.AsyncRawSource
 import kotlinx.io.Buffer
 import kotlinx.io.IOException
@@ -11,7 +12,12 @@ fun MaxBodyLimit(max: Long): CallInterceptor = CallInterceptor { context, procee
     try {
         proceed(context)
     } catch (e: MaxBodyLimitException) {
-
+        if (!context.isHeaderCommit) {
+            currentLoggerOrNull()?.warn("body limit reached", e)
+            context.respond(HttpStatusCode.PayloadTooLarge)
+        } else {
+            throw e
+        }
     }
 }
 

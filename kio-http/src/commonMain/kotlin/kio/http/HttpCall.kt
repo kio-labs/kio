@@ -77,7 +77,7 @@ class CallContext internal constructor(
 }
 
 suspend fun CallContext.respond(
-    status: HttpStatusCode, message: String = ""
+    status: HttpStatusCode, message: String = status.description
 ) {
     respondText(status = status, text = message)
 }
