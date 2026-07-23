@@ -1,0 +1,83 @@
+package kio.http
+
+import io.ktor.http.BadContentTypeFormatException
+import io.ktor.http.ContentType
+import io.ktor.http.HeadersBuilder
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.charset
+import io.ktor.http.withCharset
+import io.ktor.utils.io.charsets.Charsets
+import io.ktor.utils.io.core.toByteArray
+import kio.async.writeString
+import kotlin.text.equals
+
+suspend fun CallContext.respond(
+    status: HttpStatusCode, message: String = status.description
+) {
+    respondText(status = status, text = message)
+}
+
+suspend fun CallContext.respondText(
+    text: String,
+    contentType: ContentType? = null,
+    status: HttpStatusCode? = null,
+    configHeaders: HeadersBuilder.() -> Unit = {},
+    configTrailers: HeadersBuilder.() -> Unit = {}
+) {
+    val charset = contentType?.charset() ?: Charsets.UTF_8
+    require(charset == Charsets.UTF_8) {
+        "Only support utf8, but get $charset."
+    }
+
+    val bytes = text.toByteArray(charset)
+    responseHead.apply {
+        statusCode = status ?: HttpStatusCode.OK
+        headers[HttpHeaders.ContentType] = defaultTextContentType(contentType).toString()
+        if (headers.canWriteContentLength()) {
+            headers[HttpHeaders.ContentLength] = bytes.size.toString()
+        }
+    }
+    responseHead.headers.configHeaders()
+    responseTrailer.configTrailers()
+
+    responseSink.write(bytes)
+}
+
+private fun HeadersBuilder.canWriteContentLength(): Boolean {
+    return !this[HttpHeaders.TransferEncoding].equals("chunked", ignoreCase = true)
+}
+
+/**
+ * Creates a default [ContentType] based on the given [contentType] and current call.
+ *
+ * If [contentType] is `null`, it tries to fetch an already set "Content-Type" response header.
+ * If the header is not available, `text/plain` is used. If [contentType] is specified, it uses it.
+ *
+ * Additionally, if a content type is `Text` and a charset is not set for a content type,
+ * it appends `; charset=UTF-8` to the content type.
+ *
+ * [Report a problem](https://ktor.io/feedback/?fqname=io.ktor.server.response.defaultTextContentType)
+ */
+internal fun CallContext.defaultTextContentType(contentType: ContentType?): ContentType {
+    val result = when (contentType) {
+        null -> {
+            val headersContentType = responseHead.headers[HttpHeaders.ContentType]
+            headersContentType?.let {
+                try {
+                    ContentType.parse(headersContentType)
+                } catch (_: BadContentTypeFormatException) {
+                    null
+                }
+            } ?: ContentType.Text.Plain
+        }
+
+        else -> contentType
+    }
+
+    return if (result.charset() == null && result.match(ContentType.Text.Any)) {
+        result.withCharset(Charsets.UTF_8)
+    } else {
+        result
+    }
+}
