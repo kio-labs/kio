@@ -1,0 +1,19 @@
+package kio.http
+
+import io.ktor.http.HttpStatusCode
+
+val DefaultExceptionHandler: CallInterceptor = CallInterceptor { context, proceed ->
+    try {
+        proceed(context)
+    } catch (t: Throwable) {
+        if (!context.isHeaderCommit) {
+            currentLoggerOrNull()?.warn("handler exception caught by DefaultExceptionHandler", t)
+            context.respond(
+                HttpStatusCode.InternalServerError,
+                "Internal Server Error"
+            )
+        } else {
+            throw t
+        }
+    }
+}

@@ -9,7 +9,7 @@ import kio.compression.gzipSink
 import kio.compression.zlibSink
 import kio.http.internal.http1.wrapChunkedResponseSink
 
-val RespondedBodyEncodeInterceptor = CallInterceptor { context, proceed ->
+val RespondedBodyEncode = CallInterceptor { context, proceed ->
     context.encodeResponseBodyIfNeeded()
     proceed(context)
 }

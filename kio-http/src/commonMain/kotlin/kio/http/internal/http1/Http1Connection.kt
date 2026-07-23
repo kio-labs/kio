@@ -1,7 +1,6 @@
 package kio.http.internal.http1
 
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
 import kio.async.buffered
 import kio.async.emptyAsyncRawSource
 import kio.async.io.AsyncConnection
@@ -11,10 +10,7 @@ import kio.http.currentLoggingBackend
 import kio.http.internal.limited
 import kio.http.newLogger
 import kio.http.resolveHandler
-import kio.http.respond
 import kio.http.trace
-import kio.http.warn
-import kotlinx.coroutines.CancellationException
 
 internal suspend fun Route.http1Connection(conn: AsyncConnection) {
     val logger = currentLoggingBackend().newLogger("HTTP1")
@@ -41,18 +37,19 @@ internal suspend fun Route.http1Connection(conn: AsyncConnection) {
         parameters = params,
         responseSink = { head, trailer ->
 // TODO: send trailer for http1
-            conn.sink.http1ResponseSink(head).buffered()
+            Http1ResponseSink(
+                head = head,
+                sink = conn.sink,
+                onHeaderCommit = {
+                    isHeaderCommit = true
+                }
+            ).buffered()
         }
     )
 
     try {
         handler?.invoke(callContext)
         logger.trace("handled request success.")
-    } catch (cancellation: CancellationException) {
-        throw cancellation
-    } catch (t: Throwable) {
-        logger.warn("handled request failed.", t, fields)
-        callContext.respond(HttpStatusCode.InternalServerError, t.toString())
     } finally {
         callContext.requestBody?.close()
     }

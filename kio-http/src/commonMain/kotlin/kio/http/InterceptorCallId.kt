@@ -5,7 +5,7 @@ import kotlinx.coroutines.withContext
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
 
-fun CallIdInterceptor(generator: CallContext.() -> String): CallInterceptor = CallInterceptor { context, proceed ->
+fun CallId(generator: CallContext.() -> String): CallInterceptor = CallInterceptor { context, proceed ->
     withContext(CoroutineCallId(generator(context))) {
         proceed(context)
     }
