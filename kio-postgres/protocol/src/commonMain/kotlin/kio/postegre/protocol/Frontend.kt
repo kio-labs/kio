@@ -18,6 +18,11 @@ suspend fun AsyncSink.writeStartupMessage(params: Map<String, String>) {
     }
 }
 
+suspend fun AsyncSink.writeStartTlsMessage() {
+    writeInt(8)
+    writeInt(80877103)
+}
+
 suspend fun AsyncSink.writeParse(name: String, query: String, paramTypes: List<Int>) {
     writeByte('P'.code.toByte())
     writeBody {

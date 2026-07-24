@@ -1,6 +1,7 @@
 package kio.postgres.conn
 
 import kio.async.PollerFactory
+import kio.async.io.AsyncConnection
 import kio.async.io.buffered
 import kio.async.io.openPipe
 import kio.async.runPollEventLoop
@@ -10,6 +11,7 @@ import kio.postegre.types.PgInt4
 import kio.postegre.types.PgText
 import kio.postegre.types.PgTimestamp
 import kio.postegre.types.PostgresFormat
+import kio.tls.withClientTls
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toCollection
@@ -399,20 +401,27 @@ abstract class PgConnectionTest {
         }
     }
 
-    private fun withTestPgDatabase(block: suspend PgConnection.() -> Unit) =
+    val host = getEnv("POSTGRES_HOST") ?: "127.0.0.1"
+    val port = getEnv("POSTGRES_PORT")?.toInt() ?: 5432
+    val user = getEnv("POSTGRES_USER")  ?: error("no value found: POSTGRES_USER")
+    val password = getEnv("POSTGRES_PASSWORD")  ?: error("no value found: POSTGRES_PASSWORD")
+    val database = getEnv("POSTGRES_DB") ?: error("no value found: POSTGRES_DB")
+
+    fun withTestPgDatabase(
+        tlsNegotiation: TlsNegotiation = TlsNegotiation.PREFER,
+        tlsWrapper: ((AsyncConnection) -> AsyncConnection)? = null,
+        block: suspend PgConnection.() -> Unit
+    ) =
         runPollEventLoop(pollerFactory) {
-            val host = getEnv("POSTGRES_HOST") ?: "127.0.0.1"
-            val port = getEnv("POSTGRES_PORT")?.toInt() ?: 5432
-            val user = getEnv("POSTGRES_USER")  ?: error("no value found: POSTGRES_USER")
-            val password = getEnv("POSTGRES_PASSWORD")  ?: error("no value found: POSTGRES_PASSWORD")
-            val database = getEnv("POSTGRES_DB") ?: error("no value found: POSTGRES_DB")
             withTimeout(1.seconds) {
                 val conn = openPgConnection(
                     host = host,
                     port = port,
                     user = user,
                     password = password,
-                    database = database
+                    database = database,
+                    tlsNegotiation = tlsNegotiation,
+                    tlsWrapper = tlsWrapper,
                 )
                 conn.block()
                 conn.close()
