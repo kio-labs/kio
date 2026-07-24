@@ -9,6 +9,7 @@ import io.ktor.http.charset
 import io.ktor.http.withCharset
 import io.ktor.utils.io.charsets.Charsets
 import io.ktor.utils.io.core.toByteArray
+import kio.async.AsyncSource
 import kio.async.writeString
 import kotlin.text.equals
 
@@ -26,10 +27,6 @@ suspend fun CallContext.respondText(
     configTrailers: HeadersBuilder.() -> Unit = {}
 ) {
     val charset = contentType?.charset() ?: Charsets.UTF_8
-    require(charset == Charsets.UTF_8) {
-        "Only support utf8, but get $charset."
-    }
-
     val bytes = text.toByteArray(charset)
     responseHead.apply {
         statusCode = status ?: HttpStatusCode.OK
@@ -42,6 +39,22 @@ suspend fun CallContext.respondText(
     responseTrailer.configTrailers()
 
     responseSink.write(bytes)
+}
+
+suspend fun CallContext.responseAsync(
+    source: AsyncSource,
+    status: HttpStatusCode? = null,
+    configHeaders: HeadersBuilder.() -> Unit = {},
+    configTrailers: HeadersBuilder.() -> Unit = {}
+) {
+    responseHead.apply {
+        statusCode = status ?: HttpStatusCode.OK
+    }
+
+    responseHead.headers.configHeaders()
+    responseTrailer.configTrailers()
+
+    responseSink.transferFrom(source)
 }
 
 private fun HeadersBuilder.canWriteContentLength(): Boolean {
