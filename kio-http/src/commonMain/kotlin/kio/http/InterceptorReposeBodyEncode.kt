@@ -58,5 +58,5 @@ private suspend fun CallContext.encodeResponseBodyIfNeeded() {
     }
 
     responseHead.headers[HttpHeaders.ContentEncoding] = encoder.name
-    wrapResponseSink { encoder.encode(this) }
+    wrapResponseSink { src -> encoder.encode(src) }
 }

@@ -8,10 +8,7 @@ val DefaultExceptionHandler: CallInterceptor = CallInterceptor { context, procee
     } catch (t: Throwable) {
         if (!context.isHeaderCommit) {
             currentLoggerOrNull()?.warn("handler exception caught by DefaultExceptionHandler", t)
-            context.respond(
-                HttpStatusCode.InternalServerError,
-                "Internal Server Error"
-            )
+            context.respond(HttpStatusCode.InternalServerError)
         } else {
             throw t
         }
