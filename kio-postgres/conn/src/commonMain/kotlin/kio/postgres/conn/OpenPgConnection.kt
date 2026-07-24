@@ -1,12 +1,15 @@
 package kio.postgres.conn
 
+import kio.async.io.AsyncConnection
 import kio.async.io.buffered
 import kio.async.io.openConnection
 import kio.postegre.protocol.Message
 import kio.postegre.protocol.readMessage
 import kio.postegre.protocol.writePassword
+import kio.postegre.protocol.writeStartTlsMessage
 import kio.postegre.protocol.writeStartupMessage
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.io.IOException
 import org.kotlincrypto.hash.md.MD5
 
 suspend fun openPgConnection(
@@ -18,8 +21,11 @@ suspend fun openPgConnection(
     applicationName: String? = null,
     options: String? = null,
     onNotice: (PgException) -> Unit = {},
+    tlsNegotiation: TlsNegotiation = TlsNegotiation.PREFER,
+    tlsWrapper: ((AsyncConnection) -> AsyncConnection)? = null,
 ): PgConnection {
     val conn = openConnection(host, port).buffered()
+        .negotiationTlsConnection(tlsNegotiation, tlsWrapper)
 
     val params = buildMap {
         put("user", user)
@@ -89,6 +95,11 @@ suspend fun openPgConnection(
     )
 }
 
+enum class TlsNegotiation {
+    DIRECT,
+    PREFER,
+    REQUIRE,
+}
 private fun md5Hex(bytes: ByteArray): String {
     val digest = MD5()
     return digest.digest(bytes).toHex()
@@ -98,3 +109,27 @@ private fun ByteArray.toHex(): String =
     joinToString("") { b ->
         b.toUByte().toString(16).padStart(2, '0')
     }
+
+private suspend fun AsyncConnection.negotiationTlsConnection(
+    tlsNegotiation: TlsNegotiation,
+    tlsWrapper: ((AsyncConnection) -> AsyncConnection)?
+): AsyncConnection {
+    if (tlsWrapper == null) return this
+
+    if (tlsNegotiation == TlsNegotiation.DIRECT) return tlsWrapper(this)
+
+    sink.writeStartTlsMessage()
+    sink.flush()
+
+    val response = source.readByte()
+
+    if (response.toInt() != 'S'.code) {
+        if (tlsNegotiation == TlsNegotiation.REQUIRE) {
+            throw IOException("Require tls connection, but pg server say no.")
+        }
+
+        return this
+    }
+
+    return tlsWrapper(this)
+}

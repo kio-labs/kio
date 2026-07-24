@@ -199,8 +199,7 @@ suspend fun AsyncSource.readMessage(): Message {
             10 -> Message.AuthenticationSasl(buffer.readByteArray().toKString())
             11 -> Message.AuthenticationSaslContinue(buffer.readByteArray().toKString())
             12 -> Message.AuthenticationSaslFinal(buffer.readByteArray())
-            else ->
-                throw IOException("unknown authentication tag $tag")
+            else -> throw IOException("unknown authentication tag $tag")
         }
 
         PORTAL_SUSPENDED_TAG -> Message.PortalSuspended
