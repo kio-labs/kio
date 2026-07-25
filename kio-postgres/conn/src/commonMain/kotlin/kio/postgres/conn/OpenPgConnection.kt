@@ -6,11 +6,15 @@ import kio.async.io.openConnection
 import kio.postegre.protocol.Message
 import kio.postegre.protocol.readMessage
 import kio.postegre.protocol.writePassword
+import kio.postegre.protocol.writeSASLInitialResponse
+import kio.postegre.protocol.writeSASLResponse
 import kio.postegre.protocol.writeStartTlsMessage
 import kio.postegre.protocol.writeStartupMessage
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.io.IOException
-import org.kotlincrypto.hash.md.MD5
+import kotlin.experimental.xor
+import kotlin.io.encoding.Base64
+import kotlin.random.Random
 
 suspend fun openPgConnection(
     host: String,
@@ -33,66 +37,75 @@ suspend fun openPgConnection(
         applicationName?.let { put("application_name", it) }
         options?.let { put("options", it) }
     }
-    conn.sink.writeStartupMessage(params)
-    conn.sink.flush()
 
-    var pid: Int? = null
-    var secretKey: ByteArray? = null
-    val parameterStatuses: MutableMap<String, String> = mutableMapOf()
+    try {
+        conn.sink.writeStartupMessage(params)
+        conn.sink.flush()
 
-    while (true) {
-        when (val msg = conn.source.readMessage()) {
-            is Message.AuthenticationOk -> {
+        var pid: Int? = null
+        var secretKey: ByteArray? = null
+        val parameterStatuses: MutableMap<String, String> = mutableMapOf()
+
+        while (true) {
+            when (val msg = conn.source.readMessage()) {
+                is Message.AuthenticationOk -> {
 // TODO:
-            }
+                }
 
-            is Message.AuthenticationMd5Password -> {
-                check(password != null)
+                is Message.AuthenticationMd5Password -> {
+                    check(password != null)
 
-                val pw =
-                    md5Hex(md5Hex((password + user).encodeToByteArray()).encodeToByteArray() + msg.salt)
-                conn.sink.writePassword("md5$pw")
-                conn.sink.flush()
-            }
+                    val pw =
+                        md5Hex(md5Hex((password + user).encodeToByteArray()).encodeToByteArray() + msg.salt)
+                    conn.sink.writePassword("md5$pw")
+                    conn.sink.flush()
+                }
 
-            is Message.AuthenticationCleartextPassword -> {
-                conn.sink.writePassword(password ?: error("password must be set."))
-                conn.sink.flush()
-            }
+                is Message.AuthenticationCleartextPassword -> {
+                    conn.sink.writePassword(password ?: error("password must be set."))
+                    conn.sink.flush()
+                }
 
-            is Message.BackendKeyData -> {
-                pid = msg.processId
-                secretKey = msg.secretKey
-            }
+                is Message.AuthenticationSasl -> {
+                    conn.scramAuth(msg.mechanisms, password ?: error("password must be set."))
+                }
 
-            is Message.ParameterStatus -> {
-                parameterStatuses[msg.name] = msg.value
-            }
+                is Message.BackendKeyData -> {
+                    pid = msg.processId
+                    secretKey = msg.secretKey
+                }
 
-            is Message.ErrorResponse -> {
-                conn.close()
-                throw buildPgException(msg.errors)
-            }
+                is Message.ParameterStatus -> {
+                    parameterStatuses[msg.name] = msg.value
+                }
 
-            is Message.ReadyForQuery -> break
+                is Message.ErrorResponse -> {
+                    throw buildPgException(msg.errors)
+                }
 
-            else -> {
-                error("received unexpected message $msg")
+                is Message.ReadyForQuery -> break
+
+                else -> {
+                    error("received unexpected message $msg")
+                }
             }
         }
-    }
 
-    check(pid != null && secretKey != null)
-    return InternalPgConnection(
-        parentContext = currentCoroutineContext(),
-        conn = conn,
-        parameterStatuses = parameterStatuses,
-        host = host,
-        port = port,
-        pid = pid,
-        secretKey = secretKey,
-        onNotice = onNotice,
-    )
+        check(pid != null && secretKey != null)
+        return InternalPgConnection(
+            parentContext = currentCoroutineContext(),
+            conn = conn,
+            parameterStatuses = parameterStatuses,
+            host = host,
+            port = port,
+            pid = pid,
+            secretKey = secretKey,
+            onNotice = onNotice,
+        )
+    } catch (t: IOException) {
+        conn.close()
+        throw t
+    }
 }
 
 enum class TlsNegotiation {
@@ -101,15 +114,99 @@ enum class TlsNegotiation {
     REQUIRE,
 }
 
-private fun md5Hex(bytes: ByteArray): String {
-    val digest = MD5()
-    return digest.digest(bytes).toHex()
+private suspend fun AsyncConnection.scramAuth(mechanisms: List<String>, password: String) {
+    if (!mechanisms.contains(SCRAM_SHA256)) TODO("Support $mechanisms")
+
+    // write client first message.
+    val clientNonce = Base64.encode(Random.nextBytes(18))
+    val clientFirstMessageBare = "n=,r=$clientNonce"
+    val clientGS2Header = "n,,"
+    val clientFirstMessage = "$clientGS2Header$clientFirstMessageBare"
+    sink.writeSASLInitialResponse(
+        mechanism = SCRAM_SHA256,
+        data = clientFirstMessage.encodeToByteArray()
+    )
+    sink.flush()
+
+    // receive server first message.
+    val saslContinue = waitAuthenticationSaslContinue()
+    val serverFirstMessage = saslContinue.mechanism
+    val serverFirstMessagesList = serverFirstMessage.split(',').toMutableList()
+    val clientAndServerNotice = serverFirstMessagesList.firstOrNull { it.startsWith("r=") }
+        ?.removePrefix("r=")
+        ?: throw IOException("invalid SCRAM server-first-message received from server: did not include r=")
+    val saltStr = serverFirstMessagesList.firstOrNull { it.startsWith("s=") }
+        ?.removePrefix("s=")
+        ?: throw IOException("invalid SCRAM server-first-message received from server: did not include s=")
+    val iterationStr = serverFirstMessagesList.firstOrNull { it.startsWith("i=") }
+        ?.removePrefix("i=")
+        ?: throw IOException("invalid SCRAM server-first-message received from server: did not include i=")
+
+    val salt = Base64.decode(saltStr)
+    val iteration = iterationStr.toIntOrNull()
+    if (iteration == null || iteration <= 0) {
+        throw IOException("invalid SCRAM iteration count received from server: $iterationStr")
+    }
+
+    if (!clientAndServerNotice.startsWith(clientNonce)) {
+        throw IOException("invalid SCRAM nonce: did not start with client nonce")
+    }
+
+    if (clientAndServerNotice.length <= clientNonce.length) {
+        throw IOException("invalid SCRAM nonce: did not include server nonce")
+    }
+
+    // write client final message
+    val channelBindingEncoded = Base64.encode(clientGS2Header.encodeToByteArray())
+    val clientFinalMessageWithoutProof = "c=$channelBindingEncoded,r=$clientAndServerNotice"
+
+    val saltedPassword = pbkdf2HmacSha256(password.encodeToByteArray(), salt, iteration)
+    val clientKey = hmacSha256(saltedPassword, "Client Key".encodeToByteArray())
+    val storedKey = sha256(clientKey)
+    val authMessage = "$clientFirstMessageBare,$serverFirstMessage,$clientFinalMessageWithoutProof"
+    val clientSignature = hmacSha256(storedKey, authMessage.encodeToByteArray())
+    val clientProof = ByteArray(clientSignature.size) { index ->
+        clientKey[index] xor clientSignature[index]
+    }
+    val clientProofEncoded = Base64.encode(clientProof)
+    val clientFinalMessage = "$clientFinalMessageWithoutProof,p=${clientProofEncoded}"
+    sink.writeSASLResponse(clientFinalMessage.encodeToByteArray())
+    sink.flush()
+
+    // receive server final message
+    val saslFinal = waitAuthenticationFinal()
+    val saslFinalMessage = saslFinal.data.decodeToString()
+    val serverFinalParts = saslFinalMessage.split(',')
+    val serverSignatureEncoded = serverFinalParts.firstOrNull { it.startsWith("v=") }
+        ?.removePrefix("v=")
+        ?: throw IOException("invalid SCRAM server-final-message received from server")
+    val actualServerSignatureDecoded = Base64.decode(serverSignatureEncoded)
+    val serverKey = hmacSha256(saltedPassword, "Server Key".encodeToByteArray(),)
+    val actualServerSignature =  hmacSha256(serverKey, authMessage.encodeToByteArray())
+
+    if (!constantTimeEquals(actualServerSignatureDecoded, actualServerSignature)) {
+        throw IOException("invalid SCRAM ServerSignature received from server")
+    }
 }
 
-private fun ByteArray.toHex(): String =
-    joinToString("") { b ->
-        b.toUByte().toString(16).padStart(2, '0')
+private suspend fun AsyncConnection.waitAuthenticationSaslContinue(): Message.AuthenticationSaslContinue {
+    when (val message = source.readMessage()) {
+        is Message.ErrorResponse -> throw buildPgException(message.errors)
+        is Message.AuthenticationSaslContinue -> return message
+        else -> throw IOException("expected AuthenticationSASLContinue message but received unexpected message $message")
     }
+}
+
+private suspend fun AsyncConnection.waitAuthenticationFinal(): Message.AuthenticationSaslFinal {
+    when (val message = source.readMessage()) {
+        is Message.ErrorResponse -> throw buildPgException(message.errors)
+        is Message.AuthenticationSaslFinal -> return message
+        else -> throw IOException("expected AuthenticationSaslFinal message but received unexpected message $message")
+    }
+}
+
+private const val SCRAM_SHA256 = "SCRAM-SHA-256"
+private const val SCRAM_SHA256_PLUS = "SCRAM-SHA-256-PLUS"
 
 private suspend fun AsyncConnection.negotiationTlsConnection(
     tlsNegotiation: TlsNegotiation,
