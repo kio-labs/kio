@@ -32,6 +32,7 @@ import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import kotlinx.io.Buffer
+import kotlinx.io.EOFException
 import kotlinx.io.IOException
 import kotlinx.io.InternalIoApi
 import kotlinx.io.UnsafeIoApi
@@ -287,17 +288,18 @@ internal suspend fun doHandshake(
     val outputChunk = ByteArray(CHUNK_SIZE)
     while (SSL_is_init_finished(ssl) == 0) {
         val ret = SSL_do_handshake(ssl)
-        if (ret != 1) {
-            val err = SSL_get_error(ssl, ret)
-            if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
-                // ignore
-            } else {
-                throw IOException("error when handshake: ${opensslErrorString()}")
-            }
-        }
 
         flushWbioToSink(wbio, bufferedConnection.sink, outputChunk)
         bufferedConnection.sink.flush()
+
+        if (ret == 1) continue
+
+        val err = SSL_get_error(ssl, ret)
+        if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+            // ignore
+        } else {
+            throw IOException("error when handshake: ${opensslErrorString()}")
+        }
 
         if (SSL_is_init_finished(ssl) == 0) {
             feedRbioFromSource(rbio, bufferedConnection.source)
@@ -375,7 +377,9 @@ internal suspend fun feedRbioFromSource(
     rbio: CPointer<BIO>,
     source: AsyncSource
 ): Boolean {
-    if (source.exhausted()) return false
+    if (source.exhausted()) {
+        throw EOFException("EOF when feed read bio from source.")
+    }
 
     var consumed = 0
 
