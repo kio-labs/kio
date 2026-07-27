@@ -104,7 +104,7 @@ sealed interface Message {
     data object AuthenticationScmCredential : Message
     data object AuthenticationSspi : Message
     class AuthenticationGssContinue(val byteArray: ByteArray) : Message
-    data class AuthenticationSasl(val mechanisms: String) : Message
+    data class AuthenticationSasl(val mechanisms: List<String>) : Message
     data class AuthenticationSaslContinue(val mechanism: String) : Message
     class AuthenticationSaslFinal(val data: ByteArray) : Message
     class BackendKeyData(val processId: Int, val secretKey: ByteArray) : Message
@@ -196,7 +196,7 @@ suspend fun AsyncSource.readMessage(): Message {
             7 -> Message.AuthenticationGss
             8 -> Message.AuthenticationGssContinue(buffer.readByteArray())
             9 -> Message.AuthenticationSspi
-            10 -> Message.AuthenticationSasl(buffer.readByteArray().toKString())
+            10 -> Message.AuthenticationSasl(buffer.readByteArray().toKStringList())
             11 -> Message.AuthenticationSaslContinue(buffer.readByteArray().toKString())
             12 -> Message.AuthenticationSaslFinal(buffer.readByteArray())
             else -> throw IOException("unknown authentication tag $tag")
@@ -303,7 +303,20 @@ private fun Source.readCString(): String? {
     }
 }
 
-private fun ByteArray.toKString() : String {
+private fun ByteArray.toKStringList(): List<String> = convertToKStringList(this)
+
+private fun convertToKStringList(src: ByteArray) = buildList {
+    var startIndex = 0
+    while (startIndex < src.size) {
+        val endIndex = realEndIndex(src, startIndex, src.size)
+        if (endIndex == startIndex) break
+
+        add(src.decodeToString(startIndex, endIndex))
+        startIndex = endIndex + 1
+    }
+}
+
+private fun ByteArray.toKString(): String {
     val realEndIndex = realEndIndex(this, 0, this.size)
     return decodeToString(0, realEndIndex)
 }

@@ -13,6 +13,8 @@ kotlin {
             implementation(project(":kio-async:io"))
             api(project(":kio-postgres:types"))
             implementation(libs.hash.md5)
+            implementation(libs.hash.sha2)
+            implementation(libs.macs.hmac.sha2)
         }
     }
 }

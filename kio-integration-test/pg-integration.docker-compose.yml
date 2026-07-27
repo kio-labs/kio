@@ -1,0 +1,139 @@
+services:
+  # StartupMessage -> AuthenticationOk
+  postgres-trust:
+    image: postgres:17
+    ports:
+      - "15430:5432"
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_database
+      POSTGRES_HOST_AUTH_METHOD: trust
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U test_user -d test_database
+      interval: 1s
+      timeout: 5s
+      retries: 30
+
+  # AuthenticationCleartextPassword
+  postgres-cleartext-password:
+    image: postgres:17
+    ports:
+      - "15431:5432"
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_database
+      POSTGRES_HOST_AUTH_METHOD: password
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U test_user -d test_database
+      interval: 1s
+      timeout: 5s
+      retries: 30
+
+  # SCRAM-SHA-256：
+  # AuthenticationSASL
+  postgres-scram:
+    image: postgres:17
+    ports:
+      - "15432:5432"
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_database
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    command:
+      - postgres
+      - -c
+      - password_encryption=scram-sha-256
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U test_user -d test_database
+      interval: 1s
+      timeout: 5s
+      retries: 30
+
+  # AuthenticationMD5Password
+  postgres-md5:
+    image: postgres:17
+    ports:
+      - "15433:5432"
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_database
+      POSTGRES_HOST_AUTH_METHOD: md5
+    command:
+      - postgres
+      - -c
+      - password_encryption=md5
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U test_user -d test_database
+      interval: 1s
+      timeout: 5s
+      retries: 30
+
+  # SSLRequest -> 'S' -> TLS handshake
+  postgres-tls-password:
+    build:
+      context: .
+      dockerfile: postgres-tls.Dockerfile
+    ports:
+      - "15434:5432"
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_database
+      POSTGRES_HOST_AUTH_METHOD: password
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/server.key
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U test_user -d test_database
+      interval: 1s
+      timeout: 5s
+      retries: 30
+
+  # TLS + SCRAM：
+  postgres-tls-scram:
+    build:
+      context: .
+      dockerfile: postgres-tls.Dockerfile
+    ports:
+      - "15435:5432"
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_database
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/var/lib/postgresql/server.crt
+      - -c
+      - ssl_key_file=/var/lib/postgresql/server.key
+      - -c
+      - password_encryption=scram-sha-256
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U test_user -d test_database
+      interval: 1s
+      timeout: 5s
+      retries: 30

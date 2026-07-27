@@ -23,6 +23,21 @@ suspend fun AsyncSink.writeStartTlsMessage() {
     writeInt(80877103)
 }
 
+suspend fun AsyncSink.writeSASLInitialResponse(mechanism: String, data: ByteArray) {
+    writeByte('p'.code.toByte())
+    writeBody {
+        writeCString(mechanism)
+        if (data.isEmpty()) writeInt(-1) else writeInt(data.size)
+        if (data.isNotEmpty()) write(data)
+    }
+}
+
+suspend fun AsyncSink.writeSASLResponse(data: ByteArray) {
+    writeByte('p'.code.toByte())
+    writeInt(data.size + 4)
+    write(data)
+}
+
 suspend fun AsyncSink.writeParse(name: String, query: String, paramTypes: List<Int>) {
     writeByte('P'.code.toByte())
     writeBody {
@@ -103,7 +118,6 @@ suspend fun AsyncSink.writeExecute(portal: String, maxRows: Int = 0) {
         writeInt(maxRows)
     }
 }
-
 
 suspend fun AsyncSink.writeSync() {
     writeByte('S'.code.toByte())
