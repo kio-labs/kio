@@ -6,13 +6,20 @@ import kio.async.io.AsyncConnection
 import kio.async.io.AsyncRawConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.io.Buffer
-import kotlinx.io.IOException
+
+class TlsException(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause)
 
 interface SslConnection : AsyncConnection {
-    @Throws(IOException::class, CancellationException::class)
+    @Throws(TlsException::class, CancellationException::class)
     suspend fun handShake()
 
     fun getSelectedAlpn(): String?
+
+    @Throws(TlsException::class)
+    fun getTLSCertificateHash(): ByteArray
 }
 
 expect fun AsyncRawConnection.withClientTls(

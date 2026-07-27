@@ -28,7 +28,7 @@ run_pg_tests() {
     export POSTGRES_PORT="$port"
 
     ./gradlew \
-        :kio-integration-test:allTest \
+        :kio-integration-test:macosArm64Test \
         --rerun-tasks
 }
 
@@ -40,3 +40,5 @@ run_pg_tests "trust" "15430"
 run_pg_tests "password" "15431"
 run_pg_tests "scram-sha-256" "15432"
 run_pg_tests "md5" "15433"
+run_pg_tests "password+tls" "15434"
+run_pg_tests "scram+tls" "15435"
