@@ -21,9 +21,15 @@ import kio.http.route
 import kio.http.sendBinary
 import kio.http.sendText
 import kio.http.websocket
+import kio.postgres.conn.PgConnectionPool
+import kio.postgres.conn.exec
+import kio.postgres.conn.openPgConnection
+import kio.postgres.conn.useConnection
 import kio.websocket.WebSocketEvent
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.seconds
 
 private fun IndexedCallIdInterceptor(): CallInterceptor {
     var index: Int = 0
@@ -42,6 +48,15 @@ private fun LoggerInterceptor(): CallInterceptor = CallInterceptor { context, pr
 suspend fun simpleServer(
     serverSocket: ServerSocket,
 ) {
+    val dbConnPool = PgConnectionPool(2) {
+        openPgConnection(
+            host = "127.0.0.1",
+            port = 15430,
+            user = "test_user",
+            password = "test_password",
+            database = "test_database",
+        )
+    }
     httpServer(serverSocket) {
         inject(
             IndexedCallIdInterceptor(),
@@ -52,6 +67,14 @@ suspend fun simpleServer(
         ) {
             get("/") { call ->
                 call.respondText("hello back; foo value is [${call.parameters["foo"]}]")
+            }
+
+            get("/db") { call ->
+                val result = dbConnPool.useConnection { conn ->
+                    delay(2.seconds)
+                    conn.exec("SELECT 1")
+                }
+                call.respondText("db result: $result")
             }
 
             get("/a/{bbb...}") { call ->
