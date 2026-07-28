@@ -13,6 +13,7 @@ import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.StableRef
 import kotlinx.cinterop.UByteVar
 import kotlinx.cinterop.UIntVar
@@ -33,7 +34,6 @@ import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
-import kotlinx.io.IOException
 import kotlinx.io.InternalIoApi
 import kotlinx.io.UnsafeIoApi
 import kotlinx.io.readByteArray
@@ -75,7 +75,7 @@ internal class InternalSslClientConnection(
 
     init {
         if (alpnProtos.isNotEmpty() && setAlpnProtos(ssl, alpnProtos) != 0) {
-            throw IOException("SSL_set_alpn_protos failed.")
+            throw TlsException("SSL_set_alpn_protos failed.")
         }
         println("client ALPN configured: " + listOf(alpnProtos).joinToString())
 
@@ -93,7 +93,7 @@ internal class InternalSslClientConnection(
             )
 
             if (ret != 1L) {
-                throw IOException(opensslErrorString())
+                throw TlsException(opensslErrorString())
             }
         }
     }
@@ -112,6 +112,10 @@ internal class InternalSslClientConnection(
 
     override fun getSelectedAlpn(): String? {
         return getSelectedAlpn(ssl)
+    }
+
+    override fun getTLSCertificateHash(): ByteArray {
+        return getTLSCertificateHash(ssl)
     }
 
     override suspend fun handShake() {
@@ -162,11 +166,11 @@ internal class InternalSslServerConnection(
 
     init {
         if (SSL_CTX_use_certificate_file(ctx, certificate.file, certificate.type.toType()) != 1) {
-            throw IOException("error when set ca file: ${opensslErrorString()}")
+            throw TlsException("error when set ca file: ${opensslErrorString()}")
         }
 
         if (SSL_CTX_use_PrivateKey_file(ctx, privateKeyFile.file, privateKeyFile.type.toType()) != 1) {
-            throw IOException("error when set pk file: ${opensslErrorString()}")
+            throw TlsException("error when set pk file: ${opensslErrorString()}")
         }
         SSL_CTX_set_alpn_select_cb(ctx, getAlpnSelectCallBack(), supportProtocolsRef.asCPointer())
         SSL_CTX_set_info_callback(ctx, getSslInfoCallBack())
@@ -194,6 +198,10 @@ internal class InternalSslServerConnection(
 
     override fun getSelectedAlpn(): String? {
         return getSelectedAlpn(ssl)
+    }
+
+    override fun getTLSCertificateHash(): ByteArray {
+        return getTLSCertificateHash(ssl)
     }
 
     override val source = SslSource(
@@ -298,7 +306,7 @@ internal suspend fun doHandshake(
         if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
             // ignore
         } else {
-            throw IOException("error when handshake: ${opensslErrorString()}")
+            throw TlsException("error when handshake: ${opensslErrorString()}")
         }
 
         if (SSL_is_init_finished(ssl) == 0) {
@@ -390,7 +398,7 @@ internal suspend fun feedRbioFromSource(
                 val written = BIO_write(rbio, pinnedInput.addressOf(pos), len)
 
                 if (written <= 0) {
-                    throw IOException(opensslErrorString())
+                    throw TlsException(opensslErrorString())
                 }
 
                 consumed = written
@@ -428,4 +436,76 @@ internal fun opensslErrorString(): String {
 private fun CertificateFileType.toType() = when (this) {
     CertificateFileType.PEM -> SSL_FILETYPE_PEM
     CertificateFileType.ASN1 -> SSL_FILETYPE_ASN1
+}
+
+private fun getTLSCertificateHash(ssl: CPointer<SSL>): ByteArray = memScoped {
+    val certificate = SSL_get1_peer_certificate(ssl)
+        ?: throw TlsException(
+            "TLS peer did not provide a certificate"
+        )
+
+    try {
+        val digestNid = alloc<IntVar>()
+
+        val signatureInfoResult = X509_get_signature_info(
+            certificate,
+            digestNid.ptr,
+            null, // public-key algorithm NID
+            null, // security bits
+            null, // flags
+        )
+
+        if (signatureInfoResult != 1) {
+            throw TlsException(
+                "Could not determine TLS certificate signature digest algorithm"
+            )
+        }
+
+        val digestAlgorithm = when (digestNid.value) {
+            NID_md5,
+            NID_sha1,
+                -> EVP_sha256()
+
+            else -> {
+                val digestName = OBJ_nid2sn(digestNid.value)
+                    ?: error("Unknown digest NID: $digestNid")
+                EVP_get_digestbyname(digestName.toKString())
+                    ?: error("Unsupported digest algorithm: ${digestName.toKString()}")
+            }
+        } ?: throw TlsException(
+            "Unsupported TLS certificate signature digest NID: ${digestNid.value}"
+        )
+
+        val hashBuffer = UByteArray(EVP_MAX_MD_SIZE)
+        val hashLength = alloc<UIntVar>()
+
+        val digestResult = hashBuffer.usePinned { pinned ->
+            X509_digest(
+                certificate,
+                digestAlgorithm,
+                pinned.addressOf(0),
+                hashLength.ptr,
+            )
+        }
+
+        if (digestResult != 1) {
+            throw TlsException(
+                "Could not calculate TLS server certificate hash"
+            )
+        }
+
+        val size = hashLength.value.toInt()
+
+        if (size <= 0 || size > hashBuffer.size) {
+            throw TlsException(
+                "Invalid TLS certificate hash size: $size"
+            )
+        }
+
+        ByteArray(size) { index ->
+            hashBuffer[index].toByte()
+        }
+    } finally {
+        X509_free(certificate)
+    }
 }

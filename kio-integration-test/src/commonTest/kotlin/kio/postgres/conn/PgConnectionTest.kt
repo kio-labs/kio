@@ -27,6 +27,7 @@ import kotlinx.serialization.encodeToByteArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -401,11 +402,19 @@ abstract class PgConnectionTest {
         }
     }
 
+    @Test
+    fun authenticationWithScramSha256() = withTestPgDatabase(
+        channelBinding = ChannelBinding.DISABLE
+    ) {
+        exec("select 1")
+    }
+
     val host = getEnv("POSTGRES_HOST") ?: "127.0.0.1"
 
     fun withTestPgDatabase(
+        channelBinding: ChannelBinding = ChannelBinding.PREFER,
         tlsNegotiation: TlsNegotiation = TlsNegotiation.PREFER,
-        tlsWrapper: ((AsyncConnection) -> AsyncConnection)? = null,
+        tlsWrapper: ((AsyncConnection) -> AsyncConnection)? = { it.withClientTls(host) },
         block: suspend PgConnection.() -> Unit
     ) =
         runPollEventLoop(pollerFactory) {
@@ -423,6 +432,7 @@ abstract class PgConnectionTest {
                     database = database,
                     tlsNegotiation = tlsNegotiation,
                     tlsWrapper = tlsWrapper,
+                    channelBinding = channelBinding,
                 )
                 conn.block()
                 conn.close()

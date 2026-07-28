@@ -10,6 +10,8 @@ import kio.postegre.protocol.writeSASLInitialResponse
 import kio.postegre.protocol.writeSASLResponse
 import kio.postegre.protocol.writeStartTlsMessage
 import kio.postegre.protocol.writeStartupMessage
+import kio.tls.SslConnection
+import kio.tls.TlsException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.io.IOException
 import kotlin.experimental.xor
@@ -27,6 +29,7 @@ suspend fun openPgConnection(
     onNotice: (PgException) -> Unit = {},
     tlsWrapper: ((AsyncConnection) -> AsyncConnection)? = null,
     tlsNegotiation: TlsNegotiation = TlsNegotiation.PREFER,
+    channelBinding: ChannelBinding = ChannelBinding.PREFER
 ): PgConnection {
     val conn = openConnection(host, port).buffered()
         .negotiationTlsConnection(tlsNegotiation, tlsWrapper)
@@ -67,7 +70,11 @@ suspend fun openPgConnection(
                 }
 
                 is Message.AuthenticationSasl -> {
-                    conn.scramAuth(msg.mechanisms, password ?: error("password must be set."))
+                    conn.scramAuth(
+                        msg.mechanisms,
+                        password ?: error("password must be set."),
+                        channelBinding
+                    )
                 }
 
                 is Message.BackendKeyData -> {
@@ -108,22 +115,60 @@ suspend fun openPgConnection(
     }
 }
 
+enum class ChannelBinding {
+    DISABLE,
+    PREFER,
+    REQUIRE,
+}
+
 enum class TlsNegotiation {
     DIRECT,
     PREFER,
     REQUIRE,
 }
 
-private suspend fun AsyncConnection.scramAuth(mechanisms: List<String>, password: String) {
-    if (!mechanisms.contains(SCRAM_SHA256)) TODO("Support $mechanisms")
+private suspend fun AsyncConnection.scramAuth(
+    mechanisms: List<String>,
+    password: String,
+    channelBinding: ChannelBinding
+) {
+    val serverHasPlus = mechanisms.contains(SCRAM_SHA256_PLUS)
+    if (channelBinding == ChannelBinding.REQUIRE && !serverHasPlus) {
+        throw IllegalStateException("channel binding required but server does not support SCRAM-SHA-256-PLUS")
+    }
+
+    val isTls = this is SslConnection
+
+    var selectMechanism = SCRAM_SHA256
+    var bindingData: ByteArray? = null
+
+    if (isTls && channelBinding != ChannelBinding.DISABLE) {
+        try {
+            bindingData = this.getTLSCertificateHash()
+        } catch (t: TlsException) {
+            if (channelBinding == ChannelBinding.REQUIRE) {
+                throw IllegalStateException("channel binding required but failed to get server certificate hash.", t)
+            }
+        }
+        if (bindingData != null && serverHasPlus) {
+            selectMechanism = SCRAM_SHA256_PLUS
+        }
+    }
+    if (channelBinding == ChannelBinding.REQUIRE && selectMechanism != SCRAM_SHA256_PLUS) {
+        throw IllegalStateException("channel binding required but selected mechanism is not SCRAM-SHA-256-PLUS.")
+    }
 
     // write client first message.
     val clientNonce = Base64.encode(Random.nextBytes(18))
     val clientFirstMessageBare = "n=,r=$clientNonce"
-    val clientGS2Header = "n,,"
+    val clientGS2Header = when(selectMechanism) {
+        SCRAM_SHA256 -> "n,,"
+        SCRAM_SHA256_PLUS -> "p=tls-server-end-point,,"
+        else -> throw IllegalStateException("UnSupport mechanism $selectMechanism")
+    }
     val clientFirstMessage = "$clientGS2Header$clientFirstMessageBare"
     sink.writeSASLInitialResponse(
-        mechanism = SCRAM_SHA256,
+        mechanism = selectMechanism,
         data = clientFirstMessage.encodeToByteArray()
     )
     sink.flush()
@@ -157,7 +202,11 @@ private suspend fun AsyncConnection.scramAuth(mechanisms: List<String>, password
     }
 
     // write client final message
-    val channelBindingEncoded = Base64.encode(clientGS2Header.encodeToByteArray())
+    var channelBindInput = clientGS2Header.encodeToByteArray()
+    if (selectMechanism == SCRAM_SHA256_PLUS) {
+        channelBindInput += bindingData!!
+    }
+    val channelBindingEncoded = Base64.encode(channelBindInput)
     val clientFinalMessageWithoutProof = "c=$channelBindingEncoded,r=$clientAndServerNotice"
 
     val saltedPassword = pbkdf2HmacSha256(password.encodeToByteArray(), salt, iteration)
