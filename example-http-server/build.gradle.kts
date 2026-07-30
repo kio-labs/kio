@@ -18,6 +18,7 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":kio-http"))
             implementation(project(":kio-tls"))
+            implementation(project(":kio-postgres:conn"))
         }
         jvmMain.dependencies {
             implementation(project(":kio-async:poller-jvm-select"))
