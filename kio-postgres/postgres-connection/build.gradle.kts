@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    id("maven-publish-config")
 }
 
 kotlin {
@@ -9,10 +10,10 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            implementation(project(":kio-postgres:protocol"))
-            implementation(project(":kio-async:io"))
+            implementation(project(":kio-postgres:postgres-protocol"))
+            implementation(project(":kio-postgres:postgres-types"))
+            implementation(project(":kio-async:async-io"))
             implementation(project(":kio-tls"))
-            api(project(":kio-postgres:types"))
             implementation(libs.hash.md5)
             implementation(libs.hash.sha2)
             implementation(libs.macs.hmac.sha2)

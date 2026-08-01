@@ -10,8 +10,28 @@ import io.ktor.http.withCharset
 import io.ktor.utils.io.charsets.Charsets
 import io.ktor.utils.io.core.toByteArray
 import kio.async.AsyncSource
-import kio.async.writeString
 import kotlin.text.equals
+import kotlinx.html.TagConsumer
+import kotlinx.html.stream.createHTML
+
+suspend fun CallContext.respondHtml(
+    status: HttpStatusCode? = null,
+    configHeaders: HeadersBuilder.() -> Unit = {},
+    configTrailers: HeadersBuilder.() -> Unit = {},
+    block: TagConsumer<*>.() -> Unit,
+) {
+    val html = createHTML()
+    html.block()
+    val htmlStr = html.finalize()
+
+    respondText(
+        htmlStr,
+        ContentType.Text.Html,
+        status,
+        configHeaders,
+        configTrailers
+    )
+}
 
 suspend fun CallContext.respond(
     status: HttpStatusCode, message: String = status.description

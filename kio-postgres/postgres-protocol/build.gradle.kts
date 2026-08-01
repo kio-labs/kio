@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    id("maven-publish-config")
 }
 
 kotlin {
@@ -9,8 +10,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            api(project(":kio-http"))
-            api(libs.kotlinx.html)
+            api(project(":kio-async:async-core"))
         }
     }
 }

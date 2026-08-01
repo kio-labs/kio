@@ -9,7 +9,7 @@ import kio.http.DefaultExceptionHandler
 import kio.http.currentCallId
 import kio.http.currentLoggingBackend
 import kio.http.get
-import kio.http.html.respondHtml
+import kio.http.respondHtml
 import kio.http.httpServer
 import kio.http.newLogger
 import kio.http.post

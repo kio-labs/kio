@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    id("maven-publish-config")
 }
 
 kotlin {
@@ -12,9 +13,10 @@ kotlin {
             freeCompilerArgs.set(listOf("-Xcontext-parameters"))
         }
         commonMain.dependencies {
+            api(libs.kotlinx.html)
             api(libs.ktor.http)
             implementation(project(":kio-tls"))
-            implementation(project(":kio-async:io"))
+            implementation(project(":kio-async:async-io"))
             implementation(project(":kio-compression"))
         }
 

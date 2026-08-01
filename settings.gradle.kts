@@ -1,4 +1,5 @@
 pluginManagement {
+    includeBuild("build-logic")
     repositories {
         google {
             content {
@@ -23,20 +24,19 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "kio"
-include(":kio-async:core")
+include(":kio-async:async-core")
 include(":kio-async:polling-io")
 include(":kio-async:poller-poll")
 include(":kio-async:poller-kqueue")
 include(":kio-async:poller-jvm-select")
 include(":kio-async:poller-linux-epoll")
 include(":kio-async:poller-linux-uring")
-include(":kio-async:io")
-include(":kio-postgres:conn")
-include(":kio-postgres:protocol")
-include(":kio-postgres:types")
+include(":kio-async:async-io")
+include(":kio-postgres:postgres-connection")
+include(":kio-postgres:postgres-protocol")
+include(":kio-postgres:postgres-types")
 include(":kio-compression")
 include(":kio-http")
-include(":kio-http:html")
 include(":wsautobahntest:server")
 include(":wsautobahntest:client")
 include(":example-http-server")

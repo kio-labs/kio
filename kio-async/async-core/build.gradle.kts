@@ -1,22 +1,25 @@
+@file:OptIn(ExperimentalKotlinGradlePluginApi::class)
+
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.serialization)
+    id("maven-publish-config")
 }
 
 kotlin {
     jvm()
     macosArm64()
     linuxX64()
-
     sourceSets {
         commonMain.dependencies {
             api(libs.kotlinx.io)
-            api(libs.kotlinx.serialization.core)
-            api(libs.kotlinx.datetime)
+            api(libs.kotlinx.coroutines.core)
         }
 
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }
