@@ -4,6 +4,7 @@ import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    id("maven-publish-config")
 }
 
 kotlin {
@@ -11,7 +12,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            api(project(":kio-async:core"))
+            api(project(":kio-async:async-core"))
             implementation(project(":kio-async:polling-io"))
         }
     }

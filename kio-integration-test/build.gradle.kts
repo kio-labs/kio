@@ -13,9 +13,9 @@ kotlin {
     linuxX64()
     sourceSets {
         commonTest.dependencies {
-            implementation(project(":kio-async:io"))
+            implementation(project(":kio-async:async-io"))
             implementation(project(":kio-tls"))
-            implementation(project(":kio-postgres:conn"))
+            implementation(project(":kio-postgres:postgres-connection"))
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }

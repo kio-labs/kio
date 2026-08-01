@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    id("maven-publish-config")
 }
 
 kotlin {
@@ -14,7 +15,7 @@ kotlin {
         commonMain.dependencies {
             api(libs.ktor.http)
             implementation(project(":kio-tls"))
-            implementation(project(":kio-async:io"))
+            implementation(project(":kio-async:async-io"))
             implementation(project(":kio-compression"))
         }
 

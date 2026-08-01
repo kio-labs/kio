@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
+    id("maven-publish-config")
 }
 
 kotlin {
@@ -9,7 +10,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            implementation(project(":kio-async:core"))
+            implementation(project(":kio-async:async-core"))
         }
 
         commonTest.dependencies {
