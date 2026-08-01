@@ -13,6 +13,7 @@ kotlin {
             freeCompilerArgs.set(listOf("-Xcontext-parameters"))
         }
         commonMain.dependencies {
+            api(libs.kotlinx.html)
             api(libs.ktor.http)
             implementation(project(":kio-tls"))
             implementation(project(":kio-async:async-io"))

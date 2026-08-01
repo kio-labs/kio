@@ -6,13 +6,10 @@ import kio.http.CallId
 import kio.http.CallInterceptor
 import kio.http.CoroutineLogger
 import kio.http.DefaultExceptionHandler
-import kio.http.RequestBodyDecode
-import kio.http.RespondedBodyEncode
 import kio.http.currentCallId
-import kio.http.currentLogger
 import kio.http.currentLoggingBackend
-import kio.http.trace
 import kio.http.get
+import kio.http.respondHtml
 import kio.http.httpServer
 import kio.http.newLogger
 import kio.http.post
@@ -20,15 +17,17 @@ import kio.http.respondText
 import kio.http.route
 import kio.http.sendBinary
 import kio.http.sendText
+import kio.http.staticResource
 import kio.http.websocket
 import kio.postgres.conn.PgConnectionPool
 import kio.postgres.conn.exec
 import kio.postgres.conn.openPgConnection
 import kio.postgres.conn.useConnection
 import kio.websocket.WebSocketEvent
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.html.a
+import kotlinx.html.div
 import kotlin.time.Duration.Companion.seconds
 
 private fun IndexedCallIdInterceptor(): CallInterceptor {
@@ -62,13 +61,9 @@ suspend fun simpleServer(
             IndexedCallIdInterceptor(),
             LoggerInterceptor(),
             DefaultExceptionHandler,
-            RequestBodyDecode,
-            RespondedBodyEncode
+//            RequestBodyDecode,
+//            RespondedBodyEncode
         ) {
-            get("/") { call ->
-                call.respondText("hello back; foo value is [${call.parameters["foo"]}]")
-            }
-
             get("/db") { call ->
                 val result = dbConnPool.useConnection { conn ->
                     delay(2.seconds)
@@ -111,6 +106,18 @@ suspend fun simpleServer(
                     }
                 }
             }
+
+            post("/clicked") { call ->
+                call.respondHtml {
+                    div {
+                        a {
+                            +"Hello wrold"
+                        }
+                    }
+                }
+            }
+
+            staticResource("/", "dist/")
         }
     }
 }

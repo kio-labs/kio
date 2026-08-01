@@ -1,6 +1,7 @@
 [versions]
 kotlin = "2.4.10"
 kotlinx-io = "0.9.1"
+kotlinx-html = "0.12.0"
 kotlinxCoroutines = "1.11.0"
 serialization = "1.11.0"
 kotlinxDatetime = "0.8.0"
@@ -13,6 +14,7 @@ mavenPublish = "0.36.0"
 
 [libraries]
 kotlinx-io = { group = "org.jetbrains.kotlinx", name = "kotlinx-io-core", version.ref = "kotlinx-io" }
+kotlinx-html = { group = "org.jetbrains.kotlinx", name = "kotlinx-html", version.ref = "kotlinx-html" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 kotlinx-serialization-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-core", version.ref = "serialization" }
 kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinxDatetime" }
