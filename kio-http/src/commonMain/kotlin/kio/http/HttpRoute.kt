@@ -6,6 +6,30 @@ import io.ktor.http.ParametersBuilder
 import io.ktor.http.parametersOf
 import io.ktor.http.parseQueryString
 
+fun Route.get(uri: String = "", block: suspend (CallContext) -> Unit) {
+    registerCall(HttpMethod.Get, uri, block)
+}
+
+fun Route.post(uri: String = "", block: suspend (CallContext) -> Unit) {
+    registerCall(HttpMethod.Post, uri, block)
+}
+
+fun Route.patch(uri: String = "", block: suspend (CallContext) -> Unit) {
+    registerCall(HttpMethod.Patch, uri, block)
+}
+
+fun Route.put(uri: String = "", block: suspend (CallContext) -> Unit) {
+    registerCall(HttpMethod.Put, uri, block)
+}
+
+fun Route.delete(uri: String = "", block: suspend (CallContext) -> Unit) {
+    registerCall(HttpMethod.Delete, uri, block)
+}
+
+fun Route.method(method: HttpMethod, uri: String = "", block: suspend (CallContext) -> Unit) {
+    registerCall(method, uri, block)
+}
+
 fun Route.route(path: String, block: Route.() -> Unit) {
     createRouteFromPath(path).apply(block)
 }
