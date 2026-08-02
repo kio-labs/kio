@@ -5,12 +5,14 @@ import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.Parameters
+import io.ktor.http.parseQueryString
 import kio.async.AsyncRawSource
 import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.buffered
 import kio.async.emptyAsyncRawSource
 import kio.async.io.AsyncConnection
+import kio.async.readString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
 
@@ -65,6 +67,10 @@ class CallContext internal constructor(
     internal fun wrapRequestSource(block: (AsyncRawSource) -> AsyncRawSource) {
         _requestBody = block(_requestBody)
     }
+}
+
+suspend fun CallContext.receiveFormParameters(): Parameters {
+    return parseQueryString(requestBody.readString())
 }
 
 internal fun foldCallInterceptor(
