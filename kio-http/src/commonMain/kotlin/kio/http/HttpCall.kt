@@ -25,14 +25,6 @@ fun interface CallInterceptor {
     )
 }
 
-fun Route.get(uri: String = "", block: suspend (CallContext) -> Unit) {
-    registerCall(HttpMethod.Get, uri, block)
-}
-
-fun Route.post(uri: String = "", block: suspend (CallContext) -> Unit) {
-    registerCall(HttpMethod.Post, uri, block)
-}
-
 class CallContext internal constructor(
     internal val conn: AsyncConnection,
     requestHead: HttpRequestHead,
