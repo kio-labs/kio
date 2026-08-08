@@ -10,7 +10,7 @@ macs = "0.8.0"
 ktorHttp = "3.5.1"
 linuxUring = "2.15"
 openssl = "4.0.1.1"
-mavenPublish = "0.36.0"
+mavenPublish = "0.37.0"
 
 [libraries]
 kotlinx-io = { group = "org.jetbrains.kotlinx", name = "kotlinx-io-core", version.ref = "kotlinx-io" }
