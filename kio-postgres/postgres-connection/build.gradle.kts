@@ -10,8 +10,8 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            api(project(":kio-postgres:postgres-types"))
             implementation(project(":kio-postgres:postgres-protocol"))
-            implementation(project(":kio-postgres:postgres-types"))
             implementation(project(":kio-async:async-io"))
             implementation(project(":kio-tls"))
             implementation(libs.hash.md5)

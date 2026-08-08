@@ -1,5 +1,6 @@
 package kio.http
 
+import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HeadersBuilder
@@ -17,57 +18,13 @@ private const val MAX_HEADER_LINE_SIZE = 8192L
 
 private val CRLF = "\r\n".encodeToByteString()
 
-/**
- * Parse request body as multipart/form-data.
- */
-fun CallContext.receiveMultipart(): MultipartReader {
-    val rawContentType = checkNotNull(
-        requestHeaders[HttpHeaders.ContentType]
-    ) {
-        "No content type provided for multipart"
-    }
-
-    val contentType = ContentType.parse(rawContentType)
-
-    check(contentType.match(ContentType.MultiPart.FormData)) {
-        "Expected multipart/form-data, got $contentType"
-    }
-
-    val boundary = contentType.parameters
-        .firstOrNull {
-            it.name.equals("boundary", ignoreCase = true)
-        }
-        ?.value
-        ?: throw IOException(
-            "Content-Type does not contain multipart boundary"
-        )
-
-    if (boundary.isEmpty()) {
-        throw IOException("Multipart boundary is empty")
-    }
-
-    return MultipartReader(
-        source = requestBody,
-        boundary = boundary,
-    )
-}
-
 class MultipartPart internal constructor(
     val headers: Headers,
     val body: AsyncRawSource,
 ) {
-    val contentType: ContentType?
-        get() {
-            val value = headers[HttpHeaders.ContentType]
-                ?: return null
-
-            return runCatching {
-                ContentType.parse(value)
-            }.getOrNull()
-        }
-
-    val contentDisposition: String?
-        get() = headers[HttpHeaders.ContentDisposition]
+    val contentDisposition: ContentDisposition? = headers[HttpHeaders.ContentDisposition]?.let {
+        ContentDisposition.parse(it)
+    }
 }
 
 class MultipartReader internal constructor(

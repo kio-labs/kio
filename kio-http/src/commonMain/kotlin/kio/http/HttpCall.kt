@@ -1,7 +1,9 @@
 package kio.http
 
+import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HeadersBuilder
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.Parameters
 import io.ktor.http.parseQueryString
@@ -14,6 +16,7 @@ import kio.async.io.AsyncConnection
 import kio.async.readString
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
+import kotlinx.io.IOException
 
 typealias CallHandler = suspend CallContext.() -> Unit
 
@@ -62,6 +65,41 @@ class CallContext internal constructor(
 
 suspend fun CallContext.receiveFormParameters(): Parameters {
     return parseQueryString(requestBody.readString())
+}
+
+/**
+ * Parse request body as multipart/form-data.
+ */
+fun CallContext.receiveMultipart(): MultipartReader {
+    val rawContentType = checkNotNull(
+        requestHeaders[HttpHeaders.ContentType]
+    ) {
+        "No content type provided for multipart"
+    }
+
+    val contentType = ContentType.parse(rawContentType)
+
+    check(contentType.match(ContentType.MultiPart.FormData)) {
+        "Expected multipart/form-data, got $contentType"
+    }
+
+    val boundary = contentType.parameters
+        .firstOrNull {
+            it.name.equals("boundary", ignoreCase = true)
+        }
+        ?.value
+        ?: throw IOException(
+            "Content-Type does not contain multipart boundary"
+        )
+
+    if (boundary.isEmpty()) {
+        throw IOException("Multipart boundary is empty")
+    }
+
+    return MultipartReader(
+        source = requestBody,
+        boundary = boundary,
+    )
 }
 
 internal fun foldCallInterceptor(

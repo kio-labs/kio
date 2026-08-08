@@ -20,12 +20,16 @@ class HttpCallTest {
             post("/") {
                 val reader = it.receiveMultipart()
                 reader.nextPart()?.also {
+                    assertEquals("form-data", it.contentDisposition?.disposition)
+                    assertEquals("a story", it.contentDisposition?.name)
                     assertEquals(
                         "Hi user. The snake you gave me for free ate all the birds. Please take it back ASAP.",
                         it.body.buffered().readString()
                     )
                 }
                 reader.nextPart()?.also {
+                    assertEquals("form-data", it.contentDisposition?.disposition)
+                    assertEquals("attachment", it.contentDisposition?.name)
                     assertEquals("File content goes here", it.body.buffered().readString())
                 }
                 assertNull(reader.nextPart())
