@@ -83,12 +83,14 @@ private class InternalPostegreDecoder(
     }
 
     override fun decodeNotNullMark(): Boolean {
-        val size = input.readInt()
-        val isNotNull = size != -1
-        if (isNotNull) {
-            input.writeInt(size)
+        input.require(4)
+        val size = input.peek().readInt()
+        if (size == -1) {
+            input.skip(4)
+            return false
         }
-        return isNotNull
+
+        return true
     }
 }
 

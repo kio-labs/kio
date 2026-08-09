@@ -33,6 +33,19 @@ private class InternalPostgresEncoder(
 ) : AbstractEncoder(), Encoder, CompositeEncoder {
     override val serializersModule: SerializersModule = postgres.serializersModule
 
+    override fun <T : Any> encodeNullableSerializableElement(
+        descriptor: SerialDescriptor,
+        index: Int,
+        serializer: SerializationStrategy<T>,
+        value: T?
+    ) {
+        if (value == null) {
+            encodeNull()
+        } else {
+            encodeSerializableElement(descriptor, index, serializer, value)
+        }
+    }
+
     override fun <T> encodeSerializableElement(
         descriptor: SerialDescriptor,
         index: Int,
