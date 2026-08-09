@@ -1,4 +1,4 @@
-package kio.postegre.types
+package kio.postgres.types
 
 import kotlinx.io.Buffer
 import kotlinx.io.Sink
@@ -22,12 +22,20 @@ internal class PostgresEncoder(
     override val serializersModule: SerializersModule = postgres.serializersModule
 
     override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
-        return InternalPostgresEncoder(postgres, sink)
+        return when {
+            descriptor.isPostgresBuildInType() -> {
+                PostgresPrimitiveEncoder(postgres, sink)
+            }
+            else -> {
+                sink.writeShort(descriptor.elementsCount.toShort())
+                InternalCompositePostgresEncoder(postgres, sink)
+            }
+        }
     }
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-private class InternalPostgresEncoder(
+private class InternalCompositePostgresEncoder(
     private val postgres: PostgresFormat,
     private val sink: Sink,
 ) : AbstractEncoder(), Encoder, CompositeEncoder {
@@ -54,21 +62,21 @@ private class InternalPostgresEncoder(
     ) {
         val elementDescriptor = descriptor.getElementDescriptor(index)
         val encoder = when {
-            elementDescriptor.isPostegreBuildInType() -> {
+            elementDescriptor.isPostgresBuildInType() -> {
                 PostgresPrimitiveEncoder(postgres, sink)
             }
 
-            elementDescriptor.isPostegreMultiRangeType() -> {
+            elementDescriptor.isPostgresMultiRangeType() -> {
                 PostgresMultiRangeEncoder(sink, postgres)
             }
 
             elementDescriptor.kind == StructureKind.LIST -> {
                 val pgArray = descriptor.getElementAnnotations(index).filterIsInstance<PgArray>()
                     .singleOrNull()
-                PostegreArrayEncoder(sink, pgArray, postgres)
+                PostgresArrayEncoder(sink, pgArray, postgres)
             }
 
-            elementDescriptor.isPostegreRangeType() -> {
+            elementDescriptor.isPostgresRangeType() -> {
                 PostgresRangeEncoder(sink, postgres)
             }
 
@@ -104,7 +112,7 @@ private class PostgresMultiRangeEncoder(
     ) {
         val elementDescriptor = serializer.descriptor
         val encoder = when {
-            elementDescriptor.isPostegreRangeType() -> {
+            elementDescriptor.isPostgresRangeType() -> {
                 PostgresRangeEncoder(tempBuffer, postgres)
             }
 
@@ -140,7 +148,7 @@ private class PostgresRangeEncoder(
     ) {
         val elementDescriptor = descriptor.getElementDescriptor(index)
         val encoder = when {
-            elementDescriptor.isPostegreBuildInType() -> {
+            elementDescriptor.isPostgresBuildInType() -> {
                 PostgresPrimitiveEncoder(postgres, tempBuffer)
             }
             else -> error("not support type for ${elementDescriptor.serialName} in range encoder")
@@ -155,12 +163,12 @@ private class PostgresRangeEncoder(
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-private class PostegreArrayEncoder(
+private class PostgresArrayEncoder(
     private val sink: Sink,
     private val pgArray: PgArray? = null,
-    private val postegre: PostgresFormat,
+    private val postgres: PostgresFormat,
 ) : AbstractEncoder(), Encoder, CompositeEncoder {
-    override val serializersModule: SerializersModule = postegre.serializersModule
+    override val serializersModule: SerializersModule = postgres.serializersModule
 
     var hasNull = false
     var collectionSize: Int? = null
@@ -175,10 +183,10 @@ private class PostegreArrayEncoder(
     ) {
         val elementDescriptor = descriptor.getElementDescriptor(index)
         when {
-            elementDescriptor.isPostegreBuildInType() -> {
-                if (elementOid == null) elementOid = elementDescriptor.postegrePrimitiveTypeOid()
+            elementDescriptor.isPostgresBuildInType() -> {
+                if (elementOid == null) elementOid = elementDescriptor.postgresPrimitiveTypeOid()
 
-                val encoder = PostgresPrimitiveEncoder(postegre, tempBuffer)
+                val encoder = PostgresPrimitiveEncoder(postgres, tempBuffer)
                 encoder.encodeSerializableValue(serializer, value)
                 if (encoder.isMarkedNull) hasNull = true
             }

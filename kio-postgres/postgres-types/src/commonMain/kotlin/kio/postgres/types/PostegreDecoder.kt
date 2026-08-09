@@ -1,4 +1,4 @@
-package kio.postegre.types
+package kio.postgres.types
 
 import kotlinx.io.Buffer
 import kotlinx.io.Source
@@ -25,26 +25,39 @@ internal interface PgCompositeDecoder : CompositeDecoder {
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-internal class PostegreDecoder(
-    val postegre: PostgresFormat,
+internal class PostgresDecoder(
+    val postgres: PostgresFormat,
     private val input: Buffer
 ) : AbstractDecoder(), Decoder, CompositeDecoder {
-    override val serializersModule: SerializersModule = postegre.serializersModule
+    override val serializersModule: SerializersModule = postgres.serializersModule
 
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
         TODO("Not yet implemented")
     }
 
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder {
-        return InternalPostegreDecoder(postegre, input)
+        return when {
+            descriptor.isPostgresBuildInType() -> {
+                val buffer = Buffer()
+                val isNull = input.readPgElementTo(buffer)
+                check(input.exhausted())
+                PostgresPrimitiveDecoder(postgres, buffer, isNull)
+            }
+
+            else -> {
+                InternalCompositePostgresDecoder(postgres, input)
+            }
+        }
     }
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-private class InternalPostegreDecoder(
+private class InternalCompositePostgresDecoder(
     private val postegre: PostgresFormat,
     private val input: Buffer,
 ) : AbstractDecoder(), Decoder, CompositeDecoder {
+    private val elementCount = input.readShort().toInt()
+
     override val serializersModule: SerializersModule = postegre.serializersModule
 
     override fun decodeSequentially(): Boolean = true
@@ -57,24 +70,24 @@ private class InternalPostegreDecoder(
         val buffer = Buffer()
         val isNull = input.readPgElementTo(buffer)
         val decoder = when {
-            descriptor.isPostegreBuildInType() -> {
-                PostegrePrimitiveDecoder(postegre, buffer, isNull)
+            descriptor.isPostgresBuildInType() -> {
+                PostgresPrimitiveDecoder(postegre, buffer, isNull)
             }
 
-            descriptor.isPostegreRangeType() -> {
-                PostegreRangeDecoder(postegre, buffer)
+            descriptor.isPostgresRangeType() -> {
+                PostgresRangeDecoder(postegre, buffer)
             }
 
-            descriptor.isPostegreMultiRangeType() -> {
-                PostegreMultiRangeDecoder(postegre, buffer)
+            descriptor.isPostgresMultiRangeType() -> {
+                PostgresMultiRangeDecoder(postegre, buffer)
             }
 
             descriptor.kind == StructureKind.LIST -> {
-                PostegreArrayDecoder(postegre, buffer)
+                PostgresArrayDecoder(postegre, buffer)
             }
 
             descriptor.kind == StructureKind.CLASS -> {
-                PostegreCompositeDecoder(postegre, descriptor, buffer)
+                PostgresCompositeDecoder(postegre, descriptor, buffer)
             }
 
             else -> error("Not support ${descriptor.serialName}")
@@ -95,7 +108,7 @@ private class InternalPostegreDecoder(
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-internal class PostegreCompositeDecoder(
+internal class PostgresCompositeDecoder(
     val postegre: PostgresFormat,
     descriptor: SerialDescriptor,
     val source: Buffer,
@@ -121,16 +134,16 @@ internal class PostegreCompositeDecoder(
         val elementDescriptor = descriptor.getElementDescriptor(index)
         val oid = source.readInt()
         val decoder = when {
-            elementDescriptor.isPostegreBuildInType() -> {
+            elementDescriptor.isPostgresBuildInType() -> {
                 val buffer = Buffer()
                 val isNull = source.readPgElementTo(buffer)
-                PostegrePrimitiveDecoder(postegre, buffer, isNull)
+                PostgresPrimitiveDecoder(postegre, buffer, isNull)
             }
 
             elementDescriptor.kind == StructureKind.CLASS -> {
                 val buffer = Buffer()
                 source.readPgElementTo(buffer)
-                PostegreCompositeDecoder(postegre, elementDescriptor, buffer)
+                PostgresCompositeDecoder(postegre, elementDescriptor, buffer)
             }
 
             else -> this
@@ -141,7 +154,7 @@ internal class PostegreCompositeDecoder(
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-internal class PostegreMultiRangeDecoder(
+internal class PostgresMultiRangeDecoder(
     val postegre: PostgresFormat,
     val source: Buffer,
 ) : AbstractDecoder(), Decoder, CompositeDecoder {
@@ -157,8 +170,8 @@ internal class PostegreMultiRangeDecoder(
         val buffer = Buffer()
         val isNull = source.readPgElementTo(buffer)
         val decoder = when {
-            descriptor.isPostegreRangeType() -> {
-                PostegreRangeDecoder(postegre, buffer)
+            descriptor.isPostgresRangeType() -> {
+                PostgresRangeDecoder(postegre, buffer)
             }
 
             else -> error("not support decode ${descriptor.serialName} in multi-range decoder")
@@ -170,8 +183,9 @@ internal class PostegreMultiRangeDecoder(
         TODO("Not yet implemented")
     }
 }
+
 @OptIn(ExperimentalSerializationApi::class)
-internal class PostegreRangeDecoder(
+internal class PostgresRangeDecoder(
     val postegre: PostgresFormat,
     val source: Buffer,
 ) : AbstractDecoder(), Decoder, CompositeDecoder {
@@ -196,8 +210,8 @@ internal class PostegreRangeDecoder(
         val isNull = source.readPgElementTo(buffer)
 
         val decoder = when {
-            descriptor.isPostegreBuildInType() -> {
-                PostegrePrimitiveDecoder(postegre, buffer, isNull)
+            descriptor.isPostgresBuildInType() -> {
+                PostgresPrimitiveDecoder(postegre, buffer, isNull)
             }
 
             else -> error("not support ${descriptor.serialName} in range decoder")
@@ -208,7 +222,7 @@ internal class PostegreRangeDecoder(
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-internal class PostegreArrayDecoder(
+internal class PostgresArrayDecoder(
     val postegre: PostgresFormat,
     val source: Buffer,
 ) : AbstractDecoder(), Decoder, CompositeDecoder {
@@ -251,15 +265,15 @@ internal class PostegreArrayDecoder(
             }
         }
 
-        check(elementOid == elementDescriptor.postegrePrimitiveTypeOid()) {
+        check(elementOid == elementDescriptor.postgresPrimitiveTypeOid()) {
             "required oid is $elementOid. ${elementDescriptor.serialName}"
         }
 
         val decoder = when {
-            elementDescriptor.isPostegreBuildInType() -> {
+            elementDescriptor.isPostgresBuildInType() -> {
                 val buffer = Buffer()
                 val isNull = source.readPgElementTo(buffer)
-                PostegrePrimitiveDecoder(postegre, buffer, isNull)
+                PostgresPrimitiveDecoder(postegre, buffer, isNull)
             }
 
             else -> this
@@ -283,7 +297,7 @@ private fun Source.readPgElementTo(buffer: Buffer): Boolean {
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-private class PostegrePrimitiveDecoder(
+private class PostgresPrimitiveDecoder(
     postegre: PostgresFormat,
     private val buffer: Buffer,
     private val isNull: Boolean,

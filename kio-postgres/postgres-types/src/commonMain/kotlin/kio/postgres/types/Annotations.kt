@@ -1,4 +1,4 @@
-package kio.postegre.types
+package kio.postgres.types
 
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialInfo

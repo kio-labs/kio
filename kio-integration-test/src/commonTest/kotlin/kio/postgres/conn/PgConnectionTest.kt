@@ -6,14 +6,18 @@ import kio.async.io.buffered
 import kio.async.io.openPipe
 import kio.async.runPollEventLoop
 import kio.async.writeString
-import kio.postegre.types.PgBool
-import kio.postegre.types.PgInt4
-import kio.postegre.types.PgText
-import kio.postegre.types.PgTimestamp
-import kio.postegre.types.PostgresFormat
+import kio.postgres.types.PgBool
+import kio.postgres.types.PgInt4
+import kio.postgres.types.PgText
+import kio.postgres.types.PgTimestamp
+import kio.postgres.types.PostgresFormat
+import kio.postgres.types.PostgresInt4Serializer
+import kio.postgres.types.PostgresTextSerializer
 import kio.tls.withClientTls
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.toCollection
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -27,7 +31,6 @@ import kotlinx.serialization.encodeToByteArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
-import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -45,7 +48,9 @@ abstract class PgConnectionTest {
         class Foo(val a: PgInt4)
         assertEquals(
             "INSERT 0 1",
-            exec("insert into foo(id) values($1)", Foo(1))
+            exec("insert into foo(id) values($1)") {
+                param(1, PostgresInt4Serializer)
+            }
         )
         assertEquals(
             "DROP TABLE",
@@ -74,7 +79,11 @@ abstract class PgConnectionTest {
     fun execFailureWithArgumentTest() = withTestPgDatabase {
         @Serializable
         class Foo(val a: PgInt4)
-        assertFails { exec("selct $1;", Foo(1)) }
+        assertFails {
+            exec("selct $1;") {
+                param(1, PostgresInt4Serializer)
+            }
+        }
     }
 
     @Test
@@ -104,6 +113,34 @@ abstract class PgConnectionTest {
                 )
             )
         )
+    }
+
+    @Test
+    fun queryWithParameterTest() = withTestPgDatabase {
+        @Serializable
+        data class Foo(val a: PgInt4, val b: PgText)
+
+        exec("create temporary table foo(a int4, b varchar)")
+        exec("insert into foo(a, b) values (12, 'hello')")
+        val ret: Flow<Foo> = query("select * from foo where a = $1 and b = $2") {
+            param(12, PostgresInt4Serializer)
+            param("hello", PostgresTextSerializer)
+        }
+        assertEquals(Foo(12, "hello"), ret.firstOrNull())
+    }
+
+    @Test
+    fun execWithParameterTest() = withTestPgDatabase {
+        @Serializable
+        data class Foo(val a: PgInt4, val b: PgText)
+
+        exec("create temporary table foo(a int4, b varchar)")
+        exec("insert into foo(a, b) values (12, 'hello')")
+        val ret = exec("select * from foo where a = $1 and b = $2") {
+            param(12, PostgresInt4Serializer)
+            param("hello", PostgresTextSerializer)
+        }
+        assertEquals("SELECT 1", ret)
     }
 
     @Test
@@ -418,8 +455,8 @@ abstract class PgConnectionTest {
         block: suspend PgConnection.() -> Unit
     ) =
         runPollEventLoop(pollerFactory) {
-            val user = getEnv("POSTGRES_USER")  ?: error("no value found: POSTGRES_USER")
-            val password = getEnv("POSTGRES_PASSWORD")  ?: error("no value found: POSTGRES_PASSWORD")
+            val user = getEnv("POSTGRES_USER") ?: error("no value found: POSTGRES_USER")
+            val password = getEnv("POSTGRES_PASSWORD") ?: error("no value found: POSTGRES_PASSWORD")
             val database = getEnv("POSTGRES_DB") ?: error("no value found: POSTGRES_DB")
             val port = getEnv("POSTGRES_PORT")?.toInt() ?: 5432
 
