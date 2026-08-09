@@ -40,6 +40,8 @@ private suspend fun CallContext.respondFile(filePath: String, size: Long) {
     responseHead.headers[HttpHeaders.ContentType] = ContentType.defaultForFilePath(filePath).toString()
     responseHead.headers[HttpHeaders.ContentLength] = size.toString()
     responseSink.transferFrom(source)
+
+    source.close()
 }
 
 private const val pathParameterName = "static-content-path-parameter"
