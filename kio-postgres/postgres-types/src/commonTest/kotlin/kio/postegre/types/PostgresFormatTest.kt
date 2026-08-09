@@ -11,6 +11,7 @@ import kotlinx.io.writeDouble
 import kotlinx.io.writeFloat
 import kotlinx.io.writeString
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
@@ -691,6 +692,38 @@ class PostgresFormatTest {
                         )
                     )
                 )
+            )
+        )
+    }
+
+    @Test
+    fun postgresDecodeNullableTest() {
+        @Serializable
+        data class Foo(
+            @SerialName("text_content")
+            val textContent: PgText?,
+            @SerialName("image_url")
+            val imageUrl: PgText?,
+        )
+
+        val data = byteArrayOf(
+            // column count = 2
+            0x00, 0x02,
+
+            // text_content = NULL (length = -1)
+            0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(),
+
+            // image_url length = 7
+            0x00, 0x00, 0x00, 0x07,
+            // image_url = "new url"
+            0x6E, 0x65, 0x77, 0x20, 0x75, 0x72, 0x6C,
+        )
+        assertSerializerEncodeAndDecode(
+            Foo.serializer(),
+            data,
+            Foo(
+                textContent = null,
+                imageUrl = "new url"
             )
         )
     }
