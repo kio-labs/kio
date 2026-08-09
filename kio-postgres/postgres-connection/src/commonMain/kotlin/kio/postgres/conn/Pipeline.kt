@@ -1,9 +1,9 @@
 package kio.postgres.conn
 
-import kio.postegre.protocol.Message
-import kio.postegre.protocol.writeQuery
-import kio.postegre.protocol.writeSync
-import kio.postegre.types.PostgresFormat
+import kio.postgres.protocol.Message
+import kio.postgres.protocol.writeQuery
+import kio.postgres.protocol.writeSync
+import kio.postgres.types.PostgresFormat
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.toList

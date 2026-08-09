@@ -1,4 +1,4 @@
-package kio.postegre.protocol
+package kio.postgres.protocol
 
 import kio.async.AsyncSource
 import kotlinx.io.Buffer

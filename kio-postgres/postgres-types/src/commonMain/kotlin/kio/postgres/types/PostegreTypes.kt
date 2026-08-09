@@ -1,4 +1,4 @@
-package kio.postegre.types
+package kio.postgres.types
 
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
@@ -35,38 +35,38 @@ fun KSerializer<*>.formats() = descriptor.elementDescriptors.map { descriptor ->
     getFormat(descriptor)
 }
 
-typealias PgBool = @Serializable(PostegreBoolSerializer::class) Boolean
-typealias PgInt8 = @Serializable(PostegreInt8Serializer::class) Long
-typealias PgInt4 = @Serializable(PostegreInt4Serializer::class) Int
-typealias PgInt2 = @Serializable(PostegreInt2Serializer::class) Short
-typealias PgText = @Serializable(PostegreTextSerializer::class) String
-typealias PgChar = @Serializable(PostegreCharSerializer::class) Char
-typealias PgFloat4 = @Serializable(PostegreFloat4Serializer::class) Float
-typealias PgFloat8 = @Serializable(PostegreFloat8Serializer::class) Double
-typealias PgTimestamp = @Serializable(PostegreTimestampSerializer::class) LocalDateTime
-typealias PgTimestampTz = @Serializable(PostegreTimestampTzSerializer::class) Instant
-typealias PgBytea = @Serializable(PostegreByteaSerializer::class) ByteArray
-typealias PgDate = @Serializable(PostegreDateSerializer::class) LocalDate
-typealias PgTime = @Serializable(PostegreTimeSerializer::class) LocalTime
+typealias PgBool = @Serializable(PostgresBoolSerializer::class) Boolean
+typealias PgInt8 = @Serializable(PostgresInt8Serializer::class) Long
+typealias PgInt4 = @Serializable(PostgresInt4Serializer::class) Int
+typealias PgInt2 = @Serializable(PostgresInt2Serializer::class) Short
+typealias PgText = @Serializable(PostgresTextSerializer::class) String
+typealias PgChar = @Serializable(PostgresCharSerializer::class) Char
+typealias PgFloat4 = @Serializable(PostgresFloat4Serializer::class) Float
+typealias PgFloat8 = @Serializable(PostgresFloat8Serializer::class) Double
+typealias PgTimestamp = @Serializable(PostgresTimestampSerializer::class) LocalDateTime
+typealias PgTimestampTz = @Serializable(PostgresTimestampTzSerializer::class) Instant
+typealias PgBytea = @Serializable(PostgresByteaSerializer::class) ByteArray
+typealias PgDate = @Serializable(PostgresDateSerializer::class) LocalDate
+typealias PgTime = @Serializable(PostgresTimeSerializer::class) LocalTime
 @OptIn(ExperimentalUuidApi::class)
-typealias PgUuid = @Serializable(PostegreUuidSerializer::class) Uuid
-typealias PgInt4Range = @Serializable(PostegreInt4RangeSerializer::class) PgRange<PgInt4>
-typealias PgInt8Range = @Serializable(PostegreInt8RangeSerializer::class) PgRange<PgInt8>
-typealias PgDateRange = @Serializable(PostegreDateRangeSerializer::class) PgRange<PgDate>
-typealias PgTsRange = @Serializable(PostegreTimeStampRangeSerializer::class) PgRange<PgTimestamp>
-typealias PgTsTzRange = @Serializable(PostegreTimeStampTzRangeSerializer::class) PgRange<PgTimestampTz>
-typealias PgInt4MultiRange = @Serializable(PostegreInt4MultiRangeSerializer::class) PgMultiRange<PgInt4Range>
-typealias PgInt8MultiRange = @Serializable(PostegreInt8MultiRangeSerializer::class) PgMultiRange<PgInt8Range>
-typealias PgTsMultiRange = @Serializable(PostegreTimeStampMultiRangeSerializer::class) PgMultiRange<PgTsRange>
-typealias PgDateMultiRange = @Serializable(PostegreDateMultiRangeSerializer::class) PgMultiRange<PgDateRange>
-typealias PgTsTzMultiRange = @Serializable(PostegreTimeStampTzMultiRangeSerializer::class) PgMultiRange<PgTsTzRange>
-@Serializable(PostegrePointSerializer::class) data class PgPoint(val x: Double, val y: Double)
-@Serializable(PostegreLineSerializer::class) data class PgLine(val a: Double, val b: Double, val c: Double)
-@Serializable(PostegreLsegSerializer::class) data class PgLseg(val x1: Double, val y1: Double, val x2: Double, val y2: Double)
-@Serializable(PostegreBoxSerializer::class) data class PgBox(val x1: Double, val y1: Double, val x2: Double, val y2: Double)
-@Serializable(PostegrePathSerializer::class) data class PgPath(val closed: Boolean, val points: List<PgPoint>)
-@Serializable(PostegrePolygonSerializer::class) data class PgPolygon(val points: List<PgPoint>)
-@Serializable(PostegreCircleSerializer::class) data class PgCircle(val center: PgPoint, val radius: Double)
+typealias PgUuid = @Serializable(PostgresUuidSerializer::class) Uuid
+typealias PgInt4Range = @Serializable(PostgresInt4RangeSerializer::class) PgRange<PgInt4>
+typealias PgInt8Range = @Serializable(PostgresInt8RangeSerializer::class) PgRange<PgInt8>
+typealias PgDateRange = @Serializable(PostgresDateRangeSerializer::class) PgRange<PgDate>
+typealias PgTsRange = @Serializable(PostgresTimeStampRangeSerializer::class) PgRange<PgTimestamp>
+typealias PgTsTzRange = @Serializable(PostgresTimeStampTzRangeSerializer::class) PgRange<PgTimestampTz>
+typealias PgInt4MultiRange = @Serializable(PostgresInt4MultiRangeSerializer::class) PgMultiRange<PgInt4Range>
+typealias PgInt8MultiRange = @Serializable(PostgresInt8MultiRangeSerializer::class) PgMultiRange<PgInt8Range>
+typealias PgTsMultiRange = @Serializable(PostgresTimeStampMultiRangeSerializer::class) PgMultiRange<PgTsRange>
+typealias PgDateMultiRange = @Serializable(PostgresDateMultiRangeSerializer::class) PgMultiRange<PgDateRange>
+typealias PgTsTzMultiRange = @Serializable(PostgresTimeStampTzMultiRangeSerializer::class) PgMultiRange<PgTsTzRange>
+@Serializable(PostgresPointSerializer::class) data class PgPoint(val x: Double, val y: Double)
+@Serializable(PostgresLineSerializer::class) data class PgLine(val a: Double, val b: Double, val c: Double)
+@Serializable(PostgresLsegSerializer::class) data class PgLseg(val x1: Double, val y1: Double, val x2: Double, val y2: Double)
+@Serializable(PostgresBoxSerializer::class) data class PgBox(val x1: Double, val y1: Double, val x2: Double, val y2: Double)
+@Serializable(PostgresPathSerializer::class) data class PgPath(val closed: Boolean, val points: List<PgPoint>)
+@Serializable(PostgresPolygonSerializer::class) data class PgPolygon(val points: List<PgPoint>)
+@Serializable(PostgresCircleSerializer::class) data class PgCircle(val center: PgPoint, val radius: Double)
 
 data class PgRange<T>(
     val lower: T?,
@@ -85,9 +85,9 @@ data class PgRange<T>(
 
 data class PgMultiRange<T>(val ranges: List<T>)
 
-object PostegreBoolSerializer : KSerializer<Boolean> {
+object PostgresBoolSerializer : KSerializer<Boolean> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_BOOL_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_BOOL_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: Boolean) {
         encoder.encodeStructure(descriptor) {
@@ -102,9 +102,9 @@ object PostegreBoolSerializer : KSerializer<Boolean> {
     }
 }
 
-object PostegreCharSerializer : KSerializer<Char> {
+object PostgresCharSerializer : KSerializer<Char> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_CHAR_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_CHAR_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: Char) {
         encoder.encodeStructure(descriptor) {
@@ -119,9 +119,9 @@ object PostegreCharSerializer : KSerializer<Char> {
     }
 }
 
-object PostegreInt8Serializer : KSerializer<Long> {
+object PostgresInt8Serializer : KSerializer<Long> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_INT8_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_INT8_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: Long) {
         encoder.encodeStructure(descriptor) {
@@ -136,9 +136,9 @@ object PostegreInt8Serializer : KSerializer<Long> {
     }
 }
 
-object PostegreInt2Serializer : KSerializer<Short> {
+object PostgresInt2Serializer : KSerializer<Short> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_INT2_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_INT2_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: Short) {
         encoder.encodeStructure(descriptor) {
@@ -153,7 +153,7 @@ object PostegreInt2Serializer : KSerializer<Short> {
     }
 }
 
-private interface AbstractPostegreInt4Serializer : KSerializer<Int> {
+private interface AbstractPostgresInt4Serializer : KSerializer<Int> {
     override fun serialize(encoder: Encoder, value: Int) {
         encoder.encodeStructure(descriptor) {
             encodeIntElement(descriptor, 0, value)
@@ -167,14 +167,14 @@ private interface AbstractPostegreInt4Serializer : KSerializer<Int> {
     }
 }
 
-object PostegreInt4Serializer : AbstractPostegreInt4Serializer {
+object PostgresInt4Serializer : AbstractPostgresInt4Serializer {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_INT4_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_INT4_SERIALIZER_BIN) {}
 }
 
-object PostegreTextSerializer : KSerializer<String> {
+object PostgresTextSerializer : KSerializer<String> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_TEXT_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_TEXT_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: String) {
         encoder.encodeStructure(descriptor) {
@@ -189,9 +189,9 @@ object PostegreTextSerializer : KSerializer<String> {
     }
 }
 
-object PostegreFloat4Serializer : KSerializer<Float> {
+object PostgresFloat4Serializer : KSerializer<Float> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_FLOAT4_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_FLOAT4_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: Float) {
         encoder.encodeStructure(descriptor) {
@@ -206,9 +206,9 @@ object PostegreFloat4Serializer : KSerializer<Float> {
     }
 }
 
-object PostegreFloat8Serializer : KSerializer<Double> {
+object PostgresFloat8Serializer : KSerializer<Double> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_FLOAT8_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_FLOAT8_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: Double) {
         encoder.encodeStructure(descriptor) {
@@ -223,9 +223,9 @@ object PostegreFloat8Serializer : KSerializer<Double> {
     }
 }
 
-object PostegreTimestampSerializer : KSerializer<LocalDateTime> {
+object PostgresTimestampSerializer : KSerializer<LocalDateTime> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_TIMESTAMP_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_TIMESTAMP_SERIALIZER_BIN) {}
 
     private val POSTGRES_EPOCH_MICROS =
         LocalDateTime.orNull(2000, 1, 1, 0, 0, 0)!!
@@ -250,9 +250,9 @@ object PostegreTimestampSerializer : KSerializer<LocalDateTime> {
     }
 }
 
-object PostegreTimestampTzSerializer : KSerializer<Instant> {
+object PostgresTimestampTzSerializer : KSerializer<Instant> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_TIMESTAMPTZ_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_TIMESTAMPTZ_SERIALIZER_BIN) {}
 
     private val POSTGRES_EPOCH_MICROS =
         LocalDateTime.orNull(2000, 1, 1, 0, 0, 0)!!
@@ -275,9 +275,9 @@ object PostegreTimestampTzSerializer : KSerializer<Instant> {
     }
 }
 
-object PostegreByteaSerializer : KSerializer<ByteArray> {
+object PostgresByteaSerializer : KSerializer<ByteArray> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_BYTEA_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_BYTEA_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: ByteArray) {
         encoder.encodeStructure(descriptor) {
@@ -294,9 +294,9 @@ object PostegreByteaSerializer : KSerializer<ByteArray> {
     }
 }
 
-object PostegreDateSerializer : KSerializer<LocalDate> {
+object PostgresDateSerializer : KSerializer<LocalDate> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_DATE_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_DATE_SERIALIZER_BIN) {}
 
     private val BASE_DATE = LocalDate.orNull(2000, 1, 1)!!
 
@@ -315,9 +315,9 @@ object PostegreDateSerializer : KSerializer<LocalDate> {
     }
 }
 
-object PostegreTimeSerializer : KSerializer<LocalTime> {
+object PostgresTimeSerializer : KSerializer<LocalTime> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_TIME_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_TIME_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: LocalTime) {
         encoder.encodeStructure(descriptor) {
@@ -335,9 +335,9 @@ object PostegreTimeSerializer : KSerializer<LocalTime> {
 }
 
 @OptIn(ExperimentalUuidApi::class)
-object PostegreUuidSerializer : KSerializer<Uuid> {
+object PostgresUuidSerializer : KSerializer<Uuid> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_UUID_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_UUID_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: Uuid) {
         encoder.encodeStructure(descriptor) {
@@ -355,9 +355,9 @@ object PostegreUuidSerializer : KSerializer<Uuid> {
     }
 }
 
-object PostegrePointSerializer : KSerializer<PgPoint> {
+object PostgresPointSerializer : KSerializer<PgPoint> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_POINT_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_POINT_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: PgPoint) {
         encoder.encodeStructure(descriptor) {
@@ -378,9 +378,9 @@ object PostegrePointSerializer : KSerializer<PgPoint> {
     }
 }
 
-object PostegreLineSerializer : KSerializer<PgLine> {
+object PostgresLineSerializer : KSerializer<PgLine> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_LINE_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_LINE_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: PgLine) {
         encoder.encodeStructure(descriptor) {
@@ -404,9 +404,9 @@ object PostegreLineSerializer : KSerializer<PgLine> {
     }
 }
 
-object PostegreLsegSerializer : KSerializer<PgLseg> {
+object PostgresLsegSerializer : KSerializer<PgLseg> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_LSEG_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_LSEG_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: PgLseg) {
         encoder.encodeStructure(descriptor) {
@@ -433,9 +433,9 @@ object PostegreLsegSerializer : KSerializer<PgLseg> {
     }
 }
 
-object PostegreBoxSerializer : KSerializer<PgBox> {
+object PostgresBoxSerializer : KSerializer<PgBox> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_BOX_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_BOX_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: PgBox) {
         encoder.encodeStructure(descriptor) {
@@ -462,9 +462,9 @@ object PostegreBoxSerializer : KSerializer<PgBox> {
     }
 }
 
-object PostegrePathSerializer : KSerializer<PgPath> {
+object PostgresPathSerializer : KSerializer<PgPath> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_PATH_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_PATH_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: PgPath) {
         encoder.encodeStructure(descriptor) {
@@ -497,9 +497,9 @@ object PostegrePathSerializer : KSerializer<PgPath> {
     }
 }
 
-object PostegrePolygonSerializer : KSerializer<PgPolygon> {
+object PostgresPolygonSerializer : KSerializer<PgPolygon> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_POLYGON_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_POLYGON_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: PgPolygon) {
         encoder.encodeStructure(descriptor) {
@@ -530,9 +530,9 @@ object PostegrePolygonSerializer : KSerializer<PgPolygon> {
     }
 }
 
-object PostegreCircleSerializer : KSerializer<PgCircle> {
+object PostgresCircleSerializer : KSerializer<PgCircle> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_CIRCLE_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_CIRCLE_SERIALIZER_BIN) {}
 
     override fun serialize(encoder: Encoder, value: PgCircle) {
         encoder.encodeStructure(descriptor) {
@@ -552,7 +552,7 @@ object PostegreCircleSerializer : KSerializer<PgCircle> {
     }
 }
 
-private interface PostegreTextFormatSerializer : KSerializer<String> {
+private interface PostgresTextFormatSerializer : KSerializer<String> {
     override fun serialize(encoder: Encoder, value: String) {
         encoder.encodeStructure(descriptor) {
             encodeStringElement(descriptor, 0, value)
@@ -566,62 +566,62 @@ private interface PostegreTextFormatSerializer : KSerializer<String> {
     }
 }
 
-class PostegreInt4RangeSerializer(
+class PostgresInt4RangeSerializer(
     override val dataSerializer: KSerializer<PgInt4>
-) : PostegreRangeSerializer<PgInt4> {
+) : PostgresRangeSerializer<PgInt4> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_RANGE_INT4_SERIALIZER_BIN)
+        buildClassSerialDescriptor(POSTGRES_RANGE_INT4_SERIALIZER_BIN)
 
     override fun createPgRange(lower: PgInt4?, upper: PgInt4?, lowerBoundType: PgRange.BoundType, upperBoundType: PgRange.BoundType): PgRange<PgInt4> {
         return PgInt4Range(lower, upper, lowerBoundType, upperBoundType)
     }
 }
 
-class PostegreInt8RangeSerializer(
+class PostgresInt8RangeSerializer(
     override val dataSerializer: KSerializer<PgInt8>
-) : PostegreRangeSerializer<PgInt8> {
+) : PostgresRangeSerializer<PgInt8> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_RANGE_INT8_SERIALIZER_BIN)
+        buildClassSerialDescriptor(POSTGRES_RANGE_INT8_SERIALIZER_BIN)
 
     override fun createPgRange(lower: PgInt8?, upper: PgInt8?, lowerBoundType: PgRange.BoundType, upperBoundType: PgRange.BoundType): PgRange<PgInt8> {
         return PgInt8Range(lower, upper, lowerBoundType, upperBoundType)
     }
 }
 
-class PostegreDateRangeSerializer(
+class PostgresDateRangeSerializer(
     override val dataSerializer: KSerializer<PgDate>
-) : PostegreRangeSerializer<PgDate> {
+) : PostgresRangeSerializer<PgDate> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_RANGE_DATE_SERIALIZER_BIN)
+        buildClassSerialDescriptor(POSTGRES_RANGE_DATE_SERIALIZER_BIN)
 
     override fun createPgRange(lower: PgDate?, upper: PgDate?, lowerBoundType: PgRange.BoundType, upperBoundType: PgRange.BoundType): PgRange<PgDate> {
         return PgDateRange(lower, upper, lowerBoundType, upperBoundType)
     }
 }
 
-class PostegreTimeStampRangeSerializer(
+class PostgresTimeStampRangeSerializer(
     override val dataSerializer: KSerializer<PgTimestamp>
-) : PostegreRangeSerializer<PgTimestamp> {
+) : PostgresRangeSerializer<PgTimestamp> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_RANGE_TIMESTAMP_SERIALIZER_BIN)
+        buildClassSerialDescriptor(POSTGRES_RANGE_TIMESTAMP_SERIALIZER_BIN)
 
     override fun createPgRange(lower: PgTimestamp?, upper: PgTimestamp?, lowerBoundType: PgRange.BoundType, upperBoundType: PgRange.BoundType): PgRange<PgTimestamp> {
         return PgTsRange(lower, upper, lowerBoundType, upperBoundType)
     }
 }
 
-class PostegreTimeStampTzRangeSerializer(
+class PostgresTimeStampTzRangeSerializer(
     override val dataSerializer: KSerializer<PgTimestampTz>
-) : PostegreRangeSerializer<PgTimestampTz> {
+) : PostgresRangeSerializer<PgTimestampTz> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_RANGE_TIMESTAMPTZ_SERIALIZER_BIN)
+        buildClassSerialDescriptor(POSTGRES_RANGE_TIMESTAMPTZ_SERIALIZER_BIN)
 
     override fun createPgRange(lower: PgTimestampTz?, upper: PgTimestampTz?, lowerBoundType: PgRange.BoundType, upperBoundType: PgRange.BoundType): PgRange<PgTimestampTz> {
         return PgTsTzRange(lower, upper, lowerBoundType, upperBoundType)
     }
 }
 
-private interface PostegreRangeSerializer<T> : KSerializer<PgRange<T>> {
+private interface PostgresRangeSerializer<T> : KSerializer<PgRange<T>> {
     val dataSerializer: KSerializer<T>
 
     override fun serialize(encoder: Encoder, value: PgRange<T>) {
@@ -721,42 +721,42 @@ private interface PostegreRangeSerializer<T> : KSerializer<PgRange<T>> {
     }
 }
 
-class PostegreInt4MultiRangeSerializer(
+class PostgresInt4MultiRangeSerializer(
     override val rangeSerializer: KSerializer<PgInt4Range>
-): PostegreMultiRangeSerializer<PgInt4Range> {
+): PostgresMultiRangeSerializer<PgInt4Range> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_MULTI_RANGE_INT4_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_MULTI_RANGE_INT4_SERIALIZER_BIN) {}
 }
 
-class PostegreInt8MultiRangeSerializer(
+class PostgresInt8MultiRangeSerializer(
     override val rangeSerializer: KSerializer<PgInt8Range>
-): PostegreMultiRangeSerializer<PgInt8Range> {
+): PostgresMultiRangeSerializer<PgInt8Range> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_MULTI_RANGE_INT8_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_MULTI_RANGE_INT8_SERIALIZER_BIN) {}
 }
 
-class PostegreTimeStampMultiRangeSerializer(
+class PostgresTimeStampMultiRangeSerializer(
     override val rangeSerializer: KSerializer<PgTsRange>
-): PostegreMultiRangeSerializer<PgTsRange> {
+): PostgresMultiRangeSerializer<PgTsRange> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_MULTI_RANGE_TIMESTAMP_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_MULTI_RANGE_TIMESTAMP_SERIALIZER_BIN) {}
 }
 
-class PostegreDateMultiRangeSerializer(
+class PostgresDateMultiRangeSerializer(
     override val rangeSerializer: KSerializer<PgDateRange>
-): PostegreMultiRangeSerializer<PgDateRange> {
+): PostgresMultiRangeSerializer<PgDateRange> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_MULTI_RANGE_DATE_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_MULTI_RANGE_DATE_SERIALIZER_BIN) {}
 }
 
-class PostegreTimeStampTzMultiRangeSerializer(
+class PostgresTimeStampTzMultiRangeSerializer(
     override val rangeSerializer: KSerializer<PgDateRange>
-): PostegreMultiRangeSerializer<PgDateRange> {
+): PostgresMultiRangeSerializer<PgDateRange> {
     override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(POSTEGRE_MULTI_RANGE_TIMESTAMPTZ_SERIALIZER_BIN) {}
+        buildClassSerialDescriptor(POSTGRES_MULTI_RANGE_TIMESTAMPTZ_SERIALIZER_BIN) {}
 }
 
-private interface PostegreMultiRangeSerializer<T> : KSerializer<PgMultiRange<T>> {
+private interface PostgresMultiRangeSerializer<T> : KSerializer<PgMultiRange<T>> {
     val rangeSerializer: KSerializer<T>
 
     override fun deserialize(decoder: Decoder): PgMultiRange<T> {
@@ -782,54 +782,54 @@ private interface PostegreMultiRangeSerializer<T> : KSerializer<PgMultiRange<T>>
     }
 }
 
-internal fun SerialDescriptor.postegrePrimitiveTypeOid(): Int {
+internal fun SerialDescriptor.postgresPrimitiveTypeOid(): Int {
     val name = if (isNullable) serialName.removeSuffix("?") else serialName
     return when (name) {
-        POSTEGRE_BOOL_SERIALIZER_BIN -> 16
-        POSTEGRE_CHAR_SERIALIZER_BIN -> 18
-        POSTEGRE_INT8_SERIALIZER_BIN -> 20
-        POSTEGRE_INT2_SERIALIZER_BIN -> 21
-        POSTEGRE_INT4_SERIALIZER_BIN -> 23
-        POSTEGRE_TEXT_SERIALIZER_BIN -> 25
-        POSTEGRE_FLOAT4_SERIALIZER_BIN -> 700
-        POSTEGRE_FLOAT8_SERIALIZER_BIN -> 701
-        POSTEGRE_TIMESTAMP_SERIALIZER_BIN -> 1114
-        POSTEGRE_TIMESTAMPTZ_SERIALIZER_BIN -> 1184
-        POSTEGRE_BYTEA_SERIALIZER_BIN -> 17
-        POSTEGRE_DATE_SERIALIZER_BIN -> 1082
-        POSTEGRE_TIME_SERIALIZER_BIN -> 1083
-        POSTEGRE_UUID_SERIALIZER_BIN -> 2950
-        POSTEGRE_POINT_SERIALIZER_BIN -> 600
-        POSTEGRE_LINE_SERIALIZER_BIN -> 628
-        POSTEGRE_LSEG_SERIALIZER_BIN -> 601
-        POSTEGRE_BOX_SERIALIZER_BIN -> 603
-        POSTEGRE_PATH_SERIALIZER_BIN -> 602
-        POSTEGRE_POLYGON_SERIALIZER_BIN -> 604
-        POSTEGRE_CIRCLE_SERIALIZER_BIN -> 718
+        POSTGRES_BOOL_SERIALIZER_BIN -> 16
+        POSTGRES_CHAR_SERIALIZER_BIN -> 18
+        POSTGRES_INT8_SERIALIZER_BIN -> 20
+        POSTGRES_INT2_SERIALIZER_BIN -> 21
+        POSTGRES_INT4_SERIALIZER_BIN -> 23
+        POSTGRES_TEXT_SERIALIZER_BIN -> 25
+        POSTGRES_FLOAT4_SERIALIZER_BIN -> 700
+        POSTGRES_FLOAT8_SERIALIZER_BIN -> 701
+        POSTGRES_TIMESTAMP_SERIALIZER_BIN -> 1114
+        POSTGRES_TIMESTAMPTZ_SERIALIZER_BIN -> 1184
+        POSTGRES_BYTEA_SERIALIZER_BIN -> 17
+        POSTGRES_DATE_SERIALIZER_BIN -> 1082
+        POSTGRES_TIME_SERIALIZER_BIN -> 1083
+        POSTGRES_UUID_SERIALIZER_BIN -> 2950
+        POSTGRES_POINT_SERIALIZER_BIN -> 600
+        POSTGRES_LINE_SERIALIZER_BIN -> 628
+        POSTGRES_LSEG_SERIALIZER_BIN -> 601
+        POSTGRES_BOX_SERIALIZER_BIN -> 603
+        POSTGRES_PATH_SERIALIZER_BIN -> 602
+        POSTGRES_POLYGON_SERIALIZER_BIN -> 604
+        POSTGRES_CIRCLE_SERIALIZER_BIN -> 718
         else -> error("Never ${this.serialName}")
     }
 }
 
-internal fun SerialDescriptor.postegreRangeTypeOid(): Int {
+internal fun SerialDescriptor.postgresRangeTypeOid(): Int {
     val name = if (isNullable) serialName.removeSuffix("?") else serialName
     return when (name) {
-        POSTEGRE_RANGE_INT4_SERIALIZER_BIN -> 3904
-        POSTEGRE_RANGE_INT8_SERIALIZER_BIN -> 3926
-        POSTEGRE_RANGE_DATE_SERIALIZER_BIN -> 3912
-        POSTEGRE_RANGE_TIMESTAMP_SERIALIZER_BIN -> 3908
-        POSTEGRE_RANGE_TIMESTAMPTZ_SERIALIZER_BIN -> 3910
+        POSTGRES_RANGE_INT4_SERIALIZER_BIN -> 3904
+        POSTGRES_RANGE_INT8_SERIALIZER_BIN -> 3926
+        POSTGRES_RANGE_DATE_SERIALIZER_BIN -> 3912
+        POSTGRES_RANGE_TIMESTAMP_SERIALIZER_BIN -> 3908
+        POSTGRES_RANGE_TIMESTAMPTZ_SERIALIZER_BIN -> 3910
         else -> error("Never ${this.serialName}")
     }
 }
 
-internal fun SerialDescriptor.postegreMultiRangeTypeOid(): Int {
+internal fun SerialDescriptor.postgresMultiRangeTypeOid(): Int {
     val name = if (isNullable) serialName.removeSuffix("?") else serialName
     return when (name) {
-        POSTEGRE_MULTI_RANGE_INT4_SERIALIZER_BIN -> 4451
-        POSTEGRE_MULTI_RANGE_INT8_SERIALIZER_BIN -> 4536
-        POSTEGRE_MULTI_RANGE_TIMESTAMP_SERIALIZER_BIN -> 4533
-        POSTEGRE_MULTI_RANGE_DATE_SERIALIZER_BIN -> 4535
-        POSTEGRE_MULTI_RANGE_TIMESTAMPTZ_SERIALIZER_BIN -> 4534
+        POSTGRES_MULTI_RANGE_INT4_SERIALIZER_BIN -> 4451
+        POSTGRES_MULTI_RANGE_INT8_SERIALIZER_BIN -> 4536
+        POSTGRES_MULTI_RANGE_TIMESTAMP_SERIALIZER_BIN -> 4533
+        POSTGRES_MULTI_RANGE_DATE_SERIALIZER_BIN -> 4535
+        POSTGRES_MULTI_RANGE_TIMESTAMPTZ_SERIALIZER_BIN -> 4534
         else -> error("Never ${this.serialName}")
     }
 }
@@ -837,60 +837,60 @@ internal fun SerialDescriptor.postegreMultiRangeTypeOid(): Int {
 internal fun SerialDescriptor.postegreArrayTypeOid(): Int {
     val name = if (isNullable) serialName.removeSuffix("?") else serialName
     return when (name) {
-        POSTEGRE_BOOL_SERIALIZER_BIN -> 1000
-        POSTEGRE_CHAR_SERIALIZER_BIN -> 1002
-        POSTEGRE_INT8_SERIALIZER_BIN -> 1016
-        POSTEGRE_INT2_SERIALIZER_BIN -> 1005
-        POSTEGRE_INT4_SERIALIZER_BIN -> 1007
-        POSTEGRE_TEXT_SERIALIZER_BIN -> 1009
-        POSTEGRE_FLOAT4_SERIALIZER_BIN -> 1021
-        POSTEGRE_FLOAT8_SERIALIZER_BIN -> 1022
-        POSTEGRE_TIMESTAMP_SERIALIZER_BIN -> 1115
-        POSTEGRE_TIMESTAMPTZ_SERIALIZER_BIN -> 1185
-        POSTEGRE_BYTEA_SERIALIZER_BIN -> 1001
-        POSTEGRE_DATE_SERIALIZER_BIN -> 1182
-        POSTEGRE_TIME_SERIALIZER_BIN -> 1183
-        POSTEGRE_UUID_SERIALIZER_BIN -> 2951
-        POSTEGRE_POINT_SERIALIZER_BIN -> 1017
-        POSTEGRE_LINE_SERIALIZER_BIN -> 629
-        POSTEGRE_LSEG_SERIALIZER_BIN -> 1018
-        POSTEGRE_BOX_SERIALIZER_BIN -> 1020
-        POSTEGRE_PATH_SERIALIZER_BIN -> 1019
-        POSTEGRE_POLYGON_SERIALIZER_BIN -> 1027
-        POSTEGRE_CIRCLE_SERIALIZER_BIN -> 719
-        POSTEGRE_RANGE_INT8_SERIALIZER_BIN -> 3927
-        POSTEGRE_RANGE_DATE_SERIALIZER_BIN -> 3913
-        POSTEGRE_RANGE_TIMESTAMP_SERIALIZER_BIN -> 3909
-        POSTEGRE_RANGE_TIMESTAMPTZ_SERIALIZER_BIN -> 3911
-        POSTEGRE_MULTI_RANGE_INT4_SERIALIZER_BIN -> 6150
-        POSTEGRE_MULTI_RANGE_INT8_SERIALIZER_BIN -> 6157
-        POSTEGRE_MULTI_RANGE_TIMESTAMP_SERIALIZER_BIN -> 6152
-        POSTEGRE_MULTI_RANGE_DATE_SERIALIZER_BIN -> 6155
-        POSTEGRE_MULTI_RANGE_TIMESTAMPTZ_SERIALIZER_BIN -> 6153
+        POSTGRES_BOOL_SERIALIZER_BIN -> 1000
+        POSTGRES_CHAR_SERIALIZER_BIN -> 1002
+        POSTGRES_INT8_SERIALIZER_BIN -> 1016
+        POSTGRES_INT2_SERIALIZER_BIN -> 1005
+        POSTGRES_INT4_SERIALIZER_BIN -> 1007
+        POSTGRES_TEXT_SERIALIZER_BIN -> 1009
+        POSTGRES_FLOAT4_SERIALIZER_BIN -> 1021
+        POSTGRES_FLOAT8_SERIALIZER_BIN -> 1022
+        POSTGRES_TIMESTAMP_SERIALIZER_BIN -> 1115
+        POSTGRES_TIMESTAMPTZ_SERIALIZER_BIN -> 1185
+        POSTGRES_BYTEA_SERIALIZER_BIN -> 1001
+        POSTGRES_DATE_SERIALIZER_BIN -> 1182
+        POSTGRES_TIME_SERIALIZER_BIN -> 1183
+        POSTGRES_UUID_SERIALIZER_BIN -> 2951
+        POSTGRES_POINT_SERIALIZER_BIN -> 1017
+        POSTGRES_LINE_SERIALIZER_BIN -> 629
+        POSTGRES_LSEG_SERIALIZER_BIN -> 1018
+        POSTGRES_BOX_SERIALIZER_BIN -> 1020
+        POSTGRES_PATH_SERIALIZER_BIN -> 1019
+        POSTGRES_POLYGON_SERIALIZER_BIN -> 1027
+        POSTGRES_CIRCLE_SERIALIZER_BIN -> 719
+        POSTGRES_RANGE_INT8_SERIALIZER_BIN -> 3927
+        POSTGRES_RANGE_DATE_SERIALIZER_BIN -> 3913
+        POSTGRES_RANGE_TIMESTAMP_SERIALIZER_BIN -> 3909
+        POSTGRES_RANGE_TIMESTAMPTZ_SERIALIZER_BIN -> 3911
+        POSTGRES_MULTI_RANGE_INT4_SERIALIZER_BIN -> 6150
+        POSTGRES_MULTI_RANGE_INT8_SERIALIZER_BIN -> 6157
+        POSTGRES_MULTI_RANGE_TIMESTAMP_SERIALIZER_BIN -> 6152
+        POSTGRES_MULTI_RANGE_DATE_SERIALIZER_BIN -> 6155
+        POSTGRES_MULTI_RANGE_TIMESTAMPTZ_SERIALIZER_BIN -> 6153
         else -> error("Never ${this.serialName}")
     }
 }
 
-private fun getFormat(descriptor: SerialDescriptor): Short {
+fun getFormat(descriptor: SerialDescriptor): Short {
     return when {
         descriptor.kind == StructureKind.LIST -> 1
-        descriptor.isPostegreBuildInType() -> if (descriptor.isBinaryFormat()) 1 else 0
-        descriptor.isPostegreRangeType() -> if (descriptor.isBinaryFormat()) 1 else 0
-        descriptor.isPostegreMultiRangeType() -> if (descriptor.isBinaryFormat()) 1 else 0
-        else -> TODO("unsupported descriper name: ${descriptor.serialName}")
+        descriptor.isPostgresBuildInType() -> if (descriptor.isBinaryFormat()) 1 else 0
+        descriptor.isPostgresRangeType() -> if (descriptor.isBinaryFormat()) 1 else 0
+        descriptor.isPostgresMultiRangeType() -> if (descriptor.isBinaryFormat()) 1 else 0
+        else -> 1
     }
 }
 
-private fun getTypeOid(descriptor: SerialDescriptor): Int {
+fun getTypeOid(descriptor: SerialDescriptor): Int {
     return when {
         descriptor.kind == StructureKind.LIST -> {
             val childDescripter = descriptor.getElementDescriptor(0)
             childDescripter.postegreArrayTypeOid()
         }
 
-        descriptor.isPostegreBuildInType() -> descriptor.postegrePrimitiveTypeOid()
-        descriptor.isPostegreRangeType() -> descriptor.postegreRangeTypeOid()
-        descriptor.isPostegreMultiRangeType() -> descriptor.postegreMultiRangeTypeOid()
+        descriptor.isPostgresBuildInType() -> descriptor.postgresPrimitiveTypeOid()
+        descriptor.isPostgresRangeType() -> descriptor.postgresRangeTypeOid()
+        descriptor.isPostgresMultiRangeType() -> descriptor.postgresMultiRangeTypeOid()
         else -> TODO("unsupported descriper name: ${descriptor.serialName}")
     }
 }
@@ -901,46 +901,46 @@ private const val MULTI_RANGE_TYPE_PREFIX = "postegre.multirange.types"
 private const val BIN_FORMAT_SUFFIX = ".bin"
 private const val TEXT_FORMAT_SUFFIX = ".text"
 
-internal fun SerialDescriptor.isPostegreBuildInType() =
+internal fun SerialDescriptor.isPostgresBuildInType() =
     this.serialName.startsWith(PRIMITIVE_TYPE_PREFIX)
 
-internal fun SerialDescriptor.isPostegreRangeType() =
+internal fun SerialDescriptor.isPostgresRangeType() =
     this.serialName.startsWith(RANGE_TYPE_PREFIX)
 
-internal fun SerialDescriptor.isPostegreMultiRangeType() =
+internal fun SerialDescriptor.isPostgresMultiRangeType() =
     this.serialName.startsWith(MULTI_RANGE_TYPE_PREFIX)
 
 internal fun SerialDescriptor.isBinaryFormat() =
     this.serialName.endsWith(BIN_FORMAT_SUFFIX)
 
-private const val POSTEGRE_INT8_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.int8${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_INT4_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.int4${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_INT2_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.int2${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_CHAR_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.char${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_BOOL_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.bool${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_TEXT_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.text${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_FLOAT4_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.float4${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_FLOAT8_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.float8${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_TIMESTAMP_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.timestamp${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_TIMESTAMPTZ_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.timestamptz${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_BYTEA_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.bytea${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_DATE_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.date${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_TIME_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.time${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_UUID_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.uuid${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_POINT_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.point${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_LINE_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.line${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_LSEG_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.lseg${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_BOX_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.box${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_PATH_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.path${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_POLYGON_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.polygon${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_CIRCLE_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.circle${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_RANGE_INT4_SERIALIZER_BIN = "${RANGE_TYPE_PREFIX}.int4${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_RANGE_INT8_SERIALIZER_BIN = "${RANGE_TYPE_PREFIX}.int8${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_RANGE_DATE_SERIALIZER_BIN = "${RANGE_TYPE_PREFIX}.date${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_RANGE_TIMESTAMP_SERIALIZER_BIN = "${RANGE_TYPE_PREFIX}.tsrange${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_RANGE_TIMESTAMPTZ_SERIALIZER_BIN = "${RANGE_TYPE_PREFIX}.tstzrange${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_MULTI_RANGE_INT4_SERIALIZER_BIN = "${MULTI_RANGE_TYPE_PREFIX}.int4${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_MULTI_RANGE_INT8_SERIALIZER_BIN = "${MULTI_RANGE_TYPE_PREFIX}.int8${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_MULTI_RANGE_TIMESTAMP_SERIALIZER_BIN = "${MULTI_RANGE_TYPE_PREFIX}.tsmultirange${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_MULTI_RANGE_TIMESTAMPTZ_SERIALIZER_BIN = "${MULTI_RANGE_TYPE_PREFIX}.tstzmultirange${BIN_FORMAT_SUFFIX}"
-private const val POSTEGRE_MULTI_RANGE_DATE_SERIALIZER_BIN = "${MULTI_RANGE_TYPE_PREFIX}.datemultirange${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_INT8_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.int8${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_INT4_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.int4${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_INT2_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.int2${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_CHAR_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.char${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_BOOL_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.bool${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_TEXT_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.text${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_FLOAT4_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.float4${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_FLOAT8_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.float8${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_TIMESTAMP_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.timestamp${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_TIMESTAMPTZ_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.timestamptz${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_BYTEA_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.bytea${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_DATE_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.date${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_TIME_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.time${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_UUID_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.uuid${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_POINT_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.point${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_LINE_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.line${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_LSEG_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.lseg${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_BOX_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.box${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_PATH_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.path${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_POLYGON_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.polygon${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_CIRCLE_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.circle${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_RANGE_INT4_SERIALIZER_BIN = "${RANGE_TYPE_PREFIX}.int4${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_RANGE_INT8_SERIALIZER_BIN = "${RANGE_TYPE_PREFIX}.int8${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_RANGE_DATE_SERIALIZER_BIN = "${RANGE_TYPE_PREFIX}.date${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_RANGE_TIMESTAMP_SERIALIZER_BIN = "${RANGE_TYPE_PREFIX}.tsrange${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_RANGE_TIMESTAMPTZ_SERIALIZER_BIN = "${RANGE_TYPE_PREFIX}.tstzrange${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_MULTI_RANGE_INT4_SERIALIZER_BIN = "${MULTI_RANGE_TYPE_PREFIX}.int4${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_MULTI_RANGE_INT8_SERIALIZER_BIN = "${MULTI_RANGE_TYPE_PREFIX}.int8${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_MULTI_RANGE_TIMESTAMP_SERIALIZER_BIN = "${MULTI_RANGE_TYPE_PREFIX}.tsmultirange${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_MULTI_RANGE_TIMESTAMPTZ_SERIALIZER_BIN = "${MULTI_RANGE_TYPE_PREFIX}.tstzmultirange${BIN_FORMAT_SUFFIX}"
+private const val POSTGRES_MULTI_RANGE_DATE_SERIALIZER_BIN = "${MULTI_RANGE_TYPE_PREFIX}.datemultirange${BIN_FORMAT_SUFFIX}"

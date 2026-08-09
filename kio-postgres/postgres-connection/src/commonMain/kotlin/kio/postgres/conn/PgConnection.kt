@@ -5,22 +5,24 @@ import kio.async.AsyncSource
 import kio.async.io.AsyncConnection
 import kio.async.io.buffered
 import kio.async.io.openConnection
-import kio.postegre.protocol.ErrorField
-import kio.postegre.protocol.Message
-import kio.postegre.protocol.readMessage
-import kio.postegre.protocol.writeBind
-import kio.postegre.protocol.writeCancelRequest
-import kio.postegre.protocol.writeCloseStatement
-import kio.postegre.protocol.writeCopyDone
-import kio.postegre.protocol.writeCopyFail
-import kio.postegre.protocol.writeExecute
-import kio.postegre.protocol.writeParse
-import kio.postegre.protocol.writeQuery
-import kio.postegre.protocol.writeSync
-import kio.postegre.protocol.writeTerminate
-import kio.postegre.types.PostgresFormat
-import kio.postegre.types.formats
-import kio.postegre.types.typeOids
+import kio.postgres.protocol.ErrorField
+import kio.postgres.protocol.Message
+import kio.postgres.protocol.readMessage
+import kio.postgres.protocol.writeBind
+import kio.postgres.protocol.writeCancelRequest
+import kio.postgres.protocol.writeCloseStatement
+import kio.postgres.protocol.writeCopyDone
+import kio.postgres.protocol.writeCopyFail
+import kio.postgres.protocol.writeExecute
+import kio.postgres.protocol.writeParse
+import kio.postgres.protocol.writeQuery
+import kio.postgres.protocol.writeSync
+import kio.postgres.protocol.writeTerminate
+import kio.postgres.types.PostgresFormat
+import kio.postgres.types.formats
+import kio.postgres.types.getFormat
+import kio.postgres.types.getTypeOid
+import kio.postgres.types.typeOids
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -37,9 +39,11 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import kotlinx.io.Buffer
 import kotlinx.io.IOException
 import kotlinx.io.Sink
 import kotlinx.io.Source
+import kotlinx.io.readByteArray
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.serializer
 import kotlin.coroutines.CoroutineContext
@@ -57,11 +61,39 @@ interface PgStatement {
     suspend fun close()
 }
 
+suspend inline fun <reified P> PgConnection.prepare(sql: String, name: String): PgStatement {
+    this as InternalPgConnection
+
+    val parameterSerializer = PostgresFormat.serializersModule.serializer<P>()
+    val paramTypes = parameterSerializer.typeOids()
+
+    return withLock {
+        sink.writeParse(name, sql, paramTypes)
+        sink.writeSync()
+        sink.flush()
+
+        waitReadyOrThrow()
+
+        InternalPgStatement(name, this)
+    }
+}
+
 data class PgNotification(
     val processId: Int,
     val channel: String,
     val message: String
 )
+
+suspend fun PgConnection.exec(sql: String): String {
+    this as InternalPgConnection
+
+    return withLock {
+        sink.writeQuery(sql)
+        sink.flush()
+
+        waitReadyAndCollectCommandTags().lastOrNull() ?: ""
+    }
+}
 
 inline fun <reified R> PgConnection.query(sql: String): Flow<R> {
     return query(sql, Unit)
@@ -97,6 +129,26 @@ inline fun <reified P, reified R> PgConnection.query(stmt: PgStatement, params: 
     }
 }
 
+suspend inline fun <reified P> PgConnection.exec(sql: String, params: P): String {
+    this as InternalPgConnection
+
+    return withLock {
+        sink.doQuery(sql, params, listOf(), true)
+
+        waitReadyAndCollectCommandTags().lastOrNull() ?: ""
+    }
+}
+
+suspend inline fun PgConnection.exec(sql: String, crossinline parameters: PgParameterScope.() -> Unit): String {
+    this as InternalPgConnection
+
+    return withLock {
+        sink.doQuery(sql, parameters, listOf(), true)
+
+        waitReadyAndCollectCommandTags().lastOrNull() ?: ""
+    }
+}
+
 suspend inline fun <reified P> PgConnection.exec(stmt: PgStatement, params: P): String {
     this as InternalPgConnection
 
@@ -111,42 +163,86 @@ suspend inline fun <reified P> PgConnection.exec(stmt: PgStatement, params: P): 
     }
 }
 
-suspend inline fun <reified P> PgConnection.exec(sql: String, params: P): String {
+inline fun <reified R> PgConnection.query(sql: String, crossinline parameters: PgParameterScope.() -> Unit): Flow<R> {
+    this as InternalPgConnection
+    val conn = this
+    return flow {
+        withLock {
+            val resultSerializer = PostgresFormat.serializersModule.serializer<R>()
+            conn.sink.doQuery(sql, parameters, resultSerializer.formats(), true)
+            emitRowUntilReadyOrThrow(conn, resultSerializer)
+        }
+    }
+}
+
+inline fun <reified R> PgConnection.query(stmt: PgStatement, crossinline parameters: PgParameterScope.() -> Unit): Flow<R> {
+    this as InternalPgConnection
+    val conn = this
+    return  flow {
+        withLock {
+            val scope = PgParameterScope()
+            scope.parameters()
+
+            val resultSerializer = PostgresFormat.serializersModule.serializer<R>()
+            val resultFormats = resultSerializer.formats()
+            val values = scope.getParameterByteArray()
+            execStmt(sink, stmt.name, values, scope.parameterFormats, resultFormats)
+            emitRowUntilReadyOrThrow(conn, resultSerializer)
+        }
+    }
+}
+
+suspend inline fun PgConnection.exec(stmt: PgStatement, crossinline parameters: PgParameterScope.() -> Unit): String {
     this as InternalPgConnection
 
     return withLock {
-        sink.doQuery(sql, params, listOf(), true)
+        val scope = PgParameterScope()
+        scope.parameters()
+        val values = scope.getParameterByteArray()
+        val parameterFormats = scope.parameterFormats
+        val resultFormats = listOf<Short>()
+        execStmt(sink, stmt.name, values, parameterFormats, resultFormats)
 
         waitReadyAndCollectCommandTags().lastOrNull() ?: ""
     }
 }
 
-suspend fun PgConnection.exec(sql: String): String {
-    this as InternalPgConnection
+class PgParameterScope {
+    @PublishedApi
+    internal val parameterFormats: MutableList<Short> = mutableListOf()
+    @PublishedApi
+    internal val parameterTypeOids: MutableList<Int> = mutableListOf()
+    private val parameterBuffer = Buffer()
+    private var parameterCount = 0
 
-    return withLock {
-        sink.writeQuery(sql)
-        sink.flush()
+    @PublishedApi
+    internal fun addParameter(format: Short, typeOid: Int, value: ByteArray) {
+        parameterFormats.add(format)
+        parameterTypeOids.add(typeOid)
+        parameterBuffer.write(value)
+        parameterCount++
+    }
 
-        waitReadyAndCollectCommandTags().lastOrNull() ?: ""
+    @PublishedApi
+    internal fun getParameterByteArray(): ByteArray {
+        return parameterCount.toInt16ByteArray() + parameterBuffer.readByteArray()
+    }
+
+    private fun Int.toInt16ByteArray(): ByteArray {
+        require(this in 0..0xFFFF)
+
+        return byteArrayOf(
+            (this shr 8).toByte(),
+            this.toByte(),
+        )
     }
 }
 
-suspend inline fun <reified P> PgConnection.prepare(sql: String, name: String): PgStatement {
-    this as InternalPgConnection
-
-    val parameterSerializer = PostgresFormat.serializersModule.serializer<P>()
-    val paramTypes = parameterSerializer.typeOids()
-
-    return withLock {
-        sink.writeParse(name, sql, paramTypes)
-        sink.writeSync()
-        sink.flush()
-
-        waitReadyOrThrow()
-
-        InternalPgStatement(name, this)
-    }
+inline fun <reified T> PgParameterScope.param(value: T, serializer: KSerializer<T>) {
+    val format= getFormat(serializer.descriptor)
+    val typeOid= getTypeOid(serializer.descriptor)
+    val bytes = PostgresFormat.encodeToByteArray(serializer, value)
+    addParameter(format, typeOid, bytes)
 }
 
 class PgException(
@@ -230,6 +326,21 @@ internal suspend inline fun <reified P> AsyncSink.doQuery(
     val values = PostgresFormat.encodeToByteArray(parameterSerializer, params)
     val paramTypes = parameterSerializer.typeOids()
     val parameterFormats = parameterSerializer.formats()
+    execParams(this, sql, values, paramTypes, parameterFormats, resultFormats, sync = sync)
+}
+
+@PublishedApi
+internal suspend inline fun AsyncSink.doQuery(
+    sql: String,
+    crossinline parameters: PgParameterScope.() -> Unit,
+    resultFormats: List<Short>,
+    sync: Boolean
+) {
+    val scope = PgParameterScope()
+    scope.parameters()
+    val values = scope.getParameterByteArray()
+    val paramTypes = scope.parameterTypeOids
+    val parameterFormats = scope.parameterFormats
     execParams(this, sql, values, paramTypes, parameterFormats, resultFormats, sync = sync)
 }
 
@@ -615,3 +726,6 @@ internal fun buildPgException(errors: Iterable<ErrorField>): PgException {
         unknownFields = unknownFields,
     )
 }
+
+@PublishedApi
+internal val NonePgParameter : PgParameterScope.() -> Unit = {}

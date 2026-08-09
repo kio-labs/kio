@@ -1,4 +1,4 @@
-package kio.postegre.types
+package kio.postgres.types
 
 import kotlinx.io.Buffer
 import kotlinx.io.readByteArray
@@ -10,14 +10,14 @@ import kotlinx.serialization.modules.SerializersModule
 
 object PostgresFormat : BinaryFormat {
     override val serializersModule: SerializersModule = SerializersModule {
-        contextual(PgBool::class, PostegreBoolSerializer)
+        contextual(PgBool::class, PostgresBoolSerializer)
     }
 
     override fun <T> encodeToByteArray(
         serializer: SerializationStrategy<T>,
         value: T
     ): ByteArray {
-        val output = Buffer().apply { writeShort(serializer.descriptor.elementsCount.toShort()) }
+        val output = Buffer()
         val encoder = PostgresEncoder(this, output)
         encoder.encodeSerializableValue(serializer, value)
         val ret =  output.readByteArray()
@@ -32,8 +32,7 @@ object PostgresFormat : BinaryFormat {
             "only support class decode"
         }
         val input = Buffer().apply { write(bytes) }
-        val elementCount = input.readShort().toInt()
-        val reader = PostegreDecoder(this, input)
+        val reader = PostgresDecoder(this, input)
         return reader.decodeSerializableValue(deserializer)
     }
 }

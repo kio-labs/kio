@@ -1,4 +1,4 @@
-package kio.postegre.types
+package kio.postgres.types
 
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -22,7 +22,7 @@ import kotlin.uuid.Uuid
 
 class PostgresFormatTest {
     @Test
-    fun postegreNullableSerializerTest() {
+    fun postgresNullableSerializerTest() {
         @Serializable
         data class Foo(val value: PgBool?)
         assertSerializerEncodeAndDecode(
@@ -33,7 +33,16 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreBoolSerializerTest() {
+    fun pgBoolSerialTest() {
+        assertSerializerEncodeAndDecode(
+            PostgresBoolSerializer,
+            Buffer().apply { writeInt(1); writeByte(1); }.readByteArray(),
+            true
+        )
+    }
+
+    @Test
+    fun postgresBoolSerializerTest() {
         @Serializable
         data class Foo(val value: PgBool)
         assertSerializerEncodeAndDecode(
@@ -44,7 +53,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreCharSerializerTest() {
+    fun postgresCharSerializerTest() {
         @Serializable
         data class Foo(val value: PgChar)
         assertSerializerEncodeAndDecode(
@@ -56,7 +65,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreLongSerializerTest() {
+    fun postgresLongSerializerTest() {
         @Serializable
         data class Foo(val value: PgInt8)
         assertSerializerEncodeAndDecode(
@@ -67,7 +76,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreShortSerializerTest() {
+    fun postgresShortSerializerTest() {
         @Serializable
         data class Foo(val value: PgInt2)
         assertSerializerEncodeAndDecode(
@@ -78,7 +87,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreIntSerializerTest() {
+    fun postgresIntSerializerTest() {
         @Serializable
         data class Foo(val value: PgInt4)
         assertSerializerEncodeAndDecode(
@@ -89,7 +98,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreTextSerializerTest() {
+    fun postgresTextSerializerTest() {
         @Serializable
         data class Foo(val value: PgText)
         assertSerializerEncodeAndDecode(
@@ -100,7 +109,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreFloat4SerializerTest() {
+    fun postgresFloat4SerializerTest() {
         @Serializable
         data class Foo(val value: PgFloat4)
         assertSerializerEncodeAndDecode(
@@ -112,7 +121,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreFloat8SerializerTest() {
+    fun postgresFloat8SerializerTest() {
         @Serializable
         data class Foo(val value: PgFloat8)
         assertSerializerEncodeAndDecode(
@@ -123,7 +132,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreTimeStampSerializerTest() {
+    fun postgresTimeStampSerializerTest() {
         @Serializable
         data class Foo(val value: PgTimestamp)
         assertSerializerEncodeAndDecode(
@@ -134,7 +143,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreTimeStampTzSerializerTest() {
+    fun postgresTimeStampTzSerializerTest() {
         @Serializable
         data class Foo(val value: PgTimestampTz)
         assertSerializerEncodeAndDecode(
@@ -145,7 +154,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreByteaSerializerTest() {
+    fun postgresByteaSerializerTest() {
         @Serializable
         data class Foo(val value: PgBytea) {
             override fun equals(other: Any?): Boolean = true
@@ -164,7 +173,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreDateSerializerTest() {
+    fun postgresDateSerializerTest() {
         @Serializable
         data class Foo(val value: PgDate)
         assertSerializerEncodeAndDecode(
@@ -175,7 +184,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreTimeSerializerTest() {
+    fun postgresTimeSerializerTest() {
         @Serializable
         data class Foo(val value: PgTime)
         assertSerializerEncodeAndDecode(
@@ -187,7 +196,7 @@ class PostgresFormatTest {
 
     @OptIn(ExperimentalUuidApi::class)
     @Test
-    fun postegreUuidSerializerTest() {
+    fun postgresUuidSerializerTest() {
         @Serializable
         data class Foo(val value: PgUuid)
 
@@ -201,7 +210,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegrePointSerializerTest() {
+    fun postgresPointSerializerTest() {
         @Serializable
         data class Foo(val value: PgPoint)
 
@@ -219,7 +228,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreLineSerializerTest() {
+    fun postgresLineSerializerTest() {
         @Serializable
         data class Foo(val value: PgLine)
 
@@ -238,7 +247,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreLsegSerializerTest() {
+    fun postgresLsegSerializerTest() {
         @Serializable
         data class Foo(val value: PgLseg)
 
@@ -258,7 +267,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreBoxSerializerTest() {
+    fun postgresBoxSerializerTest() {
         @Serializable
         data class Foo(val value: PgBox)
 
@@ -278,7 +287,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegrePathSerializerTest() {
+    fun postgresPathSerializerTest() {
         @Serializable
         data class Foo(val value: PgPath)
 
@@ -311,7 +320,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegrePolygonSerializerTest() {
+    fun postgresPolygonSerializerTest() {
         @Serializable
         data class Foo(val value: PgPolygon)
 
@@ -342,7 +351,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreCircleSerializerTest() {
+    fun postgresCircleSerializerTest() {
         @Serializable
         data class Foo(val value: PgCircle)
 
@@ -366,7 +375,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreIntArraySerializerTest() {
+    fun postgresIntArraySerializerTest() {
         @Serializable
         data class Foo(@PgArray val value: List<PgInt4>)
 
@@ -396,7 +405,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreNullableIntArraySerializerTest() {
+    fun postgresNullableIntArraySerializerTest() {
         @Serializable
         data class Foo(@PgArray val value: List<PgInt4?>)
 
@@ -425,7 +434,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegre2DIntArraySerializerTest() {
+    fun postgres2DIntArraySerializerTest() {
         @Serializable
         data class Foo(@PgArray(dimension = 2, lengths = [2, 2]) val value: List<PgInt4?>)
 
@@ -458,7 +467,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegre2DNullableStringArraySerializerTest() {
+    fun postgres2DNullableStringArraySerializerTest() {
         @Serializable
         data class Foo(val value: List<PgText?>)
 
@@ -490,7 +499,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreCompositeSerializerTest() {
+    fun postgresCompositeSerializerTest() {
         @Serializable
         data class Person(val id: PgInt4, val name: PgText)
 
@@ -530,7 +539,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreInt4RangeSerializerTest() {
+    fun postgresInt4RangeSerializerTest() {
         @Serializable
         data class Foo(val value: PgInt4Range)
 
@@ -560,7 +569,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreUnboundedInt4RangeSerializerTest() {
+    fun postgresUnboundedInt4RangeSerializerTest() {
         @Serializable
         data class Foo(val value: PgInt4Range)
 
@@ -587,7 +596,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreEmptyInt4RangeSerializerTest() {
+    fun postgresEmptyInt4RangeSerializerTest() {
         @Serializable
         data class Foo(val value: PgInt4Range)
 
@@ -611,7 +620,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreUnboundedInt8RangeSerializerTest() {
+    fun postgresUnboundedInt8RangeSerializerTest() {
         @Serializable
         data class Foo(val value: PgInt8Range)
 
@@ -638,7 +647,7 @@ class PostgresFormatTest {
     }
 
     @Test
-    fun postegreInt4MultiRangeSerializerTest() {
+    fun postgresInt4MultiRangeSerializerTest() {
         @Serializable
         data class Foo(val value: PgInt4MultiRange)
 
