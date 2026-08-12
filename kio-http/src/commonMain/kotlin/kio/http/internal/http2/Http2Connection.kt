@@ -64,7 +64,7 @@ internal suspend fun http2Connection(
     // Normal stream failures should be handled inside each stream coroutine.
     // This handler is only a last-resort logger.
     val streamExceptionHandler = CoroutineExceptionHandler { context, t ->
-        h2Logger.error("streamExceptionHandler", cause = t)
+        h2Logger.error("error fall back to streamExceptionHandler", cause = t)
     }
     withContext(streamExceptionHandler) {
         supervisorScope {
