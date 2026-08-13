@@ -15,7 +15,7 @@ suspend fun currentCallId(): String? {
     return currentCoroutineContext()[CoroutineCallId]?.callId
 }
 
-data class CoroutineCallId(
+private data class CoroutineCallId(
     val callId: String
 ) : AbstractCoroutineContextElement(CoroutineCallId) {
     companion object Key : CoroutineContext.Key<CoroutineCallId>
