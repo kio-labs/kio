@@ -6,6 +6,7 @@ import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpProtocolVersion
 import io.ktor.http.Parameters
+import io.ktor.http.parseClientCookiesHeader
 import io.ktor.http.parseQueryString
 import kio.async.AsyncRawSource
 import kio.async.AsyncSink
@@ -35,7 +36,7 @@ class CallContext internal constructor(
     private val getRequestTrailers: () -> Headers? = { null },
     responseSink: CallContext.(header: HttpResponseHead.Builder, trailer: HeadersBuilder) -> AsyncSink,
 ) {
-    val parameters: Parameters = parameters
+    val requestParameters: Parameters = parameters
     val requestProtocolVersion: HttpProtocolVersion = requestHead.version
     val requestHeaders: Headers = requestHead.headers
     val requestTrailers: Headers?
@@ -65,6 +66,16 @@ class CallContext internal constructor(
 
 suspend fun CallContext.receiveFormParameters(): Parameters {
     return parseQueryString(requestBody.readString())
+}
+
+fun CallContext.requestCookies(): Map<String, String> {
+    val cookieHeaders = requestHeaders.getAll("Cookie") ?: return emptyMap()
+    val map = HashMap<String, String>(cookieHeaders.size)
+    for (cookieHeader in cookieHeaders) {
+        val cookies = parseClientCookiesHeader(cookieHeader)
+        map.putAll(cookies)
+    }
+    return map
 }
 
 /**
