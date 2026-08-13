@@ -13,13 +13,7 @@ import kotlinx.cinterop.toKString
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.io.Buffer
 import kotlinx.io.IOException
-import platform.posix.EINTR
-import platform.posix.O_CLOEXEC
-import platform.posix.O_RDONLY
-import platform.posix.O_RDWR
-import platform.posix.errno
-import platform.posix.open
-import platform.posix.strerror
+import platform.posix.*
 
 actual suspend fun openFileSource(path: String): AsyncRawSource {
     val poller = currentCoroutineContext().poller
@@ -72,23 +66,27 @@ actual suspend fun openFileSink(path: String): AsyncRawSink {
 
 private fun openFile(path: String, isReadOnly: Boolean = true): Int {
     while (true) {
-        val fd = open(
-            path,
-            (if (isReadOnly) O_RDONLY else O_RDWR) or O_CLOEXEC
-        )
+        val flags = if (isReadOnly) {
+            O_RDONLY or O_CLOEXEC
+        } else {
+            O_WRONLY or O_CREAT or O_TRUNC or O_CLOEXEC
+        }
+
+        val fd = if (isReadOnly) {
+            open(path, flags)
+        } else {
+            open(path, flags, 0x1A4) // 0644
+        }
 
         if (fd >= 0) {
             return fd
         }
 
         val error = errno
-
-        if (error == EINTR) {
-            continue
-        }
+        if (error == EINTR) continue
 
         throw IOException(
-            "open failed for ${path}: " +
+            "open failed for $path: " +
                     (strerror(error)?.toKString() ?: "errno=$error")
         )
     }
