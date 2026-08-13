@@ -29,7 +29,7 @@ class HttpRouteTest {
         server {
             route("user") {
                 get {
-                    it.respondText("name=${it.parameters.get("name")}")
+                    it.respondText("name=${it.requestParameters.get("name")}")
                 }
             }
         }
@@ -42,7 +42,7 @@ class HttpRouteTest {
     fun testRoutingOnGETWithSurroundedParameter() = withHttpServerTest {
         server {
             get("/user-{name}-suffix") {
-                it.respondText("name=${it.parameters.get("name")}")
+                it.respondText("name=${it.requestParameters.get("name")}")
             }
         }
 
@@ -55,7 +55,7 @@ class HttpRouteTest {
         server {
             route("/user") {
                 get("{path...}") {
-                    it.respondText("path=${it.parameters.getAll("path")}")
+                    it.respondText("path=${it.requestParameters.getAll("path")}")
                 }
             }
         }

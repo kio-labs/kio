@@ -17,7 +17,7 @@ fun Route.staticResource(
     route(remotePath) {
         route("{${pathParameterName}...}") {
             registerCallHandler(HttpMethod.Get) {
-                val segments = parameters.getAll(pathParameterName)?.toTypedArray() ?: emptyArray()
+                val segments = requestParameters.getAll(pathParameterName)?.toTypedArray() ?: emptyArray()
                 val path = Path(basePackage, *segments)
 
                 val resolvedResult = resolveStaticFile(path, index)

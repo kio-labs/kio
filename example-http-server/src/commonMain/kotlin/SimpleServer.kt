@@ -73,11 +73,11 @@ suspend fun simpleServer(
             }
 
             get("/a/{bbb...}") { call ->
-                call.respondText("hello back; tail card is ${call.parameters.getAll("bbb")}")
+                call.respondText("hello back; tail card is ${call.requestParameters.getAll("bbb")}")
             }
 
             get("/pre-{id}-suf") { call ->
-                call.respondText("hello back; route value is [${call.parameters["id"]}]")
+                call.respondText("hello back; route value is [${call.requestParameters["id"]}]")
             }
 
             post("/hello") { call ->

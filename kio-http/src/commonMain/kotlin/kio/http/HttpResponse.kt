@@ -14,6 +14,16 @@ import kotlin.text.equals
 import kotlinx.html.TagConsumer
 import kotlinx.html.stream.createHTML
 
+
+suspend fun CallContext.respond(
+    status: HttpStatusCode,
+    message: String = status.description,
+    configHeaders: HeadersBuilder.() -> Unit = {},
+    configTrailers: HeadersBuilder.() -> Unit = {}
+) {
+    respondText(status = status, text = message, configHeaders = configHeaders, configTrailers = configTrailers)
+}
+
 suspend fun CallContext.respondHtml(
     status: HttpStatusCode? = null,
     configHeaders: HeadersBuilder.() -> Unit = {},
@@ -31,12 +41,6 @@ suspend fun CallContext.respondHtml(
         configHeaders,
         configTrailers
     )
-}
-
-suspend fun CallContext.respond(
-    status: HttpStatusCode, message: String = status.description
-) {
-    respondText(status = status, text = message)
 }
 
 suspend fun CallContext.respondText(

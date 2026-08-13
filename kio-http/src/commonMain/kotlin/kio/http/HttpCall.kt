@@ -35,7 +35,7 @@ class CallContext internal constructor(
     private val getRequestTrailers: () -> Headers? = { null },
     responseSink: CallContext.(header: HttpResponseHead.Builder, trailer: HeadersBuilder) -> AsyncSink,
 ) {
-    val parameters: Parameters = parameters
+    val requestParameters: Parameters = parameters
     val requestProtocolVersion: HttpProtocolVersion = requestHead.version
     val requestHeaders: Headers = requestHead.headers
     val requestTrailers: Headers?
