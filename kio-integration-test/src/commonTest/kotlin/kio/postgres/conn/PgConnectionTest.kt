@@ -205,6 +205,59 @@ abstract class PgConnectionTest {
     }
 
     @Test
+    fun pipelineQueryWithParamsAndReadResultsTest() = withTestPgDatabase {
+        pipeline {
+            withSync {
+                query("select n from generate_series($1::int, $2::int) n") {
+                    param(1, PostgresInt4Serializer)
+                    param(3, PostgresInt4Serializer)
+                }
+            }
+            @Serializable
+            data class Result(val a: PgInt4)
+            consumeSync {
+                receiveAsList<Result>()
+            }
+        }
+    }
+
+    @Test
+    fun transactionCommitTest() = withTestPgDatabase {
+        transaction { tx ->
+            tx.exec("create temporary table foo(a int4, b varchar)")
+            tx.exec("insert into foo(a, b) values (12, 'hello')")
+        }
+        val ret = exec("select * from foo where a = $1 and b = $2") {
+            param(12, PostgresInt4Serializer)
+            param("hello", PostgresTextSerializer)
+        }
+        assertEquals("SELECT 1", ret)
+    }
+
+    @Test
+    fun transactionRollbackTest() = withTestPgDatabase {
+        exec("create temporary table foo(a int4, b varchar)")
+
+        var exec = false
+        runCatching {
+            transaction { tx ->
+                tx.exec("insert into foo(a, b) values (12, 'hello')")
+                exec = true
+                error("some err")
+                Unit
+            }
+        }
+
+        assertTrue(exec)
+
+        val ret = exec("select * from foo where a = $1 and b = $2") {
+            param(12, PostgresInt4Serializer)
+            param("hello", PostgresTextSerializer)
+        }
+        assertEquals("SELECT 0", ret)
+    }
+
+    @Test
     fun connCopyToSmallTest() = withTestPgDatabase {
         exec(
             """

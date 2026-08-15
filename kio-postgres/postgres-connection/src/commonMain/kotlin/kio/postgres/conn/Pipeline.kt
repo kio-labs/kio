@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.serializer
 
-suspend inline fun <reified T> PgConnection.pipeline(block: suspend PipelineScope.() -> T): T {
+suspend inline fun <reified T> PgConnection.pipeline(crossinline block: suspend PipelineScope.() -> T): T {
     this as InternalPgConnection
 
     return withLock {
@@ -37,6 +37,12 @@ suspend fun PipelineSendScope.query(sql: String) {
     this as InternalPipelineSendScope
 
     query(sql, Unit)
+}
+
+suspend inline fun PipelineSendScope.query(sql: String, crossinline parameters: PgParameterScope.() -> Unit) {
+    this as InternalPipelineSendScope
+    val resultFormats = listOf<Short>(1)
+    conn.sink.doQuery(sql, parameters, resultFormats, false)
 }
 
 suspend inline fun <reified P> PipelineSendScope.query(sql: String, params: P) {

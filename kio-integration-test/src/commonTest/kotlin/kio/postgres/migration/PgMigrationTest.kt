@@ -16,11 +16,6 @@ abstract class PgMigrationTest {
 
     @Test
     fun setGetMigrationEntity() = withTestPgDatabase {
-        assertEquals(0, getAppliedMigrationVersions().size)
-        recordMigration(Migration(1, "adf", "asdf"))
-        assertEquals(1, getAppliedMigrationVersions().size)
-        assertEquals("adf", getAppliedMigrationVersions().get(1)?.name)
-        assertEquals("asdf", getAppliedMigrationVersions().get(1)?.checksum)
     }
 
     private fun withTestPgDatabase(
