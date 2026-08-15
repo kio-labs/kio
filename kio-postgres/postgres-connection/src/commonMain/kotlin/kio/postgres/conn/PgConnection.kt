@@ -49,6 +49,8 @@ import kotlinx.serialization.serializer
 import kotlin.coroutines.CoroutineContext
 
 interface PgConnection {
+    suspend fun exec(sql: String): String
+    suspend fun exec(sql: String, parameters: PgParameterScope.() -> Unit): String
     suspend fun waitNotification(): PgNotification
     suspend fun copyTo(sql: String, sink: Sink): String
     suspend fun copyFrom(sql: String, source: Source): String
@@ -84,128 +86,29 @@ data class PgNotification(
     val message: String
 )
 
-suspend fun PgConnection.exec(sql: String): String {
-    this as InternalPgConnection
+inline fun <reified R> PgConnection.query(sql: String, crossinline parameters: PgParameterScope.() -> Unit): Flow<R> =
+    query(sql, parameters, lock = true)
 
-    return withLock {
-        sink.writeQuery(sql)
-        sink.flush()
+inline fun <reified R> PgConnection.query(sql: String): Flow<R> =
+    query(sql, Unit, lock = true)
 
-        waitReadyAndCollectCommandTags().lastOrNull() ?: ""
-    }
-}
+inline fun <reified P, reified R> PgConnection.query(sql: String, params: P): Flow<R> =
+    query(sql, params, lock = true)
 
-inline fun <reified R> PgConnection.query(sql: String): Flow<R> {
-    return query(sql, Unit)
-}
+inline fun <reified R> PgConnection.query(stmt: PgStatement, crossinline parameters: PgParameterScope.() -> Unit): Flow<R> =
+    query(stmt, parameters, lock = true)
 
-inline fun <reified P, reified R> PgConnection.query(sql: String, params: P): Flow<R> {
-    this as InternalPgConnection
-    val conn = this
-    return flow {
-        withLock {
-            val resultSerializer = PostgresFormat.serializersModule.serializer<R>()
-            conn.sink.doQuery(sql, params, resultSerializer.formats(), true)
-            emitRowUntilReadyOrThrow(conn, resultSerializer)
-        }
-    }
-}
+inline fun <reified P, reified R> PgConnection.query(stmt: PgStatement, params: P): Flow<R> =
+    query(stmt, params, lock = true)
 
-inline fun <reified P, reified R> PgConnection.query(stmt: PgStatement, params: P): Flow<R> {
-    this as InternalPgConnection
+suspend inline fun <reified P> PgConnection.exec(sql: String, params: P): String =
+    exec(sql, params, lock = true)
 
-    val conn = this
-    return flow {
-        withLock {
-            val parameterSerializer = PostgresFormat.serializersModule.serializer<P>()
-            val resultSerializer = PostgresFormat.serializersModule.serializer<R>()
-            val values = PostgresFormat.encodeToByteArray(parameterSerializer, params)
-            val parameterFormats = parameterSerializer.formats()
-            val resultFormats = resultSerializer.formats()
-            execStmt(sink, stmt.name, values, parameterFormats, resultFormats)
+suspend inline fun <reified P> PgConnection.exec(stmt: PgStatement, params: P): String =
+    exec(stmt, params, lock = true)
 
-            emitRowUntilReadyOrThrow(conn, resultSerializer)
-        }
-    }
-}
-
-suspend inline fun <reified P> PgConnection.exec(sql: String, params: P): String {
-    this as InternalPgConnection
-
-    return withLock {
-        sink.doQuery(sql, params, listOf(), true)
-
-        waitReadyAndCollectCommandTags().lastOrNull() ?: ""
-    }
-}
-
-suspend inline fun PgConnection.exec(sql: String, crossinline parameters: PgParameterScope.() -> Unit): String {
-    this as InternalPgConnection
-
-    return withLock {
-        sink.doQuery(sql, parameters, listOf(), true)
-
-        waitReadyAndCollectCommandTags().lastOrNull() ?: ""
-    }
-}
-
-suspend inline fun <reified P> PgConnection.exec(stmt: PgStatement, params: P): String {
-    this as InternalPgConnection
-
-    return withLock {
-        val parameterSerializer = PostgresFormat.serializersModule.serializer<P>()
-        val values = PostgresFormat.encodeToByteArray(parameterSerializer, params)
-        val parameterFormats = parameterSerializer.formats()
-        val resultFormats = listOf<Short>()
-        execStmt(sink, stmt.name, values, parameterFormats, resultFormats)
-
-        waitReadyAndCollectCommandTags().lastOrNull() ?: ""
-    }
-}
-
-inline fun <reified R> PgConnection.query(sql: String, crossinline parameters: PgParameterScope.() -> Unit): Flow<R> {
-    this as InternalPgConnection
-    val conn = this
-    return flow {
-        withLock {
-            val resultSerializer = PostgresFormat.serializersModule.serializer<R>()
-            conn.sink.doQuery(sql, parameters, resultSerializer.formats(), true)
-            emitRowUntilReadyOrThrow(conn, resultSerializer)
-        }
-    }
-}
-
-inline fun <reified R> PgConnection.query(stmt: PgStatement, crossinline parameters: PgParameterScope.() -> Unit): Flow<R> {
-    this as InternalPgConnection
-    val conn = this
-    return  flow {
-        withLock {
-            val scope = PgParameterScope()
-            scope.parameters()
-
-            val resultSerializer = PostgresFormat.serializersModule.serializer<R>()
-            val resultFormats = resultSerializer.formats()
-            val values = scope.getParameterByteArray()
-            execStmt(sink, stmt.name, values, scope.parameterFormats, resultFormats)
-            emitRowUntilReadyOrThrow(conn, resultSerializer)
-        }
-    }
-}
-
-suspend inline fun PgConnection.exec(stmt: PgStatement, crossinline parameters: PgParameterScope.() -> Unit): String {
-    this as InternalPgConnection
-
-    return withLock {
-        val scope = PgParameterScope()
-        scope.parameters()
-        val values = scope.getParameterByteArray()
-        val parameterFormats = scope.parameterFormats
-        val resultFormats = listOf<Short>()
-        execStmt(sink, stmt.name, values, parameterFormats, resultFormats)
-
-        waitReadyAndCollectCommandTags().lastOrNull() ?: ""
-    }
-}
+suspend fun PgConnection.exec(stmt: PgStatement, parameters: PgParameterScope.() -> Unit): String =
+    exec(stmt, parameters, lock = true)
 
 class PgParameterScope {
     @PublishedApi
@@ -288,6 +191,128 @@ class PgException(
             line?.let { appendLine("TableName: $it") }
             routine?.let { appendLine("UnknownFields: $it") }
             unknownFields?.let { appendLine("Where: $it") }
+        }
+    }
+}
+
+@PublishedApi
+internal suspend fun PgConnection.exec(stmt: PgStatement, parameters: PgParameterScope.() -> Unit, lock: Boolean): String {
+    this as InternalPgConnection
+
+    return withOptionalLock(lock) {
+        val scope = PgParameterScope()
+        scope.parameters()
+        val values = scope.getParameterByteArray()
+        val parameterFormats = scope.parameterFormats
+        val resultFormats = listOf<Short>()
+        execStmt(sink, stmt.name, values, parameterFormats, resultFormats)
+
+        waitReadyAndCollectCommandTags().lastOrNull() ?: ""
+    }
+}
+
+@PublishedApi
+internal suspend inline fun <reified P> PgConnection.exec(stmt: PgStatement, params: P, lock: Boolean): String {
+    this as InternalPgConnection
+
+    return withOptionalLock(lock) {
+        val parameterSerializer = PostgresFormat.serializersModule.serializer<P>()
+        val values = PostgresFormat.encodeToByteArray(parameterSerializer, params)
+        val parameterFormats = parameterSerializer.formats()
+        val resultFormats = listOf<Short>()
+        execStmt(sink, stmt.name, values, parameterFormats, resultFormats)
+
+        waitReadyAndCollectCommandTags().lastOrNull() ?: ""
+    }
+}
+
+@PublishedApi
+internal suspend inline fun <reified P> PgConnection.exec(sql: String, params: P, lock: Boolean): String {
+    this as InternalPgConnection
+
+    return withOptionalLock(lock) {
+        sink.doQuery(sql, params, listOf(), true)
+
+        waitReadyAndCollectCommandTags().lastOrNull() ?: ""
+    }
+}
+
+@PublishedApi
+internal inline fun <reified R> PgConnection.query(sql: String, crossinline parameters: PgParameterScope.() -> Unit, lock: Boolean): Flow<R> {
+    this as InternalPgConnection
+    val conn = this
+    return flow {
+        withOptionalLock(lock) {
+            val resultSerializer = PostgresFormat.serializersModule.serializer<R>()
+            conn.sink.doQuery(sql, parameters, resultSerializer.formats(), true)
+            emitRowUntilReadyOrThrow(conn, resultSerializer)
+        }
+    }
+}
+
+@PublishedApi
+internal inline fun <reified P, reified R> PgConnection.query(stmt: PgStatement, params: P, lock: Boolean): Flow<R> {
+    this as InternalPgConnection
+
+    val conn = this
+    return flow {
+        withOptionalLock(lock) {
+            val parameterSerializer = PostgresFormat.serializersModule.serializer<P>()
+            val resultSerializer = PostgresFormat.serializersModule.serializer<R>()
+            val values = PostgresFormat.encodeToByteArray(parameterSerializer, params)
+            val parameterFormats = parameterSerializer.formats()
+            val resultFormats = resultSerializer.formats()
+            execStmt(sink, stmt.name, values, parameterFormats, resultFormats)
+
+            emitRowUntilReadyOrThrow(conn, resultSerializer)
+        }
+    }
+}
+
+@PublishedApi
+internal inline fun <reified R> PgConnection.query(stmt: PgStatement, crossinline parameters: PgParameterScope.() -> Unit, lock: Boolean): Flow<R> {
+    this as InternalPgConnection
+    val conn = this
+    return  flow {
+        withOptionalLock(lock) {
+            val scope = PgParameterScope()
+            scope.parameters()
+
+            val resultSerializer = PostgresFormat.serializersModule.serializer<R>()
+            val resultFormats = resultSerializer.formats()
+            val values = scope.getParameterByteArray()
+            execStmt(sink, stmt.name, values, scope.parameterFormats, resultFormats)
+            emitRowUntilReadyOrThrow(conn, resultSerializer)
+        }
+    }
+}
+
+@PublishedApi
+internal suspend fun InternalPgConnection.exec(sql: String, lock: Boolean): String = withOptionalLock(lock) {
+    sink.writeQuery(sql)
+    sink.flush()
+
+    waitReadyAndCollectCommandTags().lastOrNull() ?: ""
+}
+
+@PublishedApi
+internal suspend fun InternalPgConnection.exec(
+    sql: String,
+    parameters: PgParameterScope.() -> Unit,
+    lock: Boolean
+): String = withOptionalLock(lock) {
+    sink.doQuery(sql, parameters, listOf(), true)
+    waitReadyAndCollectCommandTags().lastOrNull() ?: ""
+}
+
+@PublishedApi
+internal inline fun <reified P, reified R> PgConnection.query(sql: String, params: P, lock: Boolean): Flow<R> {
+    this as InternalPgConnection
+    return flow {
+        withOptionalLock(lock) {
+            val resultSerializer = PostgresFormat.serializersModule.serializer<R>()
+            sink.doQuery(sql, params, resultSerializer.formats(), true)
+            emitRowUntilReadyOrThrow(this@query, resultSerializer)
         }
     }
 }
@@ -440,7 +465,7 @@ internal class InternalPgConnection(
 
     suspend fun readMessage() = messageChannel.receive()
 
-    suspend inline fun <T> withLock(block: () -> T): T {
+    suspend fun <T> withLock(block: suspend () -> T): T {
         mutex.lock()
         return try {
             block()
@@ -452,6 +477,18 @@ internal class InternalPgConnection(
             mutex.unlock()
         }
     }
+
+    suspend fun <T> withOptionalLock(lock: Boolean, block: suspend () -> T) : T{
+        return if (lock) {
+            withLock(block)
+        } else {
+            block()
+        }
+    }
+
+    override suspend fun exec(sql: String): String = exec(sql, lock = true)
+
+    override suspend fun exec(sql: String, parameters: PgParameterScope.() -> Unit): String =  exec(sql, parameters, lock = true)
 
     override suspend fun waitNotification(): PgNotification {
         return notificationSharedFlow.first()
@@ -726,6 +763,3 @@ internal fun buildPgException(errors: Iterable<ErrorField>): PgException {
         unknownFields = unknownFields,
     )
 }
-
-@PublishedApi
-internal val NonePgParameter : PgParameterScope.() -> Unit = {}
