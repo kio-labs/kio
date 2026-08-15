@@ -11,6 +11,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":kio-postgres:postgres-types"))
+            api(libs.kotlinx.coroutines.core)
             implementation(project(":kio-postgres:postgres-protocol"))
             implementation(project(":kio-async:async-io"))
             implementation(project(":kio-tls"))

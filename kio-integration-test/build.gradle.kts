@@ -16,6 +16,7 @@ kotlin {
             implementation(project(":kio-async:async-io"))
             implementation(project(":kio-tls"))
             implementation(project(":kio-postgres:postgres-connection"))
+            implementation(project(":kio-postgres:postgres-migration"))
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }
