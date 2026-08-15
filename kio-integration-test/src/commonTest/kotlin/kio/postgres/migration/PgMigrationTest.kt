@@ -6,15 +6,45 @@ import kio.postgres.conn.PgConnection
 import kio.postgres.conn.getEnv
 import kio.postgres.conn.openPgConnection
 import kotlinx.coroutines.withTimeout
+import kotlin.test.AfterTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.time.Duration.Companion.seconds
 
 abstract class PgMigrationTest {
     abstract val pollerFactory: PollerFactory
 
+    @AfterTest
+    fun clearTables() = withTestPgDatabase {
+        exec("drop table if exists schema_migrations cascade")
+    }
+
     @Test
-    fun setGetMigrationEntity() = withTestPgDatabase {
-        migrate(listOf(Migration(1, "asf", "af")))
+    fun migrationFailedWithInvalidSql() = withTestPgDatabase {
+        val result = migrate(listOf(Migration(1, "schema 1", "invalid_sql")))
+        assertIs<MigrationResult.Error.ExecutionFailed>(result)
+    }
+
+    @Test
+    fun migrationFailedWithSqlCheck() = withTestPgDatabase {
+        migrate(listOf(Migration(1, "schema 1", "select 1"))).also {
+            assertIs<MigrationResult.Success>(it)
+        }
+        migrate(listOf(Migration(1, "schema 1", "select 2"))).also {
+            assertIs<MigrationResult.Error.AppliedMigrationMismatch>(it)
+        }
+    }
+
+    @Test
+    fun migrationFailedWithInvalidMigration() = withTestPgDatabase {
+        migrate(listOf(
+            Migration(1, "schema 1", "select 1"),
+            Migration(1, "schema 2", "select 1"),
+        )).also {
+            assertIs<MigrationResult.Error.InvalidMigrationSet>(it)
+            assertEquals("Duplicate migration version", it.reason)
+        }
     }
 
     private fun withTestPgDatabase(
@@ -35,12 +65,7 @@ abstract class PgMigrationTest {
                     password = password,
                     database = database,
                 )
-                conn.exec("begin")
-                try {
-                    conn.block()
-                } finally {
-                    conn.exec("rollback")
-                }
+                conn.block()
                 conn.close()
             }
         }

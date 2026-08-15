@@ -13,6 +13,7 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":kio-postgres:postgres-connection"))
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.hash.sha2)
         }
     }
 }
