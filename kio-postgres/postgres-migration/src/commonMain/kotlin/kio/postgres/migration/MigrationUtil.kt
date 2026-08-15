@@ -1,9 +1,11 @@
 package kio.postgres.migration
 
 import kio.postgres.conn.PgConnection
+import kio.postgres.conn.TransactionScope
 import kio.postgres.conn.exec
 import kio.postgres.conn.param
 import kio.postgres.conn.query
+import kio.postgres.conn.transaction
 import kio.postgres.types.PgInt8
 import kio.postgres.types.PgText
 import kio.postgres.types.PgTimestampTz
@@ -22,28 +24,55 @@ data class Migration(
 
 sealed interface MigrationResult {
     data object Success: MigrationResult
+    sealed interface Error: MigrationResult {
+        data class MigrationInvalid(val reason: String): Error
+        data class SchemaInvalid(val invalidSchema: Migration): Error
+        data class MigrationFailed(val failed: Migration, val t: Throwable): Error
+    }
 }
 
 suspend fun PgConnection.migrate(migrations: List<Migration>): MigrationResult {
     ensureMigrationTable()
 
+    val sortedMigrations = migrations.sortedBy { it.version }
+    if (sortedMigrations.map { it.version }.distinct().size != sortedMigrations.size) {
+        return MigrationResult.Error.MigrationInvalid("duplicated schema version")
+    }
+
     val appliedVersions = getAppliedMigrationVersions()
 
-//    for (migration in migrations.sortedBy { it.version }) {
-//        if (migration.version in appliedVersions) {
-//            continue
-//        }
-//
-//        // execute migration
-//    }
+    for (migration in sortedMigrations) {
+        val appliedVersion = appliedVersions[migration.version]
 
-    TODO()
+        if (appliedVersion != null) {
+            if (appliedVersion.checksum != migration.sql) {
+                // TODO: calculate sql checksum
+                return MigrationResult.Error.SchemaInvalid(migration)
+            }
+
+            continue
+        }
+
+//        // execute migration
+        val result = runCatching {
+            transaction { tx ->
+                tx.exec(migration.sql)
+                tx.recordMigration(migration)
+            }
+        }
+
+        if (result.isFailure) {
+            return MigrationResult.Error.MigrationFailed(migration, result.exceptionOrNull()!!)
+        }
+    }
+
+    return MigrationResult.Success
 }
 
 private suspend fun PgConnection.ensureMigrationTable() {
     exec(
         """
-        create table if not exists schema_migrations (
+        create table if not exists schema_migration (
             version bigint primary key,
             name text not null,
             checksum text not null,
@@ -65,10 +94,10 @@ data class MigrationEntity(
     val appliedAt: PgTimestampTz,
 )
 
-suspend fun PgConnection.getAppliedMigrationVersions(): Map<PgInt8, MigrationEntity> {
+private suspend fun PgConnection.getAppliedMigrationVersions(): Map<PgInt8, MigrationEntity> {
     val ret: Flow<MigrationEntity> = query(
         """
-        select * from schema_migrations
+        select * from schema_migration
         order by version
         """.trimIndent()
     )
@@ -78,12 +107,12 @@ suspend fun PgConnection.getAppliedMigrationVersions(): Map<PgInt8, MigrationEnt
     return entities.associateBy { it.version }
 }
 
-suspend fun PgConnection.recordMigration(
+private suspend fun TransactionScope.recordMigration(
     migration: Migration,
 ) {
     exec(
         """
-        insert into schema_migrations (
+        insert into schema_migration (
             version,
             name,
             checksum

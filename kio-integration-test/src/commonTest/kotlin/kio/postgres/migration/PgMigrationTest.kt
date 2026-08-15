@@ -3,12 +3,10 @@ package kio.postgres.migration
 import kio.async.PollerFactory
 import kio.async.runPollEventLoop
 import kio.postgres.conn.PgConnection
-import kio.postgres.conn.exec
 import kio.postgres.conn.getEnv
 import kio.postgres.conn.openPgConnection
 import kotlinx.coroutines.withTimeout
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.seconds
 
 abstract class PgMigrationTest {
@@ -16,6 +14,7 @@ abstract class PgMigrationTest {
 
     @Test
     fun setGetMigrationEntity() = withTestPgDatabase {
+        migrate(listOf(Migration(1, "asf", "af")))
     }
 
     private fun withTestPgDatabase(
@@ -36,7 +35,12 @@ abstract class PgMigrationTest {
                     password = password,
                     database = database,
                 )
-                conn.block()
+                conn.exec("begin")
+                try {
+                    conn.block()
+                } finally {
+                    conn.exec("rollback")
+                }
                 conn.close()
             }
         }

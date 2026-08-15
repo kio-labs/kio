@@ -19,24 +19,6 @@ suspend inline fun <reified T> PgConnection.transaction(crossinline block: suspe
     }
 }
 
-suspend inline fun <T> PgConnection.rollbackTransaction(
-    crossinline block: suspend TransactionScope.() -> T
-): T {
-    this as InternalPgConnection
-
-    return withLock {
-        exec("begin", lock = false)
-
-        val scope = TransactionScopeImpl(this)
-
-        try {
-            scope.block()
-        } finally {
-            exec("rollback", lock = false)
-        }
-    }
-}
-
 interface TransactionScope {
     suspend fun exec(sql: String): String
     suspend fun exec(sql: String, parameters: PgParameterScope.() -> Unit): String
