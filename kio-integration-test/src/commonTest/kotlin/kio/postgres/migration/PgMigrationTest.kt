@@ -47,6 +47,22 @@ abstract class PgMigrationTest {
         }
     }
 
+    @Test
+    fun migrationSuccess() = withTestPgDatabase {
+        migrate(
+            listOf(
+            Migration(1, "schema 1", "select 1"),
+            Migration(2, "schema 2", "select 1"),
+            ),
+            targetVersion = 1
+        ).also {
+            println(it)
+            assertIs<MigrationResult.Success>(it)
+            assertEquals(1, it.migrated.size)
+            assertEquals(1, it.migrated.first().version)
+        }
+    }
+
     private fun withTestPgDatabase(
         block: suspend PgConnection.() -> Unit
     ) =
