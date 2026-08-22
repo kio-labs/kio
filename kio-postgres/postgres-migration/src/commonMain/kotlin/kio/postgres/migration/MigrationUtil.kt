@@ -23,7 +23,7 @@ data class Migration(
 )
 
 sealed interface MigrationResult {
-    data object Success : MigrationResult
+    data class Success(val migrated: List<Migration>) : MigrationResult
     sealed interface Error : MigrationResult {
         data class InvalidMigrationSet(val reason: String) : Error
         data class AppliedMigrationMismatch(val migration: Migration) : Error
@@ -33,6 +33,7 @@ sealed interface MigrationResult {
 
 suspend fun PgConnection.migrate(
     migrations: List<Migration>,
+    targetVersion: Long? = getLargestVersion(migrations)
 ): MigrationResult {
     ensureMigrationHistoryTable()
 
@@ -43,8 +44,12 @@ suspend fun PgConnection.migrate(
     }
 
     val appliedMigrations = loadAppliedMigrations()
-
+    val migrated = mutableListOf<Migration>()
     for (migration in sortedMigrations) {
+        if (targetVersion != null && migration.version > targetVersion) {
+            break
+        }
+
         val appliedMigration = appliedMigrations[migration.version]
         if (appliedMigration != null) {
             if (appliedMigration.checksum != calculateMigrationChecksum(migration.sql)) {
@@ -66,10 +71,16 @@ suspend fun PgConnection.migrate(
                 migration = migration,
                 cause = result.exceptionOrNull()!!,
             )
+        } else {
+            migrated.add(migration)
         }
     }
 
-    return MigrationResult.Success
+    return MigrationResult.Success(migrated)
+}
+
+private fun getLargestVersion(migrations: List<Migration>): Long? {
+    return migrations.maxOfOrNull { it.version }
 }
 
 private suspend fun PgConnection.ensureMigrationHistoryTable() {
