@@ -4,6 +4,7 @@ package kio.async
 
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.IntVarOf
 import kotlinx.cinterop.UIntVarOf
 import kotlinx.coroutines.CancellationException
 import kotlinx.io.IOException
@@ -19,4 +20,7 @@ actual interface SuspendIo {
     suspend fun suspendAccept(fd: Int, addr: CPointer<sockaddr_in>, addrLen: CPointer<UIntVarOf<UInt>>): Int
     @Throws(IOException::class, CancellationException::class)
     suspend fun suspendConnect(fd: Int, addr: CPointer<sockaddr>, len: UInt)
+    suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int
+    suspend fun suspendClose(fd: Int): Int
+    suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int
 }

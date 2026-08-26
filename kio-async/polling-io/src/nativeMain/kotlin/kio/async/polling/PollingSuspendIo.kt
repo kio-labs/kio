@@ -9,6 +9,7 @@ import kio.async.SuspendIo
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.IntVar
+import kotlinx.cinterop.IntVarOf
 import kotlinx.cinterop.UIntVarOf
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
@@ -23,9 +24,12 @@ import platform.posix.EINPROGRESS
 import platform.posix.SOL_SOCKET
 import platform.posix.SO_ERROR
 import platform.posix.accept
+import platform.posix.close
 import platform.posix.connect
 import platform.posix.errno
 import platform.posix.getsockopt
+import platform.posix.open
+import platform.posix.pipe
 import platform.posix.read
 import platform.posix.sockaddr
 import platform.posix.sockaddr_in
@@ -74,6 +78,18 @@ interface PollingSuspendIo : SuspendIo {
         }
 
         throw IOException("connect failed: ${strerror(socketError)?.toKString() ?: "errno=$socketError"}")
+    }
+
+    override suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int {
+        return open(__file = path, __oflag = flags, mode)
+    }
+
+    override suspend fun suspendClose(fd: Int): Int {
+        return close(__fd = fd)
+    }
+
+    override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int {
+        return pipe(fds)
     }
 }
 

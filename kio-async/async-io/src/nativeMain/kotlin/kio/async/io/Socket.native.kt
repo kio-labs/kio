@@ -59,7 +59,7 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
             } catch (t: Throwable) {
                 lastError = t
                 poller.detach(fd, POLL_INTEREST_WRITE)
-                close(fd)
+                poller.suspendClose(fd)
                 ai = ai.pointed.ai_next
             }
         }
@@ -119,7 +119,7 @@ actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
 
         FdServerSocket(poller, serverFd)
     } catch (t: Throwable) {
-        close(serverFd)
+        poller.suspendClose(serverFd)
         throw t
     }
 }
@@ -156,7 +156,7 @@ private class FdServerSocket(
 
             FdRawAsyncConnection(poller, clientFd)
         } catch (t: Throwable) {
-            close(clientFd)
+            poller.suspendClose(clientFd)
             throw t
         }
     }
@@ -197,7 +197,7 @@ private class FdRawAsyncConnection(
             poller.detach(fd, POLL_INTEREST_WRITE)
             poller.detach(fd, POLL_INTEREST_READ)
 
-            close(fd)
+            poller.suspendClose(fd)
         }
     }
 }

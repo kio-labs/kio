@@ -12,7 +12,6 @@ import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import kotlinx.coroutines.currentCoroutineContext
-import platform.posix.close
 import platform.posix.pipe
 
 @OptIn(ExperimentalForeignApi::class)
@@ -46,8 +45,8 @@ actual suspend fun openPipe(): AsyncRawConnection = memScoped {
             poller.detach(readFd, POLL_INTEREST_READ)
             poller.detach(writeFd, POLL_INTEREST_WRITE)
 
-            close(readFd)
-            close(writeFd)
+            suspendIo.suspendClose(readFd)
+            suspendIo.suspendClose(writeFd)
         }
     }
 }

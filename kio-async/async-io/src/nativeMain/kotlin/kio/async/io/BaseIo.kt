@@ -6,7 +6,6 @@ import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.SuspendIo
 import kotlinx.cinterop.CPointer
-import kotlinx.cinterop.CValuesRef
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
@@ -37,7 +36,7 @@ private class DefaultAsyncRawSink(
     }
 
     override suspend fun close() {
-        close(fd)
+        suspendIo.suspendClose(fd)
     }
 }
 

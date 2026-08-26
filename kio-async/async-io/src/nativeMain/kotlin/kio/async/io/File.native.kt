@@ -13,13 +13,20 @@ import kotlinx.cinterop.toKString
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.io.Buffer
 import kotlinx.io.IOException
-import platform.posix.*
+import platform.posix.EINTR
+import platform.posix.O_CLOEXEC
+import platform.posix.O_CREAT
+import platform.posix.O_RDONLY
+import platform.posix.O_TRUNC
+import platform.posix.O_WRONLY
+import platform.posix.errno
+import platform.posix.strerror
 
 actual suspend fun openFileSource(path: String): AsyncRawSource {
     val poller = currentCoroutineContext().poller
     val suspendIo = poller as SuspendIo
 
-    val fd = openFile(path)
+    val fd = suspendIo.openFile(path)
 
     setNonBlocking(fd)
     poller.attach(fd, POLL_INTEREST_READ)
@@ -43,7 +50,7 @@ actual suspend fun openFileSink(path: String): AsyncRawSink {
     val poller = currentCoroutineContext().poller
     val suspendIo = poller as SuspendIo
 
-    val fd = openFile(path, isReadOnly = false)
+    val fd = suspendIo.openFile(path, isReadOnly = false)
     setNonBlocking(fd)
     poller.attach(fd, POLL_INTEREST_WRITE)
 
@@ -64,7 +71,7 @@ actual suspend fun openFileSink(path: String): AsyncRawSink {
     }
 }
 
-private fun openFile(path: String, isReadOnly: Boolean = true): Int {
+private suspend fun SuspendIo.openFile(path: String, isReadOnly: Boolean = true): Int {
     while (true) {
         val flags = if (isReadOnly) {
             O_RDONLY or O_CLOEXEC
@@ -73,9 +80,9 @@ private fun openFile(path: String, isReadOnly: Boolean = true): Int {
         }
 
         val fd = if (isReadOnly) {
-            open(path, flags)
+            suspendOpen(path, flags, 0.toUInt())
         } else {
-            open(path, flags, 0x1A4) // 0644
+            suspendOpen(path, flags, 0x1A4.toUInt()) // 0644
         }
 
         if (fd >= 0) {

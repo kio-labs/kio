@@ -9,6 +9,7 @@ import kotlinx.cinterop.Arena
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.IntVarOf
 import kotlinx.cinterop.UIntVarOf
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
@@ -41,7 +42,10 @@ import platform.posix.strerror
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlinx.cinterop.reinterpret
+import linux.uring.io_uring_prep_close
 import linux.uring.io_uring_prep_connect
+import linux.uring.io_uring_prep_open
+import linux.uring.io_uring_prep_pipe
 import linux.uring.io_uring_queue_exit
 import platform.posix.sockaddr_in
 import kotlin.coroutines.resumeWithException
@@ -132,8 +136,11 @@ private class PollerLinuxUring : Poller, SuspendIo {
             val result =
                 cqeVar.pointed?.res ?: throw IOException("result of request $req not found.")
             when (req) {
+                is UringReq.Open -> req.c.resume(result)
+                is UringReq.Close -> req.c.resume(result)
                 is UringReq.Read -> req.c.resume(result.toLong())
                 is UringReq.Write -> req.c.resume(result.toLong())
+                is UringReq.Pipe -> req.c.resume(result)
                 is UringReq.Connect -> {
                     if (result == 0) {
                         req.c.resume(Unit)
@@ -217,6 +224,41 @@ private class PollerLinuxUring : Poller, SuspendIo {
         }
     }
 
+    override suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeSqe()
+        io_uring_prep_open(sqe, path, flags, mode)
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.Open(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
+
+    override suspend fun suspendClose(fd: Int): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeSqe()
+        io_uring_prep_close(sqe, fd)
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.Close(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
+
+    override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeSqe()
+        io_uring_prep_pipe(sqe, fds, pipeFlags)
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.Pipe(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
 
     override fun close() {
         check(requestMap.isEmpty()) {
@@ -248,6 +290,9 @@ private sealed interface UringReq {
     data class Accept(val c: Continuation<Int>) : UringReq
     data class Connect(val c: Continuation<Unit>) : UringReq
     data class Write(val c: Continuation<Long>) : UringReq
+    data class Open(val c: Continuation<Int>) : UringReq
+    data class Close(val c: Continuation<Int>) : UringReq
+    data class Pipe(val c: Continuation<Int>) : UringReq
 }
 
 private fun errnoMessage(result: Int? = null): String {
