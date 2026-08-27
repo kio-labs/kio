@@ -7,6 +7,9 @@ import kio.async.AsyncRawSource
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.SuspendIo
+import kio.async.attachFD
+import kio.async.detachFD
+import kio.async.open
 import kio.async.poller
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString
@@ -29,7 +32,7 @@ actual suspend fun openFileSource(path: String): AsyncRawSource {
     val fd = suspendIo.openFile(path)
 
     setNonBlocking(fd)
-    poller.attach(fd, POLL_INTEREST_READ)
+    poller.attachFD(fd, POLL_INTEREST_READ)
 
     val source = suspendIo.asyncRawSource(fd)
     return object : AsyncRawSource {
@@ -39,7 +42,7 @@ actual suspend fun openFileSource(path: String): AsyncRawSource {
         ): Long = source.readAtMostTo(sink, byteCount)
 
         override suspend fun close() {
-            poller.detach(fd, POLL_INTEREST_READ)
+            poller.detachFD(fd, POLL_INTEREST_READ)
 
             source.close()
         }
@@ -52,7 +55,7 @@ actual suspend fun openFileSink(path: String): AsyncRawSink {
 
     val fd = suspendIo.openFile(path, isReadOnly = false)
     setNonBlocking(fd)
-    poller.attach(fd, POLL_INTEREST_WRITE)
+    poller.attachFD(fd, POLL_INTEREST_WRITE)
 
     val sink = suspendIo.asyncRawSink(fd)
     return object : AsyncRawSink {
@@ -65,7 +68,7 @@ actual suspend fun openFileSink(path: String): AsyncRawSink {
         }
 
         override suspend fun close() {
-            poller.detach(fd, POLL_INTEREST_WRITE)
+            poller.detachFD(fd, POLL_INTEREST_WRITE)
             sink.close()
         }
     }
@@ -80,9 +83,9 @@ private suspend fun SuspendIo.openFile(path: String, isReadOnly: Boolean = true)
         }
 
         val fd = if (isReadOnly) {
-            suspendOpen(path, flags, 0.toUInt())
+            open(path, flags, 0.toUInt())
         } else {
-            suspendOpen(path, flags, 0x1A4.toUInt()) // 0644
+            open(path, flags, 0x1A4.toUInt()) // 0644
         }
 
         if (fd >= 0) {

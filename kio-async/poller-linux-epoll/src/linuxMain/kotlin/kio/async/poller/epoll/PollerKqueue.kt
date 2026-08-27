@@ -5,7 +5,8 @@ import kio.async.POLL_INTEREST_WRITE
 import kio.async.PollInterest
 import kio.async.Poller
 import kio.async.PollerFactory
-import kio.async.polling.PollingSuspendIo
+import kio.async.SuspendIo
+import kio.async.polling.PollBasedSuspendIo
 import kotlinx.cinterop.Arena
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
@@ -35,7 +36,7 @@ object EPoll : PollerFactory {
 
 private const val EVENT_CAPACITY = 64
 
-private class EpollPoller : Poller, PollingSuspendIo {
+private class EpollPoller : Poller, PollBasedSuspendIo {
     val epollfd = epoll_create1(0)
 
     @OptIn(ExperimentalForeignApi::class)
@@ -106,6 +107,8 @@ private class EpollPoller : Poller, PollingSuspendIo {
             continuationMap.remove(handle to interest)
         }
     }
+
+    override val io: SuspendIo = this
 
     @OptIn(ExperimentalForeignApi::class)
     override fun poll(timeoutMillis: Long) {

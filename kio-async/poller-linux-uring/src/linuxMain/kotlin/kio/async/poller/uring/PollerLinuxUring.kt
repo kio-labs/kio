@@ -62,6 +62,8 @@ private class PollerLinuxUring : Poller, SuspendIo {
 
     private val requestMap = mutableMapOf<ULong, UringReq>()
 
+    override val io: SuspendIo = this
+
     init {
         val result = io_uring_queue_init(QUEUE_SIZE, ring.ptr, 0u)
         if (result != 0) {

@@ -11,10 +11,35 @@ kotlin {
     jvm()
     macosArm64()
     linuxX64()
+
+    applyHierarchyTemplate {
+        common {
+            group("jvm") {
+                withJvm()
+            }
+
+            group("native") {
+                withNative()
+
+                group("linux") {
+                    withLinux()
+                }
+
+                group("nonLinux") {
+                    withApple()
+                }
+            }
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             api(libs.kotlinx.io)
             api(libs.kotlinx.coroutines.core)
+        }
+
+        linuxMain.dependencies {
+            api(libs.linux.platform)
         }
 
         commonTest.dependencies {

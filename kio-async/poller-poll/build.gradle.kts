@@ -13,7 +13,6 @@ kotlin {
     sourceSets {
         nativeMain.dependencies {
             api(project(":kio-async:async-core"))
-            implementation(project(":kio-async:polling-io"))
         }
     }
 }

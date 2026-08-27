@@ -6,7 +6,12 @@ import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
-import kio.async.Poller
+import kio.async.SuspendIo
+import kio.async.accept
+import kio.async.attachFD
+import kio.async.close
+import kio.async.connect
+import kio.async.detachFD
 import kio.async.poller
 import kotlinx.atomicfu.atomic
 import platform.posix.*
@@ -19,6 +24,7 @@ import kotlin.Int
 @OptIn(ExperimentalForeignApi::class)
 actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection = memScoped {
     val poller = currentCoroutineContext().poller
+    val io = poller.io
     val hints = alloc<addrinfo> {
         ai_family = AF_UNSPEC
         ai_socktype = SOCK_STREAM
@@ -52,14 +58,14 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
                 }
 
                 val aiAddr = ai.pointed.ai_addr ?: throw IOException("no ai_addr value")
-                poller.attach(fd, POLL_INTEREST_WRITE)
-                poller.suspendConnect(fd, aiAddr, ai.pointed.ai_addrlen)
+                io.attachFD(fd, POLL_INTEREST_WRITE)
+                io.connect(fd, aiAddr, ai.pointed.ai_addrlen)
 
-                return@memScoped FdRawAsyncConnection(poller = poller, fd = fd)
+                return@memScoped FdRawAsyncConnection(io = io, fd = fd)
             } catch (t: Throwable) {
                 lastError = t
-                poller.detach(fd, POLL_INTEREST_WRITE)
-                poller.suspendClose(fd)
+                io.detachFD(fd, POLL_INTEREST_WRITE)
+                io.close(fd)
                 ai = ai.pointed.ai_next
             }
         }
@@ -72,7 +78,7 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
 
 @OptIn(ExperimentalForeignApi::class, UnsafeNumber::class)
 actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
-    val poller = currentCoroutineContext().poller
+    val io = currentCoroutineContext().poller.io
     val backlog: Int = 128
 // TODO: Judge IP type form host.
     val serverFd = socket(AF_INET, SOCK_STREAM, 0)
@@ -117,9 +123,9 @@ actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
             throw IOException("could not listen $host:$port: ${errnoMessage()}")
         }
 
-        FdServerSocket(poller, serverFd)
+        FdServerSocket(io, serverFd)
     } catch (t: Throwable) {
-        poller.suspendClose(serverFd)
+        io.close(serverFd)
         throw t
     }
 }
@@ -127,11 +133,11 @@ actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
 internal expect fun inet_addr(host: String?): UInt
 
 private class FdServerSocket(
-    private val poller: Poller,
+    private val io: SuspendIo,
     private val serverFd: Int,
 ) : ServerSocket {
     init {
-        poller.attach(serverFd, POLL_INTEREST_READ)
+        io.attachFD(serverFd, POLL_INTEREST_READ)
     }
 
     override val boundPort: Int by lazy {
@@ -143,7 +149,7 @@ private class FdServerSocket(
         val clientAddrLen = alloc<UIntVar> { value = sizeOf<sockaddr_in>().convert() }
 
         val clientFd =
-            poller.suspendAccept(serverFd, clientAddr.ptr, clientAddrLen.ptr)
+            io.accept(serverFd, clientAddr.ptr, clientAddrLen.ptr)
 
         if (clientFd < 0) {
             throw IOException("ERROR: could not accept connection from client: ${errnoMessage()}")
@@ -154,27 +160,27 @@ private class FdServerSocket(
                 throw IOException("ERROR: could not set client socket non-blocking: ${errnoMessage()}\n")
             }
 
-            FdRawAsyncConnection(poller, clientFd)
+            FdRawAsyncConnection(io, clientFd)
         } catch (t: Throwable) {
-            poller.suspendClose(clientFd)
+            io.close(clientFd)
             throw t
         }
     }
 
     override fun close() {
-        poller.detach(serverFd, POLL_INTEREST_READ)
+        io.detachFD(serverFd, POLL_INTEREST_READ)
     }
 }
 
 private class FdRawAsyncConnection(
-    private val poller: Poller,
+    private val io: SuspendIo,
     private val fd: Int,
-    override val source: AsyncRawSource = poller.asyncRawSource(fd),
-    override val sink: AsyncRawSink = poller.asyncRawSink(fd)
+    override val source: AsyncRawSource = io.asyncRawSource(fd),
+    override val sink: AsyncRawSink = io.asyncRawSink(fd)
 ) : AsyncRawConnection {
     init {
-        poller.attach(fd, POLL_INTEREST_WRITE)
-        poller.attach(fd, POLL_INTEREST_READ)
+        io.attachFD(fd, POLL_INTEREST_WRITE)
+        io.attachFD(fd, POLL_INTEREST_READ)
     }
 
     private val closed = atomic(false)
@@ -194,10 +200,10 @@ private class FdRawAsyncConnection(
         } catch (e: IOException) {
             // Ignore exception when close.
         } finally {
-            poller.detach(fd, POLL_INTEREST_WRITE)
-            poller.detach(fd, POLL_INTEREST_READ)
+            io.detachFD(fd, POLL_INTEREST_WRITE)
+            io.detachFD(fd, POLL_INTEREST_READ)
 
-            poller.suspendClose(fd)
+            io.close(fd)
         }
     }
 }

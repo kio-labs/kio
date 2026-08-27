@@ -6,8 +6,10 @@ import kio.async.POLL_INTEREST_ACCEPT
 import kio.async.POLL_INTEREST_CONNECT
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
-import kio.async.Poller
 import kio.async.SelectionKeyWrapper
+import kio.async.SuspendIo
+import kio.async.attachKey
+import kio.async.detachKey
 import kio.async.poller
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.io.Buffer
@@ -20,44 +22,44 @@ actual suspend fun openConnection(
     host: String,
     port: Int,
 ): AsyncRawConnection {
-    val poller = currentCoroutineContext().poller
+    val io = currentCoroutineContext().poller.io
     val channel = SocketChannel.open()
     val connectHandle = SelectionKeyWrapper(channel)
     try {
         channel.configureBlocking(false)
-        poller.attach(connectHandle, POLL_INTEREST_CONNECT)
+        io.attachKey(connectHandle, POLL_INTEREST_CONNECT)
 
         channel.connect(InetSocketAddress(host, port))
 
         while (true) {
-            poller.suspendConnect(channel)
+            io.suspendConnect(channel)
 
             if (channel.finishConnect()) {
                 break
             }
         }
 
-        return ChannelRawAsyncConnection(poller, channel)
+        return ChannelRawAsyncConnection(io, channel)
     } catch (t: Throwable) {
         channel.close()
         throw t
     } finally {
-        poller.detach(connectHandle, POLL_INTEREST_CONNECT)
+        io.detachKey(connectHandle, POLL_INTEREST_CONNECT)
     }
 }
 
 internal class ChannelRawAsyncConnection(
-    private val poller: Poller,
+    private val io: SuspendIo,
     private val channel: SocketChannel,
-    override val source: AsyncRawSource = asyncChannelRawSource(channel, channel, poller),
-    override val sink: AsyncRawSink = asyncChannelRawSink(channel, channel,poller),
+    override val source: AsyncRawSource = asyncChannelRawSource(channel, channel, io),
+    override val sink: AsyncRawSink = asyncChannelRawSink(channel, channel,io),
 ) : AsyncRawConnection {
     private val readHandle = SelectionKeyWrapper(channel)
     private val writeHandle = SelectionKeyWrapper(channel)
 
     init {
-        poller.attach(readHandle, POLL_INTEREST_READ)
-        poller.attach(writeHandle, POLL_INTEREST_WRITE)
+        io.attachKey(readHandle, POLL_INTEREST_READ)
+        io.attachKey(writeHandle, POLL_INTEREST_WRITE)
     }
 
     private var closed = false
@@ -80,8 +82,8 @@ internal class ChannelRawAsyncConnection(
             }
         }
 
-        poller.detach(readHandle, POLL_INTEREST_READ)
-        poller.detach(writeHandle, POLL_INTEREST_WRITE)
+        io.detachKey(readHandle, POLL_INTEREST_READ)
+        io.detachKey(writeHandle, POLL_INTEREST_WRITE)
     }
 }
 
@@ -89,7 +91,7 @@ actual suspend fun tcpBind(
     host: String,
     port: Int,
 ): ServerSocket {
-    val poller = currentCoroutineContext().poller
+    val io = currentCoroutineContext().poller.io
     val backlog = 128
     val channel = ServerSocketChannel.open()
 
@@ -103,7 +105,7 @@ actual suspend fun tcpBind(
             backlog,
         )
 
-        return ChannelServerSocket(poller, channel)
+        return ChannelServerSocket(io, channel)
     } catch (t: Throwable) {
         channel.close()
         throw t
@@ -111,14 +113,14 @@ actual suspend fun tcpBind(
 }
 
 private class ChannelServerSocket(
-    private val poller: Poller,
+    private val io: SuspendIo,
     private val serverChannel: ServerSocketChannel,
 ) : ServerSocket {
 
     private val acceptHandle = SelectionKeyWrapper(serverChannel)
 
     init {
-        poller.attach(acceptHandle, POLL_INTEREST_ACCEPT)
+        io.attachKey(acceptHandle, POLL_INTEREST_ACCEPT)
     }
 
     override val boundPort: Int by lazy {
@@ -127,14 +129,14 @@ private class ChannelServerSocket(
 
     override suspend fun accept(): AsyncRawConnection {
         while (true) {
-            poller.suspendAccept(serverChannel)
+            io.suspendAccept(serverChannel)
 
             val client = serverChannel.accept()
 
             if (client != null) {
                 try {
                     client.configureBlocking(false)
-                    return ChannelRawAsyncConnection(poller, client)
+                    return ChannelRawAsyncConnection(io, client)
                 } catch (t: Throwable) {
                     client.close()
                     throw t
@@ -144,6 +146,6 @@ private class ChannelServerSocket(
     }
 
     override fun close() {
-        poller.detach(acceptHandle, POLL_INTEREST_ACCEPT)
+        io.detachKey(acceptHandle, POLL_INTEREST_ACCEPT)
     }
 }

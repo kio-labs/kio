@@ -2,6 +2,7 @@
 
 package kio.async.polling
 
+import kio.async.IoPoller
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.PollInterest
@@ -37,9 +38,7 @@ import platform.posix.socklen_tVar
 import platform.posix.strerror
 import platform.posix.write
 
-interface PollingSuspendIo : SuspendIo {
-    suspend fun awaitIo(handle: Int, interest: PollInterest)
-
+interface PollBasedSuspendIo : SuspendIo, IoPoller {
     override suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Long {
         awaitIo(fd, POLL_INTEREST_WRITE)
         return write(fd, buf, byte)
@@ -81,11 +80,11 @@ interface PollingSuspendIo : SuspendIo {
     }
 
     override suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int {
-        return open(__file = path, __oflag = flags, mode)
+        return open(path, flags, mode)
     }
 
     override suspend fun suspendClose(fd: Int): Int {
-        return close(__fd = fd)
+        return close(fd)
     }
 
     override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int {

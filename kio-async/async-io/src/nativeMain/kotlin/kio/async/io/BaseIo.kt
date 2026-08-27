@@ -5,6 +5,9 @@ package kio.async.io
 import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.SuspendIo
+import kio.async.close
+import kio.async.read
+import kio.async.write
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -27,7 +30,7 @@ private class DefaultAsyncRawSink(
     @OptIn(UnsafeIoApi::class)
     override suspend fun write(source: Buffer, byteCount: Long) {
         doWrite(fd, source, byteCount) { fd, buf, byte ->
-            suspendIo.suspendWrite(fd, buf, byte)
+            suspendIo.write(fd, buf, byte)
         }
     }
 
@@ -36,7 +39,7 @@ private class DefaultAsyncRawSink(
     }
 
     override suspend fun close() {
-        suspendIo.suspendClose(fd)
+        suspendIo.close(fd)
     }
 }
 
@@ -75,7 +78,7 @@ private class DefaultAsyncRawSource(
     @OptIn(UnsafeIoApi::class)
     override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
         return doRead(fd, sink, byteCount) { fd, bytes, nbytes ->
-            suspendIo.suspendRead(fd, bytes, nbytes)
+            suspendIo.read(fd, bytes, nbytes)
         }
     }
 

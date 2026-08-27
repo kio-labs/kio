@@ -41,13 +41,12 @@ fun <T> runPollEventLoop(
 val CoroutineContext.poller: Poller
     get() = get(ContinuationInterceptor) as? Poller ?: error("No poller registered.")
 
-expect interface SuspendIo
-
 interface PollerFactory {
     fun create(): Poller
 }
 
-interface Poller: SuspendIo {
+interface Poller {
+    val io: SuspendIo
     /**
      * Blocks the current thread until this fd becomes ready or the timeout expires.
      *

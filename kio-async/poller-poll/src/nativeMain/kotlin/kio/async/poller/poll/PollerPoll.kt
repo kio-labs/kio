@@ -1,11 +1,11 @@
 package kio.async.poller.poll
 
+import kio.async.IoPoller
 import kio.async.PollInterest
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.Poller
 import kio.async.PollerFactory
-import kio.async.polling.PollingSuspendIo
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.UnsafeNumber
 import kotlinx.cinterop.allocArray
@@ -24,11 +24,9 @@ import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlin.native.concurrent.ObsoleteWorkersApi
 
-object PosixPoll : PollerFactory {
-    override fun create(): Poller = NativePoller()
-}
+expect val PosixPoll: PollerFactory
 
-private class NativePoller :Poller, PollingSuspendIo {
+internal abstract class NativePoller : IoPoller, Poller {
     private val pollFdRequestMap: MutableMap<Pair<Int, PollInterest>, PollFdRequest> =
         mutableMapOf()
     private val continuationMap: MutableMap<Pair<Int, PollInterest>, Continuation<Unit>> =

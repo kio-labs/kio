@@ -5,7 +5,8 @@ import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.Poller
 import kio.async.PollerFactory
-import kio.async.polling.PollingSuspendIo
+import kio.async.SuspendIo
+import kio.async.polling.PollBasedSuspendIo
 import kotlinx.cinterop.Arena
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
@@ -35,7 +36,7 @@ object Kqueue : PollerFactory {
     override fun create(): Poller = KqueuePoller()
 }
 
-private class KqueuePoller : Poller, PollingSuspendIo {
+private class KqueuePoller : Poller, PollBasedSuspendIo {
     private val kq = kqueue()
 
     @OptIn(ExperimentalForeignApi::class)
@@ -84,6 +85,8 @@ private class KqueuePoller : Poller, PollingSuspendIo {
             continuationMap.remove(handle to interest)
         }
     }
+
+    override val io: SuspendIo = this
 
     @OptIn(ExperimentalForeignApi::class)
     override fun poll(
