@@ -42,10 +42,12 @@ import platform.posix.strerror
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlinx.cinterop.reinterpret
+import linux.platform.statx
 import linux.uring.io_uring_prep_close
 import linux.uring.io_uring_prep_connect
 import linux.uring.io_uring_prep_open
 import linux.uring.io_uring_prep_pipe
+import linux.uring.io_uring_prep_statx
 import linux.uring.io_uring_queue_exit
 import platform.posix.sockaddr_in
 import kotlin.coroutines.resumeWithException
@@ -141,6 +143,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
                 is UringReq.Open -> req.c.resume(result)
                 is UringReq.Close -> req.c.resume(result)
                 is UringReq.Read -> req.c.resume(result.toLong())
+                is UringReq.Statx -> req.c.resume(result)
                 is UringReq.Write -> req.c.resume(result.toLong())
                 is UringReq.Pipe -> req.c.resume(result)
                 is UringReq.Connect -> {
@@ -262,6 +265,18 @@ private class PollerLinuxUring : Poller, SuspendIo {
         }
     }
 
+    override suspend fun suspendStatx(dirfd: Int, path: String?, flags: Int, mask: UInt, buf: CPointer<statx>?): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeSqe()
+        io_uring_prep_statx(sqe, dirfd, path, flags, mask, buf?.reinterpret())
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.Statx(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
+
     override fun close() {
         check(requestMap.isEmpty()) {
             "uring poller is up to close but some request still not consumed."
@@ -295,6 +310,7 @@ private sealed interface UringReq {
     data class Open(val c: Continuation<Int>) : UringReq
     data class Close(val c: Continuation<Int>) : UringReq
     data class Pipe(val c: Continuation<Int>) : UringReq
+    data class Statx(val c: Continuation<Int>) : UringReq
 }
 
 private fun errnoMessage(result: Int? = null): String {

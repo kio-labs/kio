@@ -10,6 +10,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.io.IOException
 import platform.posix.sockaddr
 import platform.posix.sockaddr_in
+import platform.posix.stat
 
 actual interface SuspendIo {
     suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Long
@@ -21,6 +22,7 @@ actual interface SuspendIo {
     suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int
     suspend fun suspendClose(fd: Int): Int
     suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int
+    suspend fun suspendStat(path: String?, buf: CPointer<stat>?): Int
 }
 
 actual suspend fun SuspendIo.write(fd: Int, buf: CPointer<*>, byte: ULong): Long = suspendWrite(fd, buf, byte)

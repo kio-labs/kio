@@ -6,7 +6,7 @@ import kio.async.POLL_INTEREST_WRITE
 import kio.async.Poller
 import kio.async.PollerFactory
 import kio.async.SuspendIo
-import kio.async.polling.PollBasedSuspendIo
+import kio.async.PollBasedSuspendIo
 import kotlinx.cinterop.Arena
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
