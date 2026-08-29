@@ -27,15 +27,13 @@ import platform.posix.fcntl
 import platform.posix.strerror
 
 internal actual suspend fun openFileSource(path: String): AsyncRawSource {
-    val poller = currentCoroutineContext().poller
-    val suspendIo = poller as SuspendIo
-
-    val fd = suspendIo.openFile(path)
+    val io = currentCoroutineContext().poller.io
+    val fd = io.openFile(path)
 
     setNonBlocking(fd)
-    poller.attachFD(fd, POLL_INTEREST_READ)
+    io.attachFD(fd, POLL_INTEREST_READ)
 
-    val source = suspendIo.asyncRawSource(fd)
+    val source = io.asyncRawSource(fd)
     return object : AsyncRawSource {
         override suspend fun readAtMostTo(
             sink: Buffer,
@@ -43,7 +41,7 @@ internal actual suspend fun openFileSource(path: String): AsyncRawSource {
         ): Long = source.readAtMostTo(sink, byteCount)
 
         override suspend fun close() {
-            poller.detachFD(fd, POLL_INTEREST_READ)
+            io.detachFD(fd, POLL_INTEREST_READ)
 
             source.close()
         }

@@ -93,19 +93,16 @@ actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
     try {
         val yes = alloc<IntVar> { value = 1 }
 
-        if (setsockopt(
-                serverFd,
-                SOL_SOCKET,
-                SO_REUSEADDR,
-                yes.ptr,
-                sizeOf<IntVar>().convert()
-            ) < 0
-        ) {
-            throw IOException("could not configure SO_REUSEADDR: ${errnoMessage()}")
+        setsockopt(serverFd, SOL_SOCKET, SO_REUSEADDR, yes.ptr, sizeOf<IntVar>().convert()).let { ret ->
+            if (ret < 0) {
+                throw IOException("could not configure SO_REUSEADDR: ${resultErrorMessage(ret)}")
+            }
         }
 
-        if (setNonBlocking(serverFd) < 0) {
-            throw IOException("could not set server socket non-blocking: ${errnoMessage()}")
+        setNonBlocking(serverFd).let { ret ->
+            if (ret < 0) {
+                throw IOException("could not set server socket non-blocking: ${resultErrorMessage(ret)}")
+            }
         }
 
         val ip = inet_addr(host)
@@ -119,12 +116,15 @@ actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
             sin_addr.s_addr = ip
         }
 
-        if (io.bind(serverFd, serverAddr.ptr.reinterpret(), sizeOf<sockaddr_in>().convert()) < 0) {
-            throw IOException("could not bind $host:$port: ${errnoMessage()}")
+        io.bind(serverFd, serverAddr.ptr.reinterpret(), sizeOf<sockaddr_in>().convert()).let { ret ->
+            if (ret < 0) {
+                throw IOException("could not bind $host:$port. ${resultErrorMessage(ret)}")
+            }
         }
-
-        if (io.listen(serverFd, backlog) < 0) {
-            throw IOException("could not listen $host:$port: ${errnoMessage()}")
+        io.listen(serverFd, backlog).let { ret ->
+            if (ret < 0) {
+                throw IOException("could not listen $host:$port. ${resultErrorMessage(ret)}")
+            }
         }
 
         FdServerSocket(io, serverFd)
@@ -229,7 +229,7 @@ private fun getBoundPort(fd: Int): Result<Int> = memScoped {
     if (ret == 0) {
         Result.success(ntohs(addr.sin_port).toInt())
     } else {
-        Result.failure(IOException("getsockname failed. ${resultErrorMessage(ret)}($ret)"))
+        Result.failure(IOException("getsockname failed. ${resultErrorMessage(ret)}"))
     }
 }
 
@@ -246,7 +246,9 @@ private fun htons(value: UShort): UShort {
 
 private fun resultErrorMessage(result: Int): String {
     val error = if (result < 0) -result else result
-    return strerror(error)?.toKString() ?: "Unknown errno: $error"
+    val errStr = strerror(error)?.toKString() ?: "Unknown errno: $error"
+
+    return "$errStr($result)"
 }
 
 internal fun errnoMessage(): String {
