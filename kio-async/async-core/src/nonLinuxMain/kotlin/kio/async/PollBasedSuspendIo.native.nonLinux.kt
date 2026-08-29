@@ -78,6 +78,10 @@ interface PollBasedSuspendIo : SuspendIo, IoPoller {
     override suspend fun suspendStat(path: String?, buf: CPointer<platform.posix.stat>?): Int {
         return platform.posix.stat(path, buf)
     }
+
+    override suspend fun suspendShutdown(fd: Int, how: Int): Int {
+        return platform.posix.shutdown(fd, how)
+    }
 }
 
 private fun getSocketError(fd: Int): Int = memScoped {

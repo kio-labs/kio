@@ -13,6 +13,7 @@ import kio.async.close
 import kio.async.connect
 import kio.async.detachFD
 import kio.async.poller
+import kio.async.shutdown
 import kotlinx.atomicfu.atomic
 import platform.posix.*
 import kotlinx.cinterop.*
@@ -188,7 +189,7 @@ private class FdRawAsyncConnection(
     override suspend fun close() {
         if (!closed.compareAndSet(expect = false, update = true)) return
 
-        shutdown(fd, SHUT_WR)
+        io.shutdown(fd, SHUT_WR)
 
         try {
             // drain source buffer

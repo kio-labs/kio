@@ -81,6 +81,10 @@ interface PollBasedSuspendIo : SuspendIo, IoPoller {
 //        return statx(dirfd, path, flags, mask, buf)
         TODO("suspendStatx not implemented")
     }
+
+    override suspend fun suspendShutdown(fd: Int, how: Int): Int {
+        return platform.posix.shutdown(fd, how)
+    }
 }
 
 private fun getSocketError(fd: Int): Int = memScoped {

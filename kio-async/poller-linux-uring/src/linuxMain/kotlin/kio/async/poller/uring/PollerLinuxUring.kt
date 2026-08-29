@@ -47,6 +47,7 @@ import linux.uring.io_uring_prep_close
 import linux.uring.io_uring_prep_connect
 import linux.uring.io_uring_prep_open
 import linux.uring.io_uring_prep_pipe
+import linux.uring.io_uring_prep_shutdown
 import linux.uring.io_uring_prep_statx
 import linux.uring.io_uring_queue_exit
 import platform.posix.sockaddr_in
@@ -146,6 +147,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
                 is UringReq.Statx -> req.c.resume(result)
                 is UringReq.Write -> req.c.resume(result.toLong())
                 is UringReq.Pipe -> req.c.resume(result)
+                is UringReq.ShutDown -> req.c.resume(result)
                 is UringReq.Connect -> {
                     if (result == 0) {
                         req.c.resume(Unit)
@@ -277,6 +279,18 @@ private class PollerLinuxUring : Poller, SuspendIo {
         }
     }
 
+    override suspend fun suspendShutdown(fd: Int, how: Int): Int  = suspendCancellableCoroutine { c ->
+        val sqe = takeSqe()
+        io_uring_prep_shutdown(sqe, fd, how)
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.ShutDown(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
+
     override fun close() {
         check(requestMap.isEmpty()) {
             "uring poller is up to close but some request still not consumed."
@@ -311,6 +325,7 @@ private sealed interface UringReq {
     data class Close(val c: Continuation<Int>) : UringReq
     data class Pipe(val c: Continuation<Int>) : UringReq
     data class Statx(val c: Continuation<Int>) : UringReq
+    data class ShutDown(val c: Continuation<Int>) : UringReq
 }
 
 private fun errnoMessage(result: Int? = null): String {
