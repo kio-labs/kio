@@ -16,6 +16,7 @@ import kio.async.detachFD
 import kio.async.listen
 import kio.async.poller
 import kio.async.shutdown
+import kio.async.socket
 import kotlinx.atomicfu.atomic
 import platform.posix.*
 import kotlinx.cinterop.*
@@ -48,7 +49,7 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
         var ai = result.value
 
         while (ai != null) {
-            val fd = socket(ai.pointed.ai_family, ai.pointed.ai_socktype, ai.pointed.ai_protocol)
+            val fd = io.socket(ai.pointed.ai_family, ai.pointed.ai_socktype, ai.pointed.ai_protocol)
             if (fd < 0) {
                 lastError = IOException(errnoMessage())
                 ai = ai.pointed.ai_next

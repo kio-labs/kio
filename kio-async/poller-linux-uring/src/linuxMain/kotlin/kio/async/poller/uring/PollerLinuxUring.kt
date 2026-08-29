@@ -50,6 +50,7 @@ import linux.uring.io_uring_prep_listen
 import linux.uring.io_uring_prep_open
 import linux.uring.io_uring_prep_pipe
 import linux.uring.io_uring_prep_shutdown
+import linux.uring.io_uring_prep_socket
 import linux.uring.io_uring_prep_statx
 import linux.uring.io_uring_queue_exit
 import platform.posix.sockaddr_in
@@ -152,6 +153,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
                 is UringReq.ShutDown -> req.c.resume(result)
                 is UringReq.Bind -> req.c.resume(result)
                 is UringReq.Listen -> req.c.resume(result)
+                is UringReq.Socket -> req.c.resume(result)
                 is UringReq.Connect -> {
                     if (result == 0) {
                         req.c.resume(Unit)
@@ -319,6 +321,17 @@ private class PollerLinuxUring : Poller, SuspendIo {
         }
     }
 
+    override suspend fun suspendSocket(domain: Int, type: Int, protocol: Int): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeSqe()
+        io_uring_prep_socket(sqe, domain, type, protocol, 0U)
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.Socket(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
 
     override fun close() {
         check(requestMap.isEmpty()) {
@@ -357,6 +370,7 @@ private sealed interface UringReq {
     data class ShutDown(val c: Continuation<Int>) : UringReq
     data class Bind(val c: Continuation<Int>) : UringReq
     data class Listen(val c: Continuation<Int>) : UringReq
+    data class Socket(val c: Continuation<Int>) : UringReq
 }
 
 private fun errnoMessage(result: Int? = null): String {

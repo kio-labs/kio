@@ -37,3 +37,4 @@ expect suspend fun SuspendIo.close(fd: Int): Int
 expect suspend fun SuspendIo.shutdown(fd: Int, how: Int): Int
 expect suspend fun SuspendIo.bind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int
 expect suspend fun SuspendIo.listen(fd: Int, backlog: Int): Int
+expect suspend fun SuspendIo.socket(domain: Int, type: Int, protocol: Int): Int
