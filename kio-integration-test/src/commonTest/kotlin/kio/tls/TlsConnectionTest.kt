@@ -14,9 +14,9 @@ abstract class TlsConnectionTest {
     @Test
     fun smokeTest() = runPollEventLoop(pollerFactory) {
         val server = tcpBind("127.0.0.1", 0)
-
+        val serverPort = server.getBoundPort().getOrThrow()
         val clientJob = launch {
-            val conn = openConnection("127.0.0.1", server.getBoundPort())
+            val conn = openConnection("127.0.0.1", serverPort)
                 .withClientTls("127.0.0.1")
             conn.sink.writeInt(122)
             conn.sink.flush()
@@ -32,8 +32,9 @@ abstract class TlsConnectionTest {
     @Test
     fun serverSelectAlpnTest() = runPollEventLoop(pollerFactory) {
         val server = tcpBind("127.0.0.1", 0)
+        val serverPort = server.getBoundPort().getOrThrow()
         val clientJob = launch {
-            val conn = openConnection("127.0.0.1", server.getBoundPort())
+            val conn = openConnection("127.0.0.1", serverPort)
                 .withClientTls(
                     "127.0.0.1",
                     listOf("http/1.1", "h2")

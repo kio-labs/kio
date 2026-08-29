@@ -88,7 +88,7 @@ actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
 // TODO: Judge IP type form host.
     val serverFd = socket(AF_INET, SOCK_STREAM, 0)
     if (serverFd < 0) {
-        throw IOException("could not create server socket: ${errnoMessage()}")
+        throw IOException("could not create server socket: ${resultErrorMessage(serverFd)}")
     }
 
     try {
@@ -145,7 +145,7 @@ private class FdServerSocket(
         io.attachFD(serverFd, POLL_INTEREST_READ)
     }
 
-    override suspend fun getBoundPort(): Int {
+    override suspend fun getBoundPort(): Result<Int> {
         return getBoundPort(io, serverFd)
     }
 
@@ -162,7 +162,7 @@ private class FdServerSocket(
 
         try {
             if (setNonBlocking(clientFd) < 0) {
-                throw IOException("ERROR: could not set client socket non-blocking: ${errnoMessage()}\n")
+                throw IOException("ERROR: could not set client socket non-blocking.\n")
             }
 
             FdRawAsyncConnection(io, clientFd)
@@ -220,21 +220,18 @@ internal fun setNonBlocking(fd: Int): Int {
     return 0
 }
 
-private suspend fun getBoundPort(io: SuspendIo, fd: Int): Int = memScoped {
+private suspend fun getBoundPort(io: SuspendIo, fd: Int): Result<Int> = memScoped {
     val addr = alloc<sockaddr_in>()
     val addrLen = alloc<socklen_tVar>().apply {
         value = sizeOf<sockaddr_in>().convert()
     }
 
-    check(
-        io.getsockname(
-            fd,
-            addr.ptr.reinterpret(),
-            addrLen.ptr
-        ) == 0
-    )
-
-    ntohs(addr.sin_port).toInt()
+    val ret = io.getsockname(fd, addr.ptr.reinterpret(), addrLen.ptr)
+    if (ret == 0) {
+        Result.success(ntohs(addr.sin_port).toInt())
+    } else {
+        Result.failure(IOException("getsockname failed. ${resultErrorMessage(ret)}($ret)"))
+    }
 }
 
 private fun ntohs(value: UShort): UShort {
@@ -246,6 +243,11 @@ private fun ntohs(value: UShort): UShort {
 private fun htons(value: UShort): UShort {
     val v = value.toInt()
     return (((v and 0xFF) shl 8) or ((v ushr 8) and 0xFF)).toUShort()
+}
+
+private fun resultErrorMessage(result: Int): String {
+    val error = if (result < 0) -result else result
+    return strerror(error)?.toKString() ?: "Unknown errno: $error"
 }
 
 internal fun errnoMessage(): String {

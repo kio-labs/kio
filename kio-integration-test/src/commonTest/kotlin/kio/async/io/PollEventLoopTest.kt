@@ -187,8 +187,9 @@ abstract class PollEventLoopTest {
     @Test
     fun acceptRealConnection(): Unit = runPollEventLoop(factory) {
         val server = tcpBind("127.0.0.1", 0)
+        val serverPort = server.getBoundPort().getOrThrow()
         val clientJob = launch {
-            val conn = openConnection("127.0.0.1", server.getBoundPort()).buffered()
+            val conn = openConnection("127.0.0.1", serverPort).buffered()
             conn.sink.writeInt(122)
             conn.sink.flush()
         }
