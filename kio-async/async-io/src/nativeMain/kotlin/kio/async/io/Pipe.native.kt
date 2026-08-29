@@ -5,37 +5,25 @@ import kio.async.AsyncRawSource
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.SuspendIo
-import kio.async.poller
+import kio.async.attachFD
+import kio.async.close
+import kio.async.detachFD
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.IntVar
-import kotlinx.cinterop.allocArray
-import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
-import kotlinx.coroutines.currentCoroutineContext
-import platform.posix.close
-import platform.posix.pipe
 
 @OptIn(ExperimentalForeignApi::class)
-actual suspend fun openPipe(): AsyncRawConnection = memScoped {
-    val poller = currentCoroutineContext().poller
-    val suspendIo = poller as SuspendIo
-    val fds = allocArray<IntVar>(2)
-    check(pipe(fds) == 0)
-
-    val readFd: Int = fds[0]
-    val writeFd: Int = fds[1]
-
+internal fun pipeConnection(io: SuspendIo, readFd: Int, writeFd: Int): AsyncRawConnection = memScoped {
     setNonBlocking(readFd)
     setNonBlocking(writeFd)
 
-    poller.attach(readFd, POLL_INTEREST_READ)
-    poller.attach(writeFd, POLL_INTEREST_WRITE)
+    io.attachFD(readFd, POLL_INTEREST_READ)
+    io.attachFD(writeFd, POLL_INTEREST_WRITE)
 
     return@memScoped object : AsyncRawConnection {
         override val source: AsyncRawSource =
-            suspendIo.asyncRawSource(readFd)
+            io.asyncRawSource(readFd)
         override val sink: AsyncRawSink =
-            suspendIo.asyncRawSink(writeFd)
+            io.asyncRawSink(writeFd)
 
         private var closed = false
 
@@ -43,11 +31,11 @@ actual suspend fun openPipe(): AsyncRawConnection = memScoped {
             if (closed) return
             closed = true
 
-            poller.detach(readFd, POLL_INTEREST_READ)
-            poller.detach(writeFd, POLL_INTEREST_WRITE)
+            io.detachFD(readFd, POLL_INTEREST_READ)
+            io.detachFD(writeFd, POLL_INTEREST_WRITE)
 
-            close(readFd)
-            close(writeFd)
+            io.close(readFd)
+            io.close(writeFd)
         }
     }
 }

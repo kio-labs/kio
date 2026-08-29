@@ -8,7 +8,8 @@ kotlinxDatetime = "0.8.0"
 hash = "0.5.6"
 macs = "0.8.0"
 ktorHttp = "3.5.2"
-linuxUring = "2.15"
+linuxUring = "2.15.3"
+linuxPlatform = "1.0.1"
 openssl = "4.0.1.1"
 mavenPublish = "0.37.0"
 
@@ -26,6 +27,7 @@ ktor-http = { group = "io.ktor", name = "ktor-http", version.ref = "ktorHttp" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 kotlin-test = { group = "org.jetbrains.kotlin", name = "kotlin-test", version.ref = "kotlin" }
 linux-uring = { group = "io.github.kio-labs", name = "linux-uring", version.ref = "linuxUring" }
+linux-platform = { group = "io.github.kio-labs", name = "linux-platform", version.ref = "linuxPlatform" }
 openssl = { group = "io.github.kio-labs", name = "openssl", version.ref = "openssl" }
 
 maven-publish-gradle-plugin = { module = "com.vanniktech.maven.publish:com.vanniktech.maven.publish.gradle.plugin", version.ref = "mavenPublish" }

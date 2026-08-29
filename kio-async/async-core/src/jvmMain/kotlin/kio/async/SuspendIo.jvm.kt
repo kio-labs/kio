@@ -7,10 +7,22 @@ import java.nio.channels.ReadableByteChannel
 import java.nio.channels.SelectableChannel
 import java.nio.channels.WritableByteChannel
 
-actual interface SuspendIo {
+actual interface IoPoller {
+    suspend fun awaitIo(handle: SelectionKeyWrapper, interest: PollInterest)
+
     fun attach(handle: SelectionKeyWrapper, event: PollInterest)
     fun detach(handle: SelectionKeyWrapper, event: PollInterest)
+}
 
+fun SuspendIo.attachKey(handle: SelectionKeyWrapper, event: PollInterest) {
+    (this as? IoPoller)?.attach(handle, event)
+}
+
+fun SuspendIo.detachKey(handle: SelectionKeyWrapper, event: PollInterest) {
+    (this as? IoPoller)?.detach(handle, event)
+}
+
+actual interface SuspendIo {
     suspend fun suspendRead(selectableChannel: SelectableChannel, channel: ReadableByteChannel, sink: Buffer, byteCount: Long): Long
     suspend fun suspendWrite(selectableChannel: SelectableChannel, channel: WritableByteChannel, source: Buffer, byteCount: Long): Long
 
@@ -18,8 +30,7 @@ actual interface SuspendIo {
     suspend fun suspendAccept(selectableChannel: SelectableChannel)
 }
 
-interface SuspendChannelIo : SuspendIo {
-    suspend fun awaitIo(handle: SelectionKeyWrapper, interest: PollInterest)
+interface SuspendChannelIo : SuspendIo, IoPoller {
 
     override suspend fun suspendRead(selectableChannel: SelectableChannel, channel: ReadableByteChannel, sink: Buffer, byteCount: Long): Long {
         awaitIo(SelectionKeyWrapper(selectableChannel), POLL_INTEREST_READ)

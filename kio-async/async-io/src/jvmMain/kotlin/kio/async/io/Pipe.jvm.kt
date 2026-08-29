@@ -5,11 +5,13 @@ import kio.async.AsyncRawSource
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.SelectionKeyWrapper
+import kio.async.attachKey
+import kio.async.detachKey
 import kio.async.poller
 import kotlinx.coroutines.currentCoroutineContext
 
-actual suspend fun openPipe(): AsyncRawConnection {
-    val poller = currentCoroutineContext().poller
+suspend fun pipe(): AsyncRawConnection {
+    val io = currentCoroutineContext().poller.io
     val pipe = java.nio.channels.Pipe.open()
 
     val sourceChannel = pipe.source()
@@ -19,18 +21,18 @@ actual suspend fun openPipe(): AsyncRawConnection {
 
     val readHandle = SelectionKeyWrapper(sourceChannel)
     val writeHandle = SelectionKeyWrapper(sinkChannel)
-    poller.attach(readHandle, POLL_INTEREST_READ)
-    poller.attach(writeHandle, POLL_INTEREST_WRITE)
+    io.attachKey(readHandle, POLL_INTEREST_READ)
+    io.attachKey(writeHandle, POLL_INTEREST_WRITE)
 
     return object : AsyncRawConnection {
         override val source: AsyncRawSource =
-            asyncChannelRawSource(sourceChannel, sourceChannel,poller)
+            asyncChannelRawSource(sourceChannel, sourceChannel,io)
         override val sink: AsyncRawSink =
-            asyncChannelRawSink(sinkChannel, sinkChannel, poller)
+            asyncChannelRawSink(sinkChannel, sinkChannel, io)
 
         override suspend fun close() {
-            poller.detach(readHandle, POLL_INTEREST_READ)
-            poller.detach(writeHandle, POLL_INTEREST_WRITE)
+            io.detachKey(readHandle, POLL_INTEREST_READ)
+            io.detachKey(writeHandle, POLL_INTEREST_WRITE)
             sourceChannel.close()
             sinkChannel.close()
         }

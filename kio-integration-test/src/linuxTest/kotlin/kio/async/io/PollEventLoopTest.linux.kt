@@ -11,3 +11,7 @@ class EpollEventLoopTest: PollEventLoopTest() {
 class UringEventLoopTest: PollEventLoopTest() {
     override val factory: PollerFactory = LinuxUring
 }
+
+internal actual suspend fun openPipe(): AsyncRawConnection {
+    return pipe(0)
+}

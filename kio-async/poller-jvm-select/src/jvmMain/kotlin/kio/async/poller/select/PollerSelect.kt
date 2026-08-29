@@ -9,6 +9,7 @@ import kio.async.Poller
 import kio.async.PollerFactory
 import kio.async.SelectionKeyWrapper
 import kio.async.SuspendChannelIo
+import kio.async.SuspendIo
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.nio.channels.SelectionKey
 import java.nio.channels.Selector
@@ -53,6 +54,8 @@ internal class PollerSelect : Poller, SuspendChannelIo {
             continuationMap.remove(handle to interest)
         }
     }
+
+    override val io: SuspendIo = this
 
     override fun poll(timeoutMillis: Long) {
         fun onActive(handle: Any, event: PollInterest) {
