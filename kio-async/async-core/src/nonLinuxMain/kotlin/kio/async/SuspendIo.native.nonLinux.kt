@@ -25,6 +25,7 @@ actual interface SuspendIo {
     suspend fun suspendStat(path: String?, buf: CPointer<stat>?): Int
 
     suspend fun suspendShutdown(fd: Int, how: Int): Int
+    suspend fun suspendBind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int
 }
 
 actual suspend fun SuspendIo.write(fd: Int, buf: CPointer<*>, byte: ULong): Long = suspendWrite(fd, buf, byte)
@@ -35,3 +36,4 @@ actual suspend fun SuspendIo.connect(fd: Int, addr: CPointer<sockaddr>, len: UIn
 actual suspend fun SuspendIo.open(path: String?, flags: Int, mode: UInt): Int = suspendOpen(path, flags, mode)
 actual suspend fun SuspendIo.close(fd: Int): Int = suspendClose(fd)
 actual suspend fun SuspendIo.shutdown(fd: Int, how: Int): Int = suspendShutdown(fd, how)
+actual suspend fun SuspendIo.bind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int = suspendBind(fd, addr, addrlen)

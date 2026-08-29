@@ -21,6 +21,7 @@ import platform.posix.EINPROGRESS
 import platform.posix.SOL_SOCKET
 import platform.posix.SO_ERROR
 import platform.posix.errno
+import platform.posix.sockaddr
 
 interface PollBasedSuspendIo : SuspendIo, IoPoller {
     override suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Long {
@@ -84,6 +85,10 @@ interface PollBasedSuspendIo : SuspendIo, IoPoller {
 
     override suspend fun suspendShutdown(fd: Int, how: Int): Int {
         return platform.posix.shutdown(fd, how)
+    }
+
+    override suspend fun suspendBind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int {
+        return platform.posix.bind(fd, addr, addrlen)
     }
 }
 

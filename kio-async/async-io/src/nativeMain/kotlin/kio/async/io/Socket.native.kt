@@ -9,6 +9,7 @@ import kio.async.POLL_INTEREST_WRITE
 import kio.async.SuspendIo
 import kio.async.accept
 import kio.async.attachFD
+import kio.async.bind
 import kio.async.close
 import kio.async.connect
 import kio.async.detachFD
@@ -116,7 +117,7 @@ actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
             sin_addr.s_addr = ip
         }
 
-        if (bind(serverFd, serverAddr.ptr.reinterpret(), sizeOf<sockaddr_in>().convert()) < 0) {
+        if (io.bind(serverFd, serverAddr.ptr.reinterpret(), sizeOf<sockaddr_in>().convert()) < 0) {
             throw IOException("could not bind $host:$port: ${errnoMessage()}")
         }
 
