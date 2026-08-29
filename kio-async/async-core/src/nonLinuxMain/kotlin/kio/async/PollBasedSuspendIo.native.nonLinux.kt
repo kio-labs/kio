@@ -71,7 +71,7 @@ interface PollBasedSuspendIo : SuspendIo, IoPoller {
         return platform.posix.close(fd)
     }
 
-    override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int {
+    override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?): Int {
         return platform.posix.pipe(fds)
     }
 

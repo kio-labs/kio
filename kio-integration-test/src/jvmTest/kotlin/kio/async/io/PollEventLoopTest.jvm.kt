@@ -6,3 +6,7 @@ import kio.async.poller.select.Select
 class JvmPollEventLoopTest: PollEventLoopTest() {
     override val factory: PollerFactory = Select
 }
+
+internal actual suspend fun openPipe(): AsyncRawConnection {
+    return pipe()
+}

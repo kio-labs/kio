@@ -4,27 +4,15 @@ import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
+import kio.async.SuspendIo
 import kio.async.attachFD
 import kio.async.close
 import kio.async.detachFD
-import kio.async.pipe
-import kio.async.poller
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.IntVar
-import kotlinx.cinterop.allocArray
-import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
-import kotlinx.coroutines.currentCoroutineContext
 
 @OptIn(ExperimentalForeignApi::class)
-actual suspend fun openPipe(): AsyncRawConnection = memScoped {
-    val io = currentCoroutineContext().poller.io
-    val fds = allocArray<IntVar>(2)
-    check(io.pipe(fds, 0) == 0)
-
-    val readFd: Int = fds[0]
-    val writeFd: Int = fds[1]
-
+internal fun pipeConnection(io: SuspendIo, readFd: Int, writeFd: Int): AsyncRawConnection = memScoped {
     setNonBlocking(readFd)
     setNonBlocking(writeFd)
 

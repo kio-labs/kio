@@ -21,7 +21,7 @@ actual interface SuspendIo {
     suspend fun suspendConnect(fd: Int, addr: CPointer<sockaddr>, len: UInt)
     suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int
     suspend fun suspendClose(fd: Int): Int
-    suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int
+    suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?): Int
     suspend fun suspendStat(path: String?, buf: CPointer<stat>?): Int
 }
 
@@ -32,4 +32,3 @@ actual suspend fun SuspendIo.accept(fd: Int, addr: CPointer<sockaddr_in>, addrLe
 actual suspend fun SuspendIo.connect(fd: Int, addr: CPointer<sockaddr>, len: UInt) = suspendConnect(fd, addr, len)
 actual suspend fun SuspendIo.open(path: String?, flags: Int, mode: UInt): Int = suspendOpen(path, flags, mode)
 actual suspend fun SuspendIo.close(fd: Int): Int = suspendClose(fd)
-actual suspend fun SuspendIo.pipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int = suspendPipe(fds, pipeFlags)

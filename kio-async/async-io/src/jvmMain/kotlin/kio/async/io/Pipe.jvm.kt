@@ -10,7 +10,7 @@ import kio.async.detachKey
 import kio.async.poller
 import kotlinx.coroutines.currentCoroutineContext
 
-actual suspend fun openPipe(): AsyncRawConnection {
+suspend fun pipe(): AsyncRawConnection {
     val io = currentCoroutineContext().poller.io
     val pipe = java.nio.channels.Pipe.open()
 

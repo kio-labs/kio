@@ -72,10 +72,12 @@ interface PollBasedSuspendIo : SuspendIo, IoPoller {
     }
 
     override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int {
+        // TODO: replace with linux api: pipe2
         return platform.posix.pipe(fds)
     }
 
     override suspend fun suspendStatx(dirfd: Int, path: String?, flags: Int, mask: UInt, buf: CPointer<statx>?): Int {
+        // TODO: replace with linux api: statx
 //        return statx(dirfd, path, flags, mask, buf)
         TODO("suspendStatx not implemented")
     }

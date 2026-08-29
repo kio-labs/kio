@@ -34,4 +34,3 @@ expect suspend fun SuspendIo.accept(fd: Int, addr: CPointer<sockaddr_in>, addrLe
 expect suspend fun SuspendIo.connect(fd: Int, addr: CPointer<sockaddr>, len: UInt)
 expect suspend fun SuspendIo.open(path: String?, flags: Int, mode: UInt): Int
 expect suspend fun SuspendIo.close(fd: Int): Int
-expect suspend fun SuspendIo.pipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int
