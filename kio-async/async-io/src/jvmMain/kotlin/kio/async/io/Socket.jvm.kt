@@ -123,8 +123,8 @@ private class ChannelServerSocket(
         io.attachKey(acceptHandle, POLL_INTEREST_ACCEPT)
     }
 
-    override val boundPort: Int by lazy {
-        (serverChannel.localAddress as InetSocketAddress).port
+    override suspend fun getBoundPort(): Int {
+        return (serverChannel.localAddress as InetSocketAddress).port
     }
 
     override suspend fun accept(): AsyncRawConnection {

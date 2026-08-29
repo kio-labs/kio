@@ -45,6 +45,7 @@ import kotlinx.cinterop.reinterpret
 import linux.platform.statx
 import linux.uring.io_uring_prep_bind
 import linux.uring.io_uring_prep_close
+import linux.uring.io_uring_prep_cmd_getsockname
 import linux.uring.io_uring_prep_connect
 import linux.uring.io_uring_prep_listen
 import linux.uring.io_uring_prep_open
@@ -129,7 +130,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
 
             if (peekResult == -EAGAIN) break
 
-            if (waitResult < 0) {
+            if (peekResult < 0) {
                 throw IOException("io_uring_peek_cqe failed: ${errnoMessage(waitResult)}")
             }
 
@@ -154,6 +155,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
                 is UringReq.Bind -> req.c.resume(result)
                 is UringReq.Listen -> req.c.resume(result)
                 is UringReq.Socket -> req.c.resume(result)
+                is UringReq.Getsockname -> req.c.resume(result)
                 is UringReq.Connect -> {
                     if (result == 0) {
                         req.c.resume(Unit)
@@ -333,9 +335,21 @@ private class PollerLinuxUring : Poller, SuspendIo {
         }
     }
 
+    override suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeSqe()
+        io_uring_prep_cmd_getsockname(sqe, fd, addr?.reinterpret(), len, 0)
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.Getsockname(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
+
     override fun close() {
         check(requestMap.isEmpty()) {
-            "uring poller is up to close but some request still not consumed."
+            "uring poller is up to close but some request still not consumed. requestMap: $requestMap"
         }
         io_uring_queue_exit(ring.ptr)
         arean.clear()
@@ -371,6 +385,7 @@ private sealed interface UringReq {
     data class Bind(val c: Continuation<Int>) : UringReq
     data class Listen(val c: Continuation<Int>) : UringReq
     data class Socket(val c: Continuation<Int>) : UringReq
+    data class Getsockname(val c: Continuation<Int>) : UringReq
 }
 
 private fun errnoMessage(result: Int? = null): String {

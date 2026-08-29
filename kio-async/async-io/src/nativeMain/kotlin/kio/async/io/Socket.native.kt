@@ -13,6 +13,7 @@ import kio.async.bind
 import kio.async.close
 import kio.async.connect
 import kio.async.detachFD
+import kio.async.getsockname
 import kio.async.listen
 import kio.async.poller
 import kio.async.shutdown
@@ -144,8 +145,8 @@ private class FdServerSocket(
         io.attachFD(serverFd, POLL_INTEREST_READ)
     }
 
-    override val boundPort: Int by lazy {
-        getBoundPort(serverFd)
+    override suspend fun getBoundPort(): Int {
+        return getBoundPort(io, serverFd)
     }
 
     override suspend fun accept(): AsyncRawConnection = memScoped {
@@ -219,14 +220,14 @@ internal fun setNonBlocking(fd: Int): Int {
     return 0
 }
 
-private fun getBoundPort(fd: Int): Int = memScoped {
+private suspend fun getBoundPort(io: SuspendIo, fd: Int): Int = memScoped {
     val addr = alloc<sockaddr_in>()
     val addrLen = alloc<socklen_tVar>().apply {
         value = sizeOf<sockaddr_in>().convert()
     }
 
     check(
-        getsockname(
+        io.getsockname(
             fd,
             addr.ptr.reinterpret(),
             addrLen.ptr

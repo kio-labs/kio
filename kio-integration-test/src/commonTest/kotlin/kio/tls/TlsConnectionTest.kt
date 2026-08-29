@@ -16,7 +16,7 @@ abstract class TlsConnectionTest {
         val server = tcpBind("127.0.0.1", 0)
 
         val clientJob = launch {
-            val conn = openConnection("127.0.0.1", server.boundPort)
+            val conn = openConnection("127.0.0.1", server.getBoundPort())
                 .withClientTls("127.0.0.1")
             conn.sink.writeInt(122)
             conn.sink.flush()
@@ -33,7 +33,7 @@ abstract class TlsConnectionTest {
     fun serverSelectAlpnTest() = runPollEventLoop(pollerFactory) {
         val server = tcpBind("127.0.0.1", 0)
         val clientJob = launch {
-            val conn = openConnection("127.0.0.1", server.boundPort)
+            val conn = openConnection("127.0.0.1", server.getBoundPort())
                 .withClientTls(
                     "127.0.0.1",
                     listOf("http/1.1", "h2")
