@@ -155,7 +155,6 @@ private class PollerLinuxUring : Poller, SuspendIo {
                 is UringReq.Bind -> req.c.resume(result)
                 is UringReq.Listen -> req.c.resume(result)
                 is UringReq.Socket -> req.c.resume(result)
-                is UringReq.Getsockname -> req.c.resume(result)
                 is UringReq.Connect -> {
                     if (result == 0) {
                         req.c.resume(Unit)
@@ -335,18 +334,6 @@ private class PollerLinuxUring : Poller, SuspendIo {
         }
     }
 
-    override suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int = suspendCancellableCoroutine { c ->
-        val sqe = takeSqe()
-        io_uring_prep_cmd_getsockname(sqe, fd, addr?.reinterpret(), len, 0)
-        val id = nextActionId()
-        io_uring_sqe_set_data64(sqe, id)
-        requestMap[id] = UringReq.Getsockname(c)
-
-        c.invokeOnCancellation {
-            cancelRequest(id)
-        }
-    }
-
     override fun close() {
         check(requestMap.isEmpty()) {
             "uring poller is up to close but some request still not consumed. requestMap: $requestMap"
@@ -385,7 +372,6 @@ private sealed interface UringReq {
     data class Bind(val c: Continuation<Int>) : UringReq
     data class Listen(val c: Continuation<Int>) : UringReq
     data class Socket(val c: Continuation<Int>) : UringReq
-    data class Getsockname(val c: Continuation<Int>) : UringReq
 }
 
 private fun errnoMessage(result: Int? = null): String {
