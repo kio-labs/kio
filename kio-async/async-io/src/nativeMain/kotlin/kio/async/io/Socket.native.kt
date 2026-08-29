@@ -13,6 +13,7 @@ import kio.async.bind
 import kio.async.close
 import kio.async.connect
 import kio.async.detachFD
+import kio.async.listen
 import kio.async.poller
 import kio.async.shutdown
 import kotlinx.atomicfu.atomic
@@ -121,7 +122,7 @@ actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
             throw IOException("could not bind $host:$port: ${errnoMessage()}")
         }
 
-        if (listen(serverFd, backlog) < 0) {
+        if (io.listen(serverFd, backlog) < 0) {
             throw IOException("could not listen $host:$port: ${errnoMessage()}")
         }
 

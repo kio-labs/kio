@@ -36,3 +36,4 @@ expect suspend fun SuspendIo.open(path: String?, flags: Int, mode: UInt): Int
 expect suspend fun SuspendIo.close(fd: Int): Int
 expect suspend fun SuspendIo.shutdown(fd: Int, how: Int): Int
 expect suspend fun SuspendIo.bind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int
+expect suspend fun SuspendIo.listen(fd: Int, backlog: Int): Int
