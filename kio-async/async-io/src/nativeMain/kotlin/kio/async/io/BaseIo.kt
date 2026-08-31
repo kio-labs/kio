@@ -30,7 +30,7 @@ private class DefaultAsyncRawSink(
     @OptIn(UnsafeIoApi::class)
     override suspend fun write(source: Buffer, byteCount: Long) {
         doWrite(fd, source, byteCount) { fd, buf, byte ->
-            suspendIo.write(fd, buf, byte)
+            suspendIo.write(fd, buf, byte).toLong()
         }
     }
 
@@ -78,7 +78,7 @@ private class DefaultAsyncRawSource(
     @OptIn(UnsafeIoApi::class)
     override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
         return doRead(fd, sink, byteCount) { fd, bytes, nbytes ->
-            suspendIo.read(fd, bytes, nbytes)
+            suspendIo.read(fd, bytes, nbytes).toLong()
         }
     }
 

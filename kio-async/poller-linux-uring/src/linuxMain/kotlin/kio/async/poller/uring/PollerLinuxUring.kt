@@ -175,24 +175,18 @@ private class PollerLinuxUring : Poller, SuspendIo {
                     req.arena.clear()
                 }
                 is UringReq.Close -> req.c.resume(result)
-                is UringReq.Read -> req.c.resume(result.toLong())
+                is UringReq.Read -> req.c.resume(result)
                 is UringReq.Statx -> {
                     req.c.resume(result)
                     req.arena.clear()
                 }
-                is UringReq.Write -> req.c.resume(result.toLong())
+                is UringReq.Write -> req.c.resume(result)
                 is UringReq.Pipe -> req.c.resume(result)
                 is UringReq.ShutDown -> req.c.resume(result)
                 is UringReq.Bind -> req.c.resume(result)
                 is UringReq.Listen -> req.c.resume(result)
                 is UringReq.Socket -> req.c.resume(result)
-                is UringReq.Connect -> {
-                    if (result == 0) {
-                        req.c.resume(Unit)
-                    } else {
-                        req.c.resumeWithException(IOException(IOException("connect failed: ${errnoMessage(result)}")))
-                    }
-                }
+                is UringReq.Connect -> req.c.resume(result)
                 is UringReq.Accept -> req.c.resume(result)
                 is UringReq.Cancel -> requestMap.remove(req.requestId)
             }
@@ -205,7 +199,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
         fd: Int,
         buf: CPointer<*>,
         byte: ULong
-    ): Long = suspendCancellableCoroutine { c ->
+    ): Int = suspendCancellableCoroutine { c ->
         val sqe = takeSqe()
 
         io_uring_prep_write(sqe, fd, buf, byte.toUInt(), (-1).toULong())
@@ -222,7 +216,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
         fd: Int,
         bytes: CPointer<*>,
         nbyte: ULong
-    ): Long = suspendCancellableCoroutine { c ->
+    ): Int = suspendCancellableCoroutine { c ->
         val sqe = takeSqe()
 
         io_uring_prep_read(sqe, fd, bytes, nbyte.toUInt(), (-1).toULong())
@@ -256,7 +250,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
         fd: Int,
         addr: CPointer<sockaddr>,
         len: UInt
-    ): Unit = suspendCancellableCoroutine { c ->
+    ): Int = suspendCancellableCoroutine { c ->
         val sqe = takeSqe()
 
         io_uring_prep_connect(sqe, fd, addr.reinterpret(), len)
@@ -410,10 +404,10 @@ private class PollerLinuxUring : Poller, SuspendIo {
 
 private sealed interface UringReq {
     data class Cancel(val requestId: ULong) : UringReq
-    data class Read(val c: Continuation<Long>) : UringReq
+    data class Read(val c: Continuation<Int>) : UringReq
     data class Accept(val c: Continuation<Int>) : UringReq
-    data class Connect(val c: Continuation<Unit>) : UringReq
-    data class Write(val c: Continuation<Long>) : UringReq
+    data class Connect(val c: Continuation<Int>) : UringReq
+    data class Write(val c: Continuation<Int>) : UringReq
     data class Open(val arena: Arena, val c: Continuation<Int>) : UringReq
     data class Close(val c: Continuation<Int>) : UringReq
     data class Pipe(val c: Continuation<Int>) : UringReq

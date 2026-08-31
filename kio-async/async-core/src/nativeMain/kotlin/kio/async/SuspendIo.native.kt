@@ -26,12 +26,11 @@ fun SuspendIo.detachFD(fd: Int, event: PollInterest)  {
     (this as? IoPoller)?.detach(fd, event)
 }
 
-expect suspend fun SuspendIo.write(fd: Int, buf: CPointer<*>, byte: ULong): Long
-expect suspend fun SuspendIo.read(fd: Int, bytes: CPointer<*>, nbyte: ULong): Long
+expect suspend fun SuspendIo.write(fd: Int, buf: CPointer<*>, byte: ULong): Int
+expect suspend fun SuspendIo.read(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int
 expect suspend fun SuspendIo.accept(fd: Int, addr: CPointer<sockaddr_in>, addrLen: CPointer<UIntVarOf<UInt>>): Int
 
-@Throws(IOException::class, CancellationException::class)
-expect suspend fun SuspendIo.connect(fd: Int, addr: CPointer<sockaddr>, len: UInt)
+expect suspend fun SuspendIo.connect(fd: Int, addr: CPointer<sockaddr>, len: UInt): Int
 expect suspend fun SuspendIo.open(path: String?, flags: Int, mode: UInt): Int
 expect suspend fun SuspendIo.close(fd: Int): Int
 expect suspend fun SuspendIo.shutdown(fd: Int, how: Int): Int

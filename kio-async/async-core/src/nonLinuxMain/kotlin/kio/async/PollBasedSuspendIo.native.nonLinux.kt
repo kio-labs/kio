@@ -15,7 +15,6 @@ import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.sizeOf
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.value
-import kotlinx.io.IOException
 import platform.posix.EINPROGRESS
 import platform.posix.SOL_SOCKET
 import platform.posix.SO_ERROR
@@ -24,44 +23,41 @@ import platform.posix.sockaddr
 import platform.posix.strerror
 
 interface PollBasedSuspendIo : SuspendIo, IoPoller {
-    override suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Long {
-        awaitIo(fd, POLL_INTEREST_WRITE)
-        return platform.posix.write(fd, buf, byte)
-    }
+    override suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Int = posixCall(
+        func = { platform.posix.write(fd, buf, byte).toInt() },
+        waitIO = { awaitIo(fd, POLL_INTEREST_WRITE) }
+    )
 
-    override suspend fun suspendRead(fd: Int, bytes: CPointer<*>, nbyte: ULong): Long {
-        awaitIo(fd, POLL_INTEREST_READ)
-        return platform.posix.read(fd, bytes, nbyte)
-    }
+    override suspend fun suspendRead(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int = posixCall(
+        func = { platform.posix.read(fd, bytes, nbyte).toInt() },
+        waitIO = { awaitIo(fd, POLL_INTEREST_READ) }
+    )
 
     override suspend fun suspendAccept(
         fd: Int,
         addr: CPointer<platform.posix.sockaddr_in>,
         addrLen: CPointer<UIntVarOf<UInt>>
-    ): Int {
-        awaitIo(fd, POLL_INTEREST_READ)
-        return platform.posix.accept(fd, addr.reinterpret(), addrLen)
-    }
+    ): Int = posixCall(
+        func ={ platform.posix.accept(fd, addr.reinterpret(), addrLen) },
+        waitIO = { awaitIo(fd, POLL_INTEREST_READ) }
+    )
 
-    override suspend fun suspendConnect(fd: Int, addr: CPointer<platform.posix.sockaddr>, len: UInt) {
+    override suspend fun suspendConnect(fd: Int, addr: CPointer<platform.posix.sockaddr>, len: UInt): Int {
         val ret = platform.posix.connect(fd, addr, len)
 
         if (ret == 0) {
-            return
+            return 0
         }
 
-        if (errno != EINPROGRESS) {
-            throw IOException("connect failed: ${errnoMessage()}")
+        val connectErrno = errno
+
+        if (connectErrno != EINPROGRESS) {
+            return connectErrno
         }
 
         awaitIo(fd, POLL_INTEREST_WRITE)
 
-        val socketError = getSocketError(fd)
-        if (socketError == 0) {
-            return
-        }
-
-        throw IOException("connect failed: ${strerror(socketError)?.toKString() ?: "errno=$socketError"}")
+        return getSocketError(fd)
     }
 
     override suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int {

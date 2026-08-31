@@ -15,7 +15,6 @@ import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.sizeOf
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.value
-import kotlinx.io.IOException
 import linux.platform.statx
 import platform.posix.EINPROGRESS
 import platform.posix.SOL_SOCKET
@@ -24,14 +23,16 @@ import platform.posix.errno
 import platform.posix.sockaddr
 
 interface PollBasedSuspendIo : SuspendIo, IoPoller {
-    override suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Long {
+    override suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Int {
         awaitIo(fd, POLL_INTEREST_WRITE)
-        return platform.posix.write(fd, buf, byte)
+//        return platform.posix.write(fd, buf, byte)
+        TODO()
     }
 
-    override suspend fun suspendRead(fd: Int, bytes: CPointer<*>, nbyte: ULong): Long {
+    override suspend fun suspendRead(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int {
         awaitIo(fd, POLL_INTEREST_READ)
-        return platform.posix.read(fd, bytes, nbyte)
+//        return platform.posix.read(fd, bytes, nbyte)
+        TODO()
     }
 
     override suspend fun suspendAccept(
@@ -43,25 +44,22 @@ interface PollBasedSuspendIo : SuspendIo, IoPoller {
         return platform.posix.accept(fd, addr.reinterpret(), addrLen)
     }
 
-    override suspend fun suspendConnect(fd: Int, addr: CPointer<platform.posix.sockaddr>, len: UInt) {
+    override suspend fun suspendConnect(fd: Int, addr: CPointer<platform.posix.sockaddr>, len: UInt): Int {
         val ret = platform.posix.connect(fd, addr, len)
 
         if (ret == 0) {
-            return
+            return 0
         }
 
-        if (errno != EINPROGRESS) {
-            throw IOException("connect failed: ${errnoMessage()}")
+        val connectErrno = errno
+
+        if (connectErrno != EINPROGRESS) {
+            return connectErrno
         }
 
         awaitIo(fd, POLL_INTEREST_WRITE)
 
-        val socketError = getSocketError(fd)
-        if (socketError == 0) {
-            return
-        }
-
-        throw IOException("connect failed: ${platform.posix.strerror(socketError)?.toKString() ?: "errno=$socketError"}")
+        return getSocketError(fd)
     }
 
     override suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int {
