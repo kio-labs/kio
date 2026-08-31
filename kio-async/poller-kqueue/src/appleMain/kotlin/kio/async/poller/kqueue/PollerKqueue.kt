@@ -6,7 +6,7 @@ import kio.async.POLL_INTEREST_WRITE
 import kio.async.Poller
 import kio.async.PollerFactory
 import kio.async.SuspendIo
-import kio.async.PollBasedSuspendIo
+import kio.async.PosixSuspendIo
 import kotlinx.cinterop.Arena
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
@@ -36,7 +36,7 @@ object Kqueue : PollerFactory {
     override fun create(): Poller = KqueuePoller()
 }
 
-private class KqueuePoller : Poller, PollBasedSuspendIo {
+private class KqueuePoller : SuspendIo, Poller, PosixSuspendIo {
     private val kq = kqueue()
 
     @OptIn(ExperimentalForeignApi::class)
