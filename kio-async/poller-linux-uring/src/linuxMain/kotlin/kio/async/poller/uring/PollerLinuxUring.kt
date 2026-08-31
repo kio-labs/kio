@@ -59,6 +59,7 @@ import linux.uring.io_uring_prep_socket
 import linux.uring.io_uring_prep_statx
 import linux.uring.io_uring_queue_exit
 import platform.posix.sockaddr_in
+import platform.posix.stat
 import kotlin.coroutines.resumeWithException
 
 object LinuxUring : PollerFactory {
@@ -376,6 +377,14 @@ private class PollerLinuxUring : Poller, SuspendIo {
         c.invokeOnCancellation {
             cancelRequest(id)
         }
+    }
+
+    override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?): Int {
+        return platform.posix.pipe(fds)
+    }
+
+    override suspend fun suspendStat(path: String?, buf: CPointer<stat>?): Int {
+        return platform.posix.stat(path, buf)
     }
 
     override fun close() {

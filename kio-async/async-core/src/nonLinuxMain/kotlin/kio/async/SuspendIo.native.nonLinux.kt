@@ -4,29 +4,11 @@ package kio.async
 
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.IntVarOf
 import kotlinx.cinterop.UIntVarOf
 import platform.posix.sockaddr
 import platform.posix.sockaddr_in
-import platform.posix.stat
 
-actual interface SuspendIo {
-    suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Int
-    suspend fun suspendRead(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int
-    suspend fun suspendAccept(fd: Int, addr: CPointer<sockaddr_in>, addrLen: CPointer<UIntVarOf<UInt>>): Int
-
-    suspend fun suspendConnect(fd: Int, addr: CPointer<sockaddr>, len: UInt): Int
-    suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int
-    suspend fun suspendClose(fd: Int): Int
-    suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?): Int
-    suspend fun suspendStat(path: String?, buf: CPointer<stat>?): Int
-
-    suspend fun suspendShutdown(fd: Int, how: Int): Int
-    suspend fun suspendBind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int
-    suspend fun suspendListen(fd: Int, backlog: Int): Int
-    suspend fun suspendSocket(domain: Int, type: Int, protocol: Int): Int
-    suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
-}
+actual interface SuspendIo: PosixApi
 
 actual suspend fun SuspendIo.write(fd: Int, buf: CPointer<*>, byte: ULong): Int = suspendWrite(fd, buf, byte)
 actual suspend fun SuspendIo.read(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int = suspendRead(fd, bytes, nbyte)

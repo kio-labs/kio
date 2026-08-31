@@ -5,28 +5,16 @@ import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.IntVarOf
 import kotlinx.cinterop.UIntVarOf
-import kotlinx.coroutines.CancellationException
-import kotlinx.io.IOException
 import linux.platform.statx
 import platform.posix.sockaddr
 import platform.posix.sockaddr_in
 
-actual interface SuspendIo {
-    suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Int
-    suspend fun suspendRead(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int
-    suspend fun suspendAccept(fd: Int, addr: CPointer<sockaddr_in>, addrLen: CPointer<UIntVarOf<UInt>>): Int
-
-    suspend fun suspendConnect(fd: Int, addr: CPointer<sockaddr>, len: UInt): Int
-    suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int
-    suspend fun suspendClose(fd: Int): Int
+interface LinuxApi {
     suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int
     suspend fun suspendStatx(dirfd: Int, path: String?, flags: Int, mask: UInt, buf: CPointer<statx>?): Int
-
-    suspend fun suspendShutdown(fd: Int, how: Int): Int
-    suspend fun suspendBind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int
-    suspend fun suspendListen(fd: Int, backlog: Int): Int
-    suspend fun suspendSocket(domain: Int, type: Int, protocol: Int): Int
 }
+
+actual interface SuspendIo: PosixApi, LinuxApi
 
 actual suspend fun SuspendIo.write(fd: Int, buf: CPointer<*>, byte: ULong): Int = suspendWrite(fd, buf, byte)
 actual suspend fun SuspendIo.read(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int = suspendRead(fd, bytes, nbyte)
@@ -38,3 +26,16 @@ actual suspend fun SuspendIo.shutdown(fd: Int, how: Int): Int = suspendShutdown(
 actual suspend fun SuspendIo.bind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int = suspendBind(fd, addr, addrlen)
 actual suspend fun SuspendIo.listen(fd: Int, backlog: Int): Int = suspendListen(fd, backlog)
 actual suspend fun SuspendIo.socket(domain: Int, type: Int, protocol: Int): Int = suspendSocket(domain, type, protocol)
+
+interface LinuxSuspendIo: LinuxApi {
+    override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int {
+        // TODO: replace with linux api: pipe2
+        return platform.posix.pipe(fds)
+    }
+
+    override suspend fun suspendStatx(dirfd: Int, path: String?, flags: Int, mask: UInt, buf: CPointer<statx>?): Int {
+        // TODO: replace with linux api: statx
+//        return statx(dirfd, path, flags, mask, buf)
+        TODO("suspendStatx not implemented")
+    }
+}

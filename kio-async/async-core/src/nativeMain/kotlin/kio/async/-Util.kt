@@ -4,6 +4,8 @@ import platform.posix.EAGAIN
 import platform.posix.EWOULDBLOCK
 import platform.posix.errno
 
+internal fun Int.negErrno(): Int = if (this >= 0) this else -errno
+
 internal suspend inline fun posixCall(crossinline func: () -> Int, crossinline waitIO: suspend () -> Unit): Int {
     while (true) {
         val ret = func()
