@@ -9,7 +9,7 @@ hash = "0.5.6"
 macs = "0.8.0"
 ktorHttp = "3.5.2"
 linuxUring = "2.15.3"
-linuxPlatform = "1.0.1"
+linuxPlatform = "1.0.2"
 openssl = "4.0.1.1"
 mavenPublish = "0.37.0"
 
