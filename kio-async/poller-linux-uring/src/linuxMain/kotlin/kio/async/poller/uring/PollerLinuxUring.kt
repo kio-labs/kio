@@ -40,10 +40,12 @@ import linux.uring.io_uring_wait_cqe_timeout
 import platform.posix.errno
 import platform.posix.sockaddr
 import platform.posix.strerror
-import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlinx.cinterop.reinterpret
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
 import linux.platform.statx
+import linux.uring.ECANCELED
 import linux.uring.io_uring_free_probe
 import linux.uring.io_uring_get_probe_ring
 import linux.uring.io_uring_op
@@ -58,21 +60,28 @@ import linux.uring.io_uring_prep_shutdown
 import linux.uring.io_uring_prep_socket
 import linux.uring.io_uring_prep_statx
 import linux.uring.io_uring_queue_exit
+import linux.uring.io_uring_sqe
 import platform.posix.sockaddr_in
 import platform.posix.stat
-import kotlin.coroutines.resumeWithException
 
-object LinuxUring : PollerFactory {
-    override fun create(): Poller = PollerLinuxUring()
+/**
+ * Creates a [PollerFactory] backed by io_uring.
+ *
+ * @param entires the number of entries in the submission queue.
+ * @see https://man7.org/linux/man-pages/man3/io_uring_queue_init.3.html
+ */
+fun LinuxUring(entires: Int = 64) = object : PollerFactory {
+    override fun create(): Poller = PollerLinuxUring(entires)
 }
 
-private const val QUEUE_SIZE = 64u
-
-private class PollerLinuxUring : Poller, SuspendIo {
+private class PollerLinuxUring(entries: Int) : Poller, SuspendIo {
     private val arean = Arena()
     private val ring = arean.alloc<io_uring>()
 
     private val requestMap = mutableMapOf<ULong, UringReq>()
+
+    private var shuttingDown = false
+    private var closed = false
 
     override val io: SuspendIo = this
 
@@ -98,7 +107,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
     }
 
     init {
-        val result = io_uring_queue_init(QUEUE_SIZE, ring.ptr, 0u)
+        val result = io_uring_queue_init(entries.toUInt(), ring.ptr, 0u)
         if (result != 0) {
             throw IOException("exception when int uring queue. ${errnoMessage(result)}")
         }
@@ -172,27 +181,35 @@ private class PollerLinuxUring : Poller, SuspendIo {
                 cqeVar.pointed?.res ?: throw IOException("result of request $req not found.")
             when (req) {
                 is UringReq.Open -> {
-                    req.c.resume(result)
+                    completeRequest(req.c, result)
                     req.arena.clear()
                 }
-                is UringReq.Close -> req.c.resume(result)
-                is UringReq.Read -> req.c.resume(result)
+                is UringReq.Close -> completeRequest(req.c, result)
+                is UringReq.Read -> completeRequest(req.c, result)
                 is UringReq.Statx -> {
-                    req.c.resume(result)
+                    completeRequest(req.c, result)
                     req.arena.clear()
                 }
-                is UringReq.Write -> req.c.resume(result)
-                is UringReq.Pipe -> req.c.resume(result)
-                is UringReq.ShutDown -> req.c.resume(result)
-                is UringReq.Bind -> req.c.resume(result)
-                is UringReq.Listen -> req.c.resume(result)
-                is UringReq.Socket -> req.c.resume(result)
-                is UringReq.Connect -> req.c.resume(result)
-                is UringReq.Accept -> req.c.resume(result)
-                is UringReq.Cancel -> requestMap.remove(req.requestId)
+                is UringReq.Write -> completeRequest(req.c, result)
+                is UringReq.Pipe -> completeRequest(req.c, result)
+                is UringReq.ShutDown -> completeRequest(req.c, result)
+                is UringReq.Bind -> completeRequest(req.c, result)
+                is UringReq.Listen -> completeRequest(req.c, result)
+                is UringReq.Socket -> completeRequest(req.c, result)
+                is UringReq.Connect -> completeRequest(req.c, result)
+                is UringReq.Accept -> completeRequest(req.c, result)
+                is UringReq.Cancel -> Unit
             }
         } finally {
             io_uring_cqe_seen(ring.ptr, cqeVar.value)
+        }
+    }
+
+    private fun completeRequest(c: CancellableContinuation<Int>, result: Int) {
+        if (result == -ECANCELED) {
+            c.cancel(CancellationException("io_uring request cancelled"))
+        } else {
+            c.resume(result)
         }
     }
 
@@ -201,7 +218,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
         buf: CPointer<*>,
         byte: ULong
     ): Int = suspendCancellableCoroutine { c ->
-        val sqe = takeSqe()
+        val sqe = takeRequestSqe()
 
         io_uring_prep_write(sqe, fd, buf, byte.toUInt(), (-1).toULong())
         val id = nextActionId()
@@ -218,7 +235,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
         bytes: CPointer<*>,
         nbyte: ULong
     ): Int = suspendCancellableCoroutine { c ->
-        val sqe = takeSqe()
+        val sqe = takeRequestSqe()
 
         io_uring_prep_read(sqe, fd, bytes, nbyte.toUInt(), (-1).toULong())
         val id = nextActionId()
@@ -235,7 +252,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
         addr: CPointer<sockaddr_in>,
         addrLen: CPointer<UIntVarOf<UInt>>
     ): Int = suspendCancellableCoroutine { c ->
-        val sqe = takeSqe()
+        val sqe = takeRequestSqe()
 
         io_uring_prep_accept(sqe, fd, addr.reinterpret(), addrLen, 0)
         val id = nextActionId()
@@ -252,7 +269,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
         addr: CPointer<sockaddr>,
         len: UInt
     ): Int = suspendCancellableCoroutine { c ->
-        val sqe = takeSqe()
+        val sqe = takeRequestSqe()
 
         io_uring_prep_connect(sqe, fd, addr.reinterpret(), len)
         val id = nextActionId()
@@ -265,7 +282,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
     }
 
     override suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int = suspendCancellableCoroutine { c ->
-        val sqe = takeSqe()
+        val sqe = takeRequestSqe()
         val arena = Arena()
         val cPath = path?.cstr?.getPointer(arena)
 
@@ -280,7 +297,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
     }
 
     override suspend fun suspendClose(fd: Int): Int = suspendCancellableCoroutine { c ->
-        val sqe = takeSqe()
+        val sqe = takeRequestSqe()
         io_uring_prep_close(sqe, fd)
         val id = nextActionId()
         io_uring_sqe_set_data64(sqe, id)
@@ -292,7 +309,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
     }
 
     override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int = suspendCancellableCoroutine { c ->
-        val sqe = takeSqe()
+        val sqe = takeRequestSqe()
         io_uring_prep_pipe(sqe, fds, pipeFlags)
         val id = nextActionId()
         io_uring_sqe_set_data64(sqe, id)
@@ -304,7 +321,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
     }
 
     override suspend fun suspendStatx(dirfd: Int, path: String?, flags: Int, mask: UInt, buf: CPointer<statx>?): Int = suspendCancellableCoroutine { c ->
-        val sqe = takeSqe()
+        val sqe = takeRequestSqe()
 
         val arena = Arena()
         val cPath = path?.cstr?.getPointer(arena)
@@ -320,7 +337,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
     }
 
     override suspend fun suspendShutdown(fd: Int, how: Int): Int  = suspendCancellableCoroutine { c ->
-        val sqe = takeSqe()
+        val sqe = takeRequestSqe()
         io_uring_prep_shutdown(sqe, fd, how)
         val id = nextActionId()
         io_uring_sqe_set_data64(sqe, id)
@@ -337,7 +354,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
         }
 
         return suspendCancellableCoroutine { c ->
-            val sqe = takeSqe()
+            val sqe = takeRequestSqe()
             io_uring_prep_bind(sqe, fd, addr?.reinterpret(), addrlen)
             val id = nextActionId()
             io_uring_sqe_set_data64(sqe, id)
@@ -355,7 +372,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
         }
 
         return suspendCancellableCoroutine { c ->
-            val sqe = takeSqe()
+            val sqe = takeRequestSqe()
             io_uring_prep_listen(sqe, fd, backlog)
             val id = nextActionId()
             io_uring_sqe_set_data64(sqe, id)
@@ -368,7 +385,7 @@ private class PollerLinuxUring : Poller, SuspendIo {
     }
 
     override suspend fun suspendSocket(domain: Int, type: Int, protocol: Int): Int = suspendCancellableCoroutine { c ->
-        val sqe = takeSqe()
+        val sqe = takeRequestSqe()
         io_uring_prep_socket(sqe, domain, type, protocol, 0U)
         val id = nextActionId()
         io_uring_sqe_set_data64(sqe, id)
@@ -387,10 +404,33 @@ private class PollerLinuxUring : Poller, SuspendIo {
         return platform.posix.stat(path, buf)
     }
 
-    override fun close() {
-        check(requestMap.isEmpty()) {
-            "uring poller is up to close but some request still not consumed. requestMap: $requestMap"
+    override fun shutdown() {
+        check(!closed)
+        if (shuttingDown) return
+        shuttingDown = true
+
+        val requestIds = requestMap
+            .filterValues { it !is UringReq.Cancel }
+            .keys
+            .toList()
+
+        requestIds.forEach(::cancelRequest)
+
+        while (requestMap.isNotEmpty()) {
+            poll(-1)
         }
+    }
+
+    override fun close() {
+        check(!closed) {
+            "io_uring is already closed"
+        }
+
+        check(requestMap.isEmpty()) {
+            "Cannot close io_uring: requests are still in flight: $requestMap"
+        }
+        closed = true
+
         io_uring_queue_exit(ring.ptr)
         arean.clear()
     }
@@ -408,23 +448,32 @@ private class PollerLinuxUring : Poller, SuspendIo {
     private fun nextActionId() = id++
 
     private fun takeSqe() =
-        io_uring_get_sqe(ring.ptr) ?: throw IOException("No available SQE.")
+        io_uring_get_sqe(ring.ptr)
+            ?: throw IOException("No available SQE.")
+
+    private fun takeRequestSqe(): CPointer<io_uring_sqe> {
+        check(!shuttingDown && !closed) {
+            "io_uring is shutting down or closed"
+        }
+
+        return takeSqe()
+    }
 }
 
 private sealed interface UringReq {
     data class Cancel(val requestId: ULong) : UringReq
-    data class Read(val c: Continuation<Int>) : UringReq
-    data class Accept(val c: Continuation<Int>) : UringReq
-    data class Connect(val c: Continuation<Int>) : UringReq
-    data class Write(val c: Continuation<Int>) : UringReq
-    data class Open(val arena: Arena, val c: Continuation<Int>) : UringReq
-    data class Close(val c: Continuation<Int>) : UringReq
-    data class Pipe(val c: Continuation<Int>) : UringReq
-    data class Statx(val arena: Arena, val c: Continuation<Int>) : UringReq
-    data class ShutDown(val c: Continuation<Int>) : UringReq
-    data class Bind(val c: Continuation<Int>) : UringReq
-    data class Listen(val c: Continuation<Int>) : UringReq
-    data class Socket(val c: Continuation<Int>) : UringReq
+    data class Read(val c: CancellableContinuation<Int>) : UringReq
+    data class Accept(val c: CancellableContinuation<Int>) : UringReq
+    data class Connect(val c: CancellableContinuation<Int>) : UringReq
+    data class Write(val c: CancellableContinuation<Int>) : UringReq
+    data class Open(val arena: Arena, val c: CancellableContinuation<Int>) : UringReq
+    data class Close(val c: CancellableContinuation<Int>) : UringReq
+    data class Pipe(val c: CancellableContinuation<Int>) : UringReq
+    data class Statx(val arena: Arena, val c: CancellableContinuation<Int>) : UringReq
+    data class ShutDown(val c: CancellableContinuation<Int>) : UringReq
+    data class Bind(val c: CancellableContinuation<Int>) : UringReq
+    data class Listen(val c: CancellableContinuation<Int>) : UringReq
+    data class Socket(val c: CancellableContinuation<Int>) : UringReq
 }
 
 private fun errnoMessage(result: Int? = null): String {

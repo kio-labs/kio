@@ -9,5 +9,5 @@ class EpollPgMigrationTest: PgMigrationTest() {
 }
 
 class LinuxUringPgMigrationTest: PgMigrationTest() {
-    override val pollerFactory: PollerFactory = LinuxUring
+    override val pollerFactory: PollerFactory = LinuxUring()
 }

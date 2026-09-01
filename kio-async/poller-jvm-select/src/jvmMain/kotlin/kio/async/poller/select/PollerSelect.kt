@@ -10,10 +10,11 @@ import kio.async.PollerFactory
 import kio.async.SelectionKeyWrapper
 import kio.async.SuspendChannelIo
 import kio.async.SuspendIo
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.nio.channels.SelectionKey
 import java.nio.channels.Selector
-import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 
 object Select : PollerFactory {
@@ -23,7 +24,7 @@ object Select : PollerFactory {
 internal class PollerSelect : Poller, SuspendChannelIo {
     private val selector = Selector.open()
 
-    private val continuationMap: MutableMap<Pair<SelectionKeyWrapper, PollInterest>, Continuation<Unit>> =
+    private val continuationMap: MutableMap<Pair<SelectionKeyWrapper, PollInterest>, CancellableContinuation<Unit>> =
         mutableMapOf()
 
     override fun attach(handle: SelectionKeyWrapper, event: PollInterest) {
@@ -86,7 +87,22 @@ internal class PollerSelect : Poller, SuspendChannelIo {
         }
     }
 
+    override fun shutdown() {
+        val continuations = continuationMap.values.toList()
+        continuationMap.clear()
+
+        val cause = CancellationException("Select poller shutdown")
+
+        continuations.forEach {
+            it.cancel(cause)
+        }
+    }
+
     override fun close() {
+        check(continuationMap.isEmpty()) {
+            "Cannot close selector: pending IO requests: $continuationMap"
+        }
+
         selector.close()
     }
 
