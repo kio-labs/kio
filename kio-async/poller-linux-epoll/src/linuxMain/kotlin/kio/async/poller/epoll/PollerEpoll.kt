@@ -13,6 +13,8 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.cValue
 import kotlinx.cinterop.get
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.io.IOException
 import platform.linux.EPOLLERR
@@ -28,7 +30,6 @@ import platform.linux.epoll_ctl
 import platform.linux.epoll_event
 import platform.linux.epoll_wait
 import kotlin.collections.set
-import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 
 object EPoll : PollerFactory {
@@ -49,7 +50,7 @@ private class EpollPoller : Poller, SuspendIo, LinuxSuspendIo, PosixSuspendIo {
     // map of fd and events
     val registeredEvents: MutableMap<Int, UInt> = mutableMapOf()
 
-    private val continuationMap: MutableMap<Pair<Int, PollInterest>, Continuation<Unit>> =
+    private val continuationMap: MutableMap<Pair<Int, PollInterest>, CancellableContinuation<Unit>> =
         mutableMapOf()
 
     init {
@@ -138,9 +139,23 @@ private class EpollPoller : Poller, SuspendIo, LinuxSuspendIo, PosixSuspendIo {
             }
         }
     }
+    override fun shutdown() {
+        val continuations = continuationMap.values.toList()
+        continuationMap.clear()
+
+        val cause = CancellationException("Epoll poller shutdown")
+
+        continuations.forEach {
+            it.cancel(cause)
+        }
+    }
 
     @OptIn(ExperimentalForeignApi::class)
     override fun close() {
+        check(continuationMap.isEmpty()) {
+            "Cannot close epoll: pending IO requests: $continuationMap"
+        }
+
         platform.posix.close(epollfd)
         arean.clear()
     }

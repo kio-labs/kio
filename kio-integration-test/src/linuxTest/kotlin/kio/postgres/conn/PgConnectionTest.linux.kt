@@ -9,5 +9,5 @@ class EpollPgConnectionTest : PgConnectionTest() {
 }
 
 class UringPgConnectionTest : PgConnectionTest() {
-    override val pollerFactory: PollerFactory = LinuxUring
+    override val pollerFactory: PollerFactory = LinuxUring()
 }

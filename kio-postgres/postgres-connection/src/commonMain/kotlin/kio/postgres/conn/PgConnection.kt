@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
@@ -429,9 +430,7 @@ internal class InternalPgConnection(
     private val messageChannel = Channel<Message>()
     private val notificationSharedFlow = MutableSharedFlow<PgNotification>()
 
-    init {
-        launchMessageDispatchLoop()
-    }
+    private val messageDispatchJob = launchMessageDispatchLoop()
 
     private fun launchMessageDispatchLoop() = launch {
         while (true) {
@@ -608,7 +607,7 @@ internal class InternalPgConnection(
     }
 
     override suspend fun close() {
-        cancel()
+        messageDispatchJob.cancelAndJoin()
         sink.writeTerminate()
         sink.flush()
 

@@ -47,6 +47,7 @@ interface PollerFactory {
 
 interface Poller {
     val io: SuspendIo
+
     /**
      * Blocks the current thread until this fd becomes ready or the timeout expires.
      *
@@ -56,6 +57,11 @@ interface Poller {
      * - `> 0` means wait up to the given milliseconds.
      */
     fun poll(timeoutMillis: Long)
+
+    /**
+     * Cancels all active coroutines waiting on this poller.
+     */
+    fun shutdown()
 
     fun close()
 }

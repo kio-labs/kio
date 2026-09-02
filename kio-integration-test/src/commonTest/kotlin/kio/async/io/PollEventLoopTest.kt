@@ -1,11 +1,14 @@
 package kio.async.io
 
 import kio.async.PollerFactory
+import kio.async.poller
 import kio.async.runPollEventLoop
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
@@ -196,5 +199,27 @@ abstract class PollEventLoopTest {
 
         val clientConn = server.accept()
         assertEquals(122, clientConn.buffered().source.readInt())
+    }
+
+    @Test
+    fun closeSuccessCallingShutdown(): Unit = runPollEventLoop(factory) {
+        val server = tcpBind("127.0.0.1", 0)
+        val job = launch {
+            server.accept()
+        }
+        delay(50.milliseconds)
+        job.cancel()
+
+        currentCoroutineContext().poller.shutdown()
+    }
+
+    @Test
+    fun shutdownWithoutCancelCoroutine(): Unit = runPollEventLoop(factory) {
+        val server = tcpBind("127.0.0.1", 0)
+        val job = launch {
+            server.accept()
+        }
+        delay(50.milliseconds)
+        currentCoroutineContext().poller.shutdown()
     }
 }

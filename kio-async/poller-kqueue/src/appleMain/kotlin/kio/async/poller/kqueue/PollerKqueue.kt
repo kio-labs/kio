@@ -15,6 +15,8 @@ import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.toKString
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.io.IOException
 import platform.darwin.EVFILT_READ
@@ -29,7 +31,6 @@ import platform.posix.strerror
 import platform.posix.timespec
 import kotlin.collections.set
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
-import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 
 object Kqueue : PollerFactory {
@@ -44,7 +45,7 @@ private class KqueuePoller : SuspendIo, Poller, PosixSuspendIo {
 
     @OptIn(ExperimentalForeignApi::class)
     private val events = arean.allocArray<kevent>(EVENT_CAPACITY)
-    private val continuationMap: MutableMap<Pair<Any, PollInterest>, Continuation<Unit>> =
+    private val continuationMap: MutableMap<Pair<Any, PollInterest>, CancellableContinuation<Unit>> =
         mutableMapOf()
 
     @OptIn(ExperimentalForeignApi::class, ExperimentalAtomicApi::class)
@@ -121,8 +122,23 @@ private class KqueuePoller : SuspendIo, Poller, PosixSuspendIo {
         }
     }
 
+    override fun shutdown() {
+        val continuations = continuationMap.values.toList()
+        continuationMap.clear()
+
+        val cause = CancellationException("Kqueue poller shutdown")
+
+        continuations.forEach {
+            it.cancel(cause)
+        }
+    }
+
     @OptIn(ExperimentalForeignApi::class)
     override fun close() {
+        check(continuationMap.isEmpty()) {
+            "Cannot close kqueue: pending IO requests: $continuationMap"
+        }
+
         arean.clear()
         platform.posix.close(kq)
     }

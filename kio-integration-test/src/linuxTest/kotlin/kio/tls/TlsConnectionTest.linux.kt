@@ -9,5 +9,5 @@ class EpollTlsConnectionTest : TlsConnectionTest() {
 }
 
 class UringTlsConnectionTest : TlsConnectionTest() {
-    override val pollerFactory: PollerFactory = LinuxUring
+    override val pollerFactory: PollerFactory = LinuxUring()
 }

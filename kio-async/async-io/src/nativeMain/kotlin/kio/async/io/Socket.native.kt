@@ -51,14 +51,16 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
         while (ai != null) {
             val fd = io.socket(ai.pointed.ai_family, ai.pointed.ai_socktype, ai.pointed.ai_protocol)
             if (fd < 0) {
-                lastError = IOException(errnoMessage())
+                lastError = IOException(resultErrorMessage(fd))
                 ai = ai.pointed.ai_next
                 continue
             }
 
             try {
-                if (setNonBlocking(fd) < 0) {
-                    throw IOException("could not set socket non-blocking: ${errnoMessage()}")
+                setNonBlocking(fd).let { ret ->
+                    if (ret < 0) {
+                        throw IOException("could not set socket non-blocking: ${resultErrorMessage(ret)}")
+                    }
                 }
 
                 val aiAddr = ai.pointed.ai_addr ?: throw IOException("no ai_addr value")
@@ -156,7 +158,7 @@ private class FdServerSocket(
             io.accept(serverFd, clientAddr.ptr, clientAddrLen.ptr)
 
         if (clientFd < 0) {
-            throw IOException("ERROR: could not accept connection from client: ${errnoMessage()}")
+            throw IOException("ERROR: could not accept connection from client: ${resultErrorMessage(clientFd)}")
         }
 
         try {
@@ -242,15 +244,4 @@ private fun ntohs(value: UShort): UShort {
 private fun htons(value: UShort): UShort {
     val v = value.toInt()
     return (((v and 0xFF) shl 8) or ((v ushr 8) and 0xFF)).toUShort()
-}
-
-private fun resultErrorMessage(result: Int): String {
-    val error = if (result < 0) -result else result
-    val errStr = strerror(error)?.toKString() ?: "Unknown errno: $error"
-
-    return "$errStr($result)"
-}
-
-internal fun errnoMessage(): String {
-    return strerror(errno)?.toKString() ?: "Unknown errno: $errno"
 }

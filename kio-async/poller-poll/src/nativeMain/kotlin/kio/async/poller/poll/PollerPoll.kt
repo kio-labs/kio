@@ -13,6 +13,8 @@ import kotlinx.cinterop.convert
 import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.toKString
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.io.IOException
 import platform.posix.POLLRDNORM
@@ -29,7 +31,7 @@ expect val PosixPoll: PollerFactory
 internal abstract class NativePoller : IoPoller, Poller {
     private val pollFdRequestMap: MutableMap<Pair<Int, PollInterest>, PollFdRequest> =
         mutableMapOf()
-    private val continuationMap: MutableMap<Pair<Int, PollInterest>, Continuation<Unit>> =
+    private val continuationMap: MutableMap<Pair<Int, PollInterest>, CancellableContinuation<Unit>> =
         mutableMapOf()
 
     override fun attach(fd: Int, event: PollInterest) {
@@ -62,6 +64,17 @@ internal abstract class NativePoller : IoPoller, Poller {
                 val c = continuationMap.remove(handle to event)
                 c?.resume(Unit)
             }
+        }
+    }
+
+    override fun shutdown() {
+        val continuations = continuationMap.values.toList()
+        continuationMap.clear()
+
+        val cause = CancellationException("Poll poller shutdown")
+
+        continuations.forEach {
+            it.cancel(cause)
         }
     }
 

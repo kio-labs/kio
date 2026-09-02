@@ -63,7 +63,7 @@ private inline fun doWrite(
             0
         }
 
-        if (bytesWritten < 0L) throw IOException(errnoMessage())
+        if (bytesWritten < 0L) throw IOException(resultErrorMessage(bytesWritten.toInt()))
         if (bytesWritten == 0L) throw IOException("reached capacity")
 
         source.skip(bytesWritten)
@@ -102,7 +102,7 @@ private inline fun doRead(
 
             nativeRead(fd, bytes, maxToCopy.convert())
         }
-        if (read < 0) throw IOException(errnoMessage())
+        if (read < 0) throw IOException(resultErrorMessage(read.toInt()))
         read.toInt()
     }
 
