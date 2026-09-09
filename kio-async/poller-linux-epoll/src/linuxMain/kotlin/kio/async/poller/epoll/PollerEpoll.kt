@@ -152,10 +152,6 @@ private class EpollPoller : Poller, SuspendIo, LinuxSuspendIo, PosixSuspendIo {
 
     @OptIn(ExperimentalForeignApi::class)
     override fun close() {
-        check(continuationMap.isEmpty()) {
-            "Cannot close epoll: pending IO requests: $continuationMap"
-        }
-
         platform.posix.close(epollfd)
         arean.clear()
     }

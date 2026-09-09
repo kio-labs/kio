@@ -99,10 +99,6 @@ internal class PollerSelect : Poller, SuspendChannelIo {
     }
 
     override fun close() {
-        check(continuationMap.isEmpty()) {
-            "Cannot close selector: pending IO requests: $continuationMap"
-        }
-
         selector.close()
     }
 
