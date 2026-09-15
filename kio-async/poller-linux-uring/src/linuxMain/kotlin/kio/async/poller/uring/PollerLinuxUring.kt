@@ -2,8 +2,10 @@
 
 package kio.async.poller.uring
 
+import kio.async.DefaultPosixApi
 import kio.async.Poller
 import kio.async.PollerFactory
+import kio.async.PosixApi
 import kio.async.SuspendIo
 import kotlinx.cinterop.Arena
 import kotlinx.cinterop.CPointer
@@ -46,7 +48,6 @@ import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
 import linux.platform.statx
 import linux.uring.ECANCELED
-import linux.uring.SOCKET_URING_OP_GETSOCKNAME
 import linux.uring.io_uring_free_probe
 import linux.uring.io_uring_get_probe_ring
 import linux.uring.io_uring_op
@@ -55,15 +56,16 @@ import linux.uring.io_uring_prep_bind
 import linux.uring.io_uring_prep_close
 import linux.uring.io_uring_prep_connect
 import linux.uring.io_uring_prep_listen
+import linux.uring.io_uring_prep_mkdir
 import linux.uring.io_uring_prep_open
 import linux.uring.io_uring_prep_pipe
 import linux.uring.io_uring_prep_shutdown
 import linux.uring.io_uring_prep_socket
 import linux.uring.io_uring_prep_statx
+import linux.uring.io_uring_prep_unlinkat
 import linux.uring.io_uring_queue_exit
 import linux.uring.io_uring_sqe
 import platform.posix.sockaddr_in
-import platform.posix.stat
 
 /**
  * Creates a [PollerFactory] backed by io_uring.
@@ -75,7 +77,7 @@ fun LinuxUring(entires: Int = 64) = object : PollerFactory {
     override fun create(): Poller = PollerLinuxUring(entires)
 }
 
-private class PollerLinuxUring(entries: Int) : Poller, SuspendIo {
+private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, DefaultPosixApi {
     private val arean = Arena()
     private val ring = arean.alloc<io_uring>()
 
@@ -199,6 +201,8 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo {
                 is UringReq.Socket -> completeRequest(req.c, result)
                 is UringReq.Connect -> completeRequest(req.c, result)
                 is UringReq.Accept -> completeRequest(req.c, result)
+                is UringReq.Mkdir -> completeRequest(req.c, result)
+                is UringReq.UnlinkAt -> completeRequest(req.c, result)
                 is UringReq.Cancel -> Unit
             }
         } finally {
@@ -337,7 +341,19 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo {
         }
     }
 
-    override suspend fun suspendShutdown(fd: Int, how: Int): Int  = suspendCancellableCoroutine { c ->
+    override suspend fun suspendUnlinkat(fd: Int, path: String?, flags: Int): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeRequestSqe()
+        io_uring_prep_unlinkat(sqe, fd, path, flags)
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.UnlinkAt(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
+
+    override suspend fun suspendShutdown(fd: Int, how: Int): Int = suspendCancellableCoroutine { c ->
         val sqe = takeRequestSqe()
         io_uring_prep_shutdown(sqe, fd, how)
         val id = nextActionId()
@@ -351,7 +367,7 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo {
 
     override suspend fun suspendBind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int {
         if (!bindSupported) {
-            return platform.posix.bind(fd, addr, addrlen).negErrno()
+            return super.suspendBind(fd, addr, addrlen)
         }
 
         return suspendCancellableCoroutine { c ->
@@ -369,7 +385,7 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo {
 
     override suspend fun suspendListen(fd: Int, backlog: Int): Int {
         if (!listenSupported) {
-            return platform.posix.listen(fd, backlog).negErrno()
+            return super.suspendListen(fd, backlog)
         }
 
         return suspendCancellableCoroutine { c ->
@@ -397,16 +413,16 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo {
         }
     }
 
-    override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?): Int {
-        return platform.posix.pipe(fds).negErrno()
-    }
+    override suspend fun suspendMkdir(path: String?, mode: UInt): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeRequestSqe()
+        io_uring_prep_mkdir(sqe, path, mode)
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.Mkdir(c)
 
-    override suspend fun suspendStat(path: String?, buf: CPointer<stat>?): Int {
-        return platform.posix.stat(path, buf).negErrno()
-    }
-
-    override suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int {
-        return platform.posix.getsockname(fd, addr, len).negErrno()
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
     }
 
     override fun shutdown() {
@@ -479,11 +495,11 @@ private sealed interface UringReq {
     data class Bind(val c: CancellableContinuation<Int>) : UringReq
     data class Listen(val c: CancellableContinuation<Int>) : UringReq
     data class Socket(val c: CancellableContinuation<Int>) : UringReq
+    data class Mkdir(val c: CancellableContinuation<Int>) : UringReq
+    data class UnlinkAt(val c: CancellableContinuation<Int>) : UringReq
 }
 
 private fun errnoMessage(result: Int? = null): String {
     val code = result?.times(-1)
     return strerror(code ?: errno)?.toKString() ?: "Unknown errno: $errno"
 }
-
-private fun Int.negErrno(): Int = if (this >= 0) this else -errno
