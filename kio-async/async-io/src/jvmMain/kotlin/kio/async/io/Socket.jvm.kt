@@ -145,7 +145,7 @@ private class ChannelServerSocket(
         }
     }
 
-    override fun close() {
+    override suspend fun close() {
         io.detachKey(acceptHandle, POLL_INTEREST_ACCEPT)
     }
 }
