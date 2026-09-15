@@ -7,6 +7,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.IntVarOf
 import kotlinx.cinterop.UIntVarOf
+import kotlinx.cinterop.UnsafeNumber
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.memScoped
@@ -45,6 +46,7 @@ interface PosixApi {
     suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?): Int
     suspend fun suspendStat(path: String?, buf: CPointer<stat>?): Int
     suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
+    suspend fun suspendMkdir(path: String?, mode: UInt): Int
 }
 
 actual interface IoPoller {
@@ -74,8 +76,9 @@ expect suspend fun SuspendIo.bind(fd: Int, addr: CPointer<sockaddr>?, addrlen: U
 expect suspend fun SuspendIo.listen(fd: Int, backlog: Int): Int
 expect suspend fun SuspendIo.socket(domain: Int, type: Int, protocol: Int): Int
 expect suspend fun SuspendIo.getsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
+expect suspend fun SuspendIo.mkdir(path: String?, mode: UInt): Int
 
-interface PosixSuspendIo : PosixApi, IoPoller {
+interface PosixSuspendIo : DefaultPosixApi, IoPoller {
     override suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Int = posixCall(
         func = { platform.posix.write(fd, buf, byte).toInt() },
         waitIO = { awaitIo(fd, POLL_INTEREST_WRITE) }
@@ -113,7 +116,9 @@ interface PosixSuspendIo : PosixApi, IoPoller {
         val socketError = getSocketError(fd)
         return if (socketError == 0) 0 else -socketError
     }
+}
 
+interface DefaultPosixApi: PosixApi {
     override suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int {
         return platform.posix.open(path, flags, mode).negErrno()
     }
@@ -148,6 +153,11 @@ interface PosixSuspendIo : PosixApi, IoPoller {
 
     override suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int {
         return platform.posix.getsockname(fd, addr, len).negErrno()
+    }
+
+    @OptIn(UnsafeNumber::class)
+    override suspend fun suspendMkdir(path: String?, mode: UInt): Int {
+        return platform.posix.mkdir(path, mode.convert()).negErrno()
     }
 }
 
