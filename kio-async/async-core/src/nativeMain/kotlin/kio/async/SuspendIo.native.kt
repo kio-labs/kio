@@ -44,6 +44,7 @@ interface PosixApi {
 
     suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?): Int
     suspend fun suspendStat(path: String?, buf: CPointer<stat>?): Int
+    suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
 }
 
 actual interface IoPoller {
@@ -72,6 +73,7 @@ expect suspend fun SuspendIo.shutdown(fd: Int, how: Int): Int
 expect suspend fun SuspendIo.bind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int
 expect suspend fun SuspendIo.listen(fd: Int, backlog: Int): Int
 expect suspend fun SuspendIo.socket(domain: Int, type: Int, protocol: Int): Int
+expect suspend fun SuspendIo.getsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
 
 interface PosixSuspendIo : PosixApi, IoPoller {
     override suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Int = posixCall(
@@ -142,6 +144,10 @@ interface PosixSuspendIo : PosixApi, IoPoller {
 
     override suspend fun suspendStat(path: String?, buf: CPointer<platform.posix.stat>?): Int {
         return platform.posix.stat(path, buf).negErrno()
+    }
+
+    override suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int {
+        return platform.posix.getsockname(fd, addr, len).negErrno()
     }
 }
 

@@ -9,5 +9,5 @@ interface ServerSocket {
 
     suspend fun accept(): AsyncRawConnection
 
-    fun close()
+    suspend fun close()
 }

@@ -9,17 +9,16 @@ import kio.async.attachFD
 import kio.async.close
 import kio.async.detachFD
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.memScoped
 
 @OptIn(ExperimentalForeignApi::class)
-internal fun pipeConnection(io: SuspendIo, readFd: Int, writeFd: Int): AsyncRawConnection = memScoped {
+internal fun pipeConnection(io: SuspendIo, readFd: Int, writeFd: Int): AsyncRawConnection {
     setNonBlocking(readFd)
     setNonBlocking(writeFd)
 
     io.attachFD(readFd, POLL_INTEREST_READ)
     io.attachFD(writeFd, POLL_INTEREST_WRITE)
 
-    return@memScoped object : AsyncRawConnection {
+    return object : AsyncRawConnection {
         override val source: AsyncRawSource =
             io.asyncRawSource(readFd)
         override val sink: AsyncRawSink =

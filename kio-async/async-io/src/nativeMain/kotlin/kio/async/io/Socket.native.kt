@@ -13,6 +13,7 @@ import kio.async.bind
 import kio.async.close
 import kio.async.connect
 import kio.async.detachFD
+import kio.async.getsockname
 import kio.async.listen
 import kio.async.poller
 import kio.async.shutdown
@@ -147,7 +148,7 @@ private class FdServerSocket(
     }
 
     override suspend fun getBoundPort(): Result<Int> {
-        return getBoundPort(serverFd)
+        return getBoundPort(io, serverFd)
     }
 
     override suspend fun accept(): AsyncRawConnection = memScoped {
@@ -163,7 +164,7 @@ private class FdServerSocket(
 
         try {
             if (setNonBlocking(clientFd) < 0) {
-                throw IOException("ERROR: could not set client socket non-blocking.\n")
+                throw IOException("ERROR: could not set client socket non-blocking.")
             }
 
             FdRawAsyncConnection(io, clientFd)
@@ -173,8 +174,9 @@ private class FdServerSocket(
         }
     }
 
-    override fun close() {
+    override suspend fun close() {
         io.detachFD(serverFd, POLL_INTEREST_READ)
+        io.close(serverFd)
     }
 }
 
@@ -221,17 +223,17 @@ internal fun setNonBlocking(fd: Int): Int {
     return 0
 }
 
-private fun getBoundPort(fd: Int): Result<Int> = memScoped {
+private suspend fun getBoundPort(io: SuspendIo, fd: Int): Result<Int> = memScoped {
     val addr = alloc<sockaddr_in>()
     val addrLen = alloc<socklen_tVar>().apply {
         value = sizeOf<sockaddr_in>().convert()
     }
 
-    val ret = getsockname(fd, addr.ptr.reinterpret(), addrLen.ptr)
+    val ret = io.getsockname(fd, addr.ptr.reinterpret(), addrLen.ptr)
     if (ret == 0) {
         Result.success(ntohs(addr.sin_port).toInt())
     } else {
-        Result.failure(IOException("getsockname failed. ${resultErrorMessage(ret)}"))
+        Result.failure(IOException("getsockname failed: ${resultErrorMessage(ret)}"))
     }
 }
 

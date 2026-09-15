@@ -46,6 +46,7 @@ import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
 import linux.platform.statx
 import linux.uring.ECANCELED
+import linux.uring.SOCKET_URING_OP_GETSOCKNAME
 import linux.uring.io_uring_free_probe
 import linux.uring.io_uring_get_probe_ring
 import linux.uring.io_uring_op
@@ -350,7 +351,7 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo {
 
     override suspend fun suspendBind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int {
         if (!bindSupported) {
-            return platform.posix.bind(fd, addr, addrlen)
+            return platform.posix.bind(fd, addr, addrlen).negErrno()
         }
 
         return suspendCancellableCoroutine { c ->
@@ -368,7 +369,7 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo {
 
     override suspend fun suspendListen(fd: Int, backlog: Int): Int {
         if (!listenSupported) {
-            return platform.posix.listen(fd, backlog)
+            return platform.posix.listen(fd, backlog).negErrno()
         }
 
         return suspendCancellableCoroutine { c ->
@@ -397,11 +398,15 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo {
     }
 
     override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?): Int {
-        return platform.posix.pipe(fds)
+        return platform.posix.pipe(fds).negErrno()
     }
 
     override suspend fun suspendStat(path: String?, buf: CPointer<stat>?): Int {
-        return platform.posix.stat(path, buf)
+        return platform.posix.stat(path, buf).negErrno()
+    }
+
+    override suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int {
+        return platform.posix.getsockname(fd, addr, len).negErrno()
     }
 
     override fun shutdown() {
@@ -480,3 +485,5 @@ private fun errnoMessage(result: Int? = null): String {
     val code = result?.times(-1)
     return strerror(code ?: errno)?.toKString() ?: "Unknown errno: $errno"
 }
+
+private fun Int.negErrno(): Int = if (this >= 0) this else -errno
