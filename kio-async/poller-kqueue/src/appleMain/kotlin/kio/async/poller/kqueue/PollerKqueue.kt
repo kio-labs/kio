@@ -135,10 +135,6 @@ private class KqueuePoller : SuspendIo, Poller, PosixSuspendIo {
 
     @OptIn(ExperimentalForeignApi::class)
     override fun close() {
-        check(continuationMap.isEmpty()) {
-            "Cannot close kqueue: pending IO requests: $continuationMap"
-        }
-
         arean.clear()
         platform.posix.close(kq)
     }
