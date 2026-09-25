@@ -31,6 +31,7 @@ import kotlinx.serialization.encodeToByteArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -392,45 +393,48 @@ abstract class PgConnectionTest {
     fun connCopyFromCanceledTest() {
         val elapsed = measureTime {
             withTestPgDatabase {
-                coroutineScope {
-                    exec(
-                        """
+                val exception = assertFailsWith<PgException> {
+                    coroutineScope {
+                        exec(
+                            """
                         create temporary table foo(
                             a int4,
                             b varchar
                         )
                         """.trimIndent()
-                    )
-                    val pipe = openPipe().buffered()
-                    val source = pipe.source
-                    val sink = pipe.sink
-                    val sendJob = launch {
-                        try {
-                            repeat(1_000_000) { i ->
-                                val b = "foo $i bar"
-                                sink.writeString("$i,${b}\n")
+                        )
+                        val pipe = openPipe().buffered()
+                        val source = pipe.source
+                        val sink = pipe.sink
+                        val sendJob = launch {
+                            try {
+                                repeat(1_000_000) { i ->
+                                    val b = "foo $i bar"
+                                    sink.writeString("$i,${b}\n")
+                                    sink.flush()
+                                    delay(1.milliseconds)
+                                }
+                            } finally {
                                 sink.flush()
-                                delay(1.milliseconds)
+                                pipe.close()
                             }
-                        } finally {
-                            sink.flush()
+                        }
+
+                        val copyJob = launch {
+                            println(copyFrom("COPY foo FROM STDIN WITH (FORMAT csv)", source))
                             pipe.close()
                         }
-                    }
 
-                    val copyJob = launch {
-                        println(copyFrom("COPY foo FROM STDIN WITH (FORMAT csv)", source))
+                        val delayTask = launch {
+                            delay(0.2.seconds)
+                            copyJob.cancel()
+                            sendJob.cancel()
+                        }
+                        joinAll(sendJob, copyJob, delayTask)
                         pipe.close()
                     }
-
-                    val delayTask = launch {
-                        delay(0.2.seconds)
-                        copyJob.cancel()
-                        sendJob.cancel()
-                    }
-                    joinAll(sendJob, copyJob, delayTask)
-                    pipe.close()
                 }
+                assertEquals(exception.code, "57014")
             }
         }
         assertTrue(elapsed < 5.seconds)
@@ -440,14 +444,16 @@ abstract class PgConnectionTest {
     fun connExecParamsCanceledTest() {
         val elapsed = measureTime {
             withTestPgDatabase {
-                coroutineScope {
-                    val job = launch { exec("select current_database(), pg_sleep(10)") }
-                    val delayJob = launch {
-                        delay(0.1.seconds)
-                        job.cancel()
+                val exception = assertFailsWith<PgException> {
+                    coroutineScope {
+                        launch { exec("select current_database(), pg_sleep(10)") }
+                        launch {
+                            delay(0.1.seconds)
+                            sendCancelRequest()
+                        }
                     }
-                    joinAll(job, delayJob)
                 }
+                assertEquals(exception.code, "57014")
             }
         }
 
@@ -458,15 +464,18 @@ abstract class PgConnectionTest {
     fun connExecParamsCanceledAndCheckStatusTest() {
         val elapsed = measureTime {
             withTestPgDatabase {
-                coroutineScope {
-                    val job = launch { exec("select current_database(), pg_sleep(10)") }
-                    val delayJob = launch {
-                        delay(0.1.seconds)
-                        job.cancel()
+                val exception = assertFailsWith<PgException> {
+                    coroutineScope {
+                        val job = launch { exec("select current_database(), pg_sleep(10)") }
+                        val delayJob = launch {
+                            delay(0.1.seconds)
+                            sendCancelRequest()
+                        }
+                        joinAll(job, delayJob)
                     }
-                    joinAll(job, delayJob)
-                    exec("select 1")
                 }
+                assertEquals(exception.code, "57014")
+                exec("select 1")
             }
         }
 

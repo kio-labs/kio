@@ -1,10 +1,12 @@
 package kio.postgres.protocol
 
 import kio.async.AsyncSink
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.io.Buffer
 import kotlinx.io.Sink
 
-suspend fun AsyncSink.writeStartupMessage(params: Map<String, String>) {
+suspend fun AsyncSink.writeStartupMessage(params: Map<String, String>) = withContext(NonCancellable) {
     writeBody {
         writeShort(3)
         writeShort(0)
@@ -18,12 +20,12 @@ suspend fun AsyncSink.writeStartupMessage(params: Map<String, String>) {
     }
 }
 
-suspend fun AsyncSink.writeStartTlsMessage() {
+suspend fun AsyncSink.writeStartTlsMessage() = withContext(NonCancellable) {
     writeInt(8)
     writeInt(80877103)
 }
 
-suspend fun AsyncSink.writeSASLInitialResponse(mechanism: String, data: ByteArray) {
+suspend fun AsyncSink.writeSASLInitialResponse(mechanism: String, data: ByteArray) = withContext(NonCancellable) {
     writeByte('p'.code.toByte())
     writeBody {
         writeCString(mechanism)
@@ -32,13 +34,13 @@ suspend fun AsyncSink.writeSASLInitialResponse(mechanism: String, data: ByteArra
     }
 }
 
-suspend fun AsyncSink.writeSASLResponse(data: ByteArray) {
+suspend fun AsyncSink.writeSASLResponse(data: ByteArray) = withContext(NonCancellable) {
     writeByte('p'.code.toByte())
     writeInt(data.size + 4)
     write(data)
 }
 
-suspend fun AsyncSink.writeParse(name: String, query: String, paramTypes: List<Int>) {
+suspend fun AsyncSink.writeParse(name: String, query: String, paramTypes: List<Int>) = withContext(NonCancellable) {
     writeByte('P'.code.toByte())
     writeBody {
         writeCString(name)
@@ -57,7 +59,7 @@ suspend fun AsyncSink.writeDescribePortal(portal: String) {
     writeDescribe('P', portal)
 }
 
-private suspend fun AsyncSink.writeDescribe(variant: Char, name: String) {
+private suspend fun AsyncSink.writeDescribe(variant: Char, name: String) = withContext(NonCancellable) {
     writeByte('D'.code.toByte())
     writeBody {
         writeByte(variant.code.toByte())
@@ -73,7 +75,7 @@ suspend fun AsyncSink.writeClosePortal(portal: String) {
     writeClose('P', portal)
 }
 
-private suspend fun AsyncSink.writeClose(variant: Char, name: String) {
+private suspend fun AsyncSink.writeClose(variant: Char, name: String) = withContext(NonCancellable) {
     writeByte('C'.code.toByte())
     writeBody {
         writeByte(variant.code.toByte())
@@ -87,7 +89,7 @@ suspend fun AsyncSink.writeBind(
     formats: List<Short>,
     values: ByteArray,
     resultFormat: List<Short>
-) {
+) = withContext(NonCancellable) {
     writeByte('B'.code.toByte())
     writeBody {
         writeCString(portal)
@@ -104,14 +106,14 @@ suspend fun AsyncSink.writeBind(
     }
 }
 
-suspend fun AsyncSink.writePassword(password: String) {
+suspend fun AsyncSink.writePassword(password: String) = withContext(NonCancellable) {
     writeByte('p'.code.toByte())
     writeBody {
         writeCString(password)
     }
 }
 
-suspend fun AsyncSink.writeExecute(portal: String, maxRows: Int = 0) {
+suspend fun AsyncSink.writeExecute(portal: String, maxRows: Int = 0) = withContext(NonCancellable) {
     writeByte('E'.code.toByte())
     writeBody {
         writeCString(portal)
@@ -119,35 +121,36 @@ suspend fun AsyncSink.writeExecute(portal: String, maxRows: Int = 0) {
     }
 }
 
-suspend fun AsyncSink.writeSync() {
+suspend fun AsyncSink.writeSync() = withContext(NonCancellable) {
     writeByte('S'.code.toByte())
     writeBody {}
 }
 
-suspend fun AsyncSink.writeCopyDone() {
+suspend fun AsyncSink.writeCopyDone() = withContext(NonCancellable) {
     writeByte('c'.code.toByte())
     writeBody {}
 }
 
-suspend fun AsyncSink.writeCopyFail(msg: String) {
+suspend fun AsyncSink.writeCopyFail(msg: String) = withContext(NonCancellable) {
     writeByte('f'.code.toByte())
     writeBody {
         writeCString(msg)
     }
 }
 
-suspend fun AsyncSink.writeFlush() {
+suspend fun AsyncSink.writeFlush() = withContext(NonCancellable) {
     writeByte('H'.code.toByte())
     writeBody {}
 }
 
-suspend fun AsyncSink.writeTerminate() {
+suspend fun AsyncSink.writeTerminate() = withContext(NonCancellable) {
     writeByte('X'.code.toByte())
     writeBody {}
 }
 
 private const val cancelRequestCode = 80877102
-suspend fun AsyncSink.writeCancelRequest(processId: Int, secretKey: ByteArray) {
+
+suspend fun AsyncSink.writeCancelRequest(processId: Int, secretKey: ByteArray) = withContext(NonCancellable) {
     if (secretKey.size > 256) error("secret key too long")
 
     val len = 12 + secretKey.size
@@ -157,14 +160,14 @@ suspend fun AsyncSink.writeCancelRequest(processId: Int, secretKey: ByteArray) {
     write(secretKey)
 }
 
-suspend fun AsyncSink.writeQuery(query: String) {
+suspend fun AsyncSink.writeQuery(query: String) = withContext(NonCancellable) {
     writeByte('Q'.code.toByte())
     writeBody { writeCString(query) }
 }
 
 private suspend inline fun AsyncSink.writeBody(
     crossinline buildBody: Buffer.() -> Unit
-) {
+) = withContext(NonCancellable) {
     val buf = Buffer()
 
     buildBody(buf)
