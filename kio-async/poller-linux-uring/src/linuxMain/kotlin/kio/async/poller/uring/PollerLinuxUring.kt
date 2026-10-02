@@ -201,8 +201,14 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
                 is UringReq.Socket -> completeRequest(req.c, result)
                 is UringReq.Connect -> completeRequest(req.c, result)
                 is UringReq.Accept -> completeRequest(req.c, result)
-                is UringReq.Mkdir -> completeRequest(req.c, result)
-                is UringReq.UnlinkAt -> completeRequest(req.c, result)
+                is UringReq.Mkdir -> {
+                    completeRequest(req.c, result)
+                    req.arena.clear()
+                }
+                is UringReq.UnlinkAt -> {
+                    completeRequest(req.c, result)
+                    req.arena.clear()
+                }
                 is UringReq.Cancel -> Unit
             }
         } finally {
@@ -343,10 +349,14 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
 
     override suspend fun suspendUnlinkat(fd: Int, path: String?, flags: Int): Int = suspendCancellableCoroutine { c ->
         val sqe = takeRequestSqe()
-        io_uring_prep_unlinkat(sqe, fd, path, flags)
+
+        val arena = Arena()
+        val cPath = path?.cstr?.getPointer(arena)
+
+        io_uring_prep_unlinkat(sqe, fd, cPath, flags)
         val id = nextActionId()
         io_uring_sqe_set_data64(sqe, id)
-        requestMap[id] = UringReq.UnlinkAt(c)
+        requestMap[id] = UringReq.UnlinkAt(arena, c)
 
         c.invokeOnCancellation {
             cancelRequest(id)
@@ -415,10 +425,14 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
 
     override suspend fun suspendMkdir(path: String?, mode: UInt): Int = suspendCancellableCoroutine { c ->
         val sqe = takeRequestSqe()
-        io_uring_prep_mkdir(sqe, path, mode)
+
+        val arena = Arena()
+        val cPath = path?.cstr?.getPointer(arena)
+
+        io_uring_prep_mkdir(sqe, cPath, mode)
         val id = nextActionId()
         io_uring_sqe_set_data64(sqe, id)
-        requestMap[id] = UringReq.Mkdir(c)
+        requestMap[id] = UringReq.Mkdir(arena, c)
 
         c.invokeOnCancellation {
             cancelRequest(id)
@@ -495,8 +509,8 @@ private sealed interface UringReq {
     data class Bind(val c: CancellableContinuation<Int>) : UringReq
     data class Listen(val c: CancellableContinuation<Int>) : UringReq
     data class Socket(val c: CancellableContinuation<Int>) : UringReq
-    data class Mkdir(val c: CancellableContinuation<Int>) : UringReq
-    data class UnlinkAt(val c: CancellableContinuation<Int>) : UringReq
+    data class Mkdir(val arena: Arena, val c: CancellableContinuation<Int>) : UringReq
+    data class UnlinkAt(val arena: Arena, val c: CancellableContinuation<Int>) : UringReq
 }
 
 private fun errnoMessage(result: Int? = null): String {
