@@ -37,4 +37,22 @@ class HttpResponseTest {
 
         assertEquals("Hello", request("/", HttpMethod.Get).textBody())
     }
+
+    @Test
+    fun responseWithSinkTest() = withHttpServerTest {
+        server {
+            get {
+                it.respondWithSink { sink ->
+                    repeat(10000) {
+                        sink.writeString("Hello")
+                    }
+                }
+            }
+        }
+
+        assertEquals(
+            StringBuilder().apply { repeat(10000) { append("Hello") } }.toString(),
+            request("/", HttpMethod.Get).textBody()
+        )
+    }
 }

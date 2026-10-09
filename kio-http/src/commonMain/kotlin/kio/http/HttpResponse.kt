@@ -48,7 +48,7 @@ suspend fun CallContext.respondHtml(
     )
 }
 
-suspend fun CallContext.respondSinkBuilder(
+suspend fun CallContext.respondWithSink(
     status: HttpStatusCode? = null,
     configHeaders: HeadersBuilder.() -> Unit = {},
     configTrailers: HeadersBuilder.() -> Unit = {},
@@ -59,12 +59,13 @@ suspend fun CallContext.respondSinkBuilder(
 
     launch {
         block(conn.sink)
+        conn.sink.flush()
         conn.sink.close()
     }
 
     responseAsync(conn.source, status, configHeaders, configTrailers)
+    conn.close()
 }
-
 
 suspend fun CallContext.respondText(
     text: String,
