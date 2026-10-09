@@ -8,6 +8,7 @@ import kio.async.AsyncSource
 import kio.async.buffered
 import kio.async.io.AsyncRawConnection
 import kio.async.io.buffered
+import kio.async.io.openInMemoryPipe
 import kio.async.readString
 import kio.http.LogLevel
 import kio.http.Logger
@@ -561,12 +562,12 @@ private class MockHttpClientServerConnection(
     private val clientPipeConn = openInMemoryPipe()
     private val serverPipeConn = openInMemoryPipe()
 
-    val serverWriteBackSource = serverPipeConn.first
+    val serverWriteBackSource = serverPipeConn.source.buffered()
 
     val serverConnection = object : AsyncRawConnection {
-        override val source: AsyncRawSource = clientPipeConn.first
+        override val source: AsyncRawSource = clientPipeConn.source
 
-        override val sink: AsyncRawSink = serverPipeConn.second
+        override val sink: AsyncRawSink = serverPipeConn.sink
 
         override suspend fun close() {
             TODO("Not yet implemented")
@@ -574,9 +575,9 @@ private class MockHttpClientServerConnection(
     }
 
     val clientConnection = object : AsyncRawConnection {
-        override val source: AsyncRawSource = serverPipeConn.first
+        override val source: AsyncRawSource = serverPipeConn.source
 
-        override val sink: AsyncRawSink = clientPipeConn.second
+        override val sink: AsyncRawSink = clientPipeConn.sink
 
         override suspend fun close() {
             TODO("Not yet implemented")
@@ -602,134 +603,6 @@ private class MockHttpClientServerConnection(
             val handle = CompletableDeferred<Unit>()
             createdHttp2Stream.send(it to handle)
             handle.await()
-        }
-    }
-}
-
-private fun openInMemoryPipe(
-    maxBufferSize: Long = 64 * 1024L,
-): Pair<AsyncSource, AsyncSink> {
-    val pipe = AsyncMemoryPipe(maxBufferSize)
-    return pipe.source.buffered() to pipe.sink.buffered()
-}
-
-private class AsyncMemoryPipe(
-    private val maxBufferSize: Long,
-) {
-    init {
-        require(maxBufferSize > 0)
-    }
-
-    private val mutex = Mutex()
-    private val buffer = Buffer()
-
-    private var sourceClosed = false
-    private var sinkClosed = false
-
-    private val readWaiters = ArrayDeque<CompletableDeferred<Unit>>()
-    private val writeWaiters = ArrayDeque<CompletableDeferred<Unit>>()
-
-    val source: AsyncRawSource = Source()
-    val sink: AsyncRawSink = Sink()
-
-    private inner class Source : AsyncRawSource {
-        override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
-            require(byteCount >= 0L)
-            if (byteCount == 0L) return 0L
-
-            while (true) {
-                val waiter = mutex.withLock {
-                    check(!sourceClosed) { "source is closed" }
-
-                    if (buffer.size > 0L) {
-                        val readByteCount = min(byteCount, buffer.size)
-                        sink.write(buffer, readByteCount)
-
-                        notifyWriters()
-                        return readByteCount
-                    }
-
-                    if (sinkClosed) {
-                        return -1L
-                    }
-
-                    CompletableDeferred<Unit>().also {
-                        readWaiters.addLast(it)
-                    }
-                }
-
-                waiter.await()
-            }
-        }
-
-        override suspend fun close() {
-            mutex.withLock {
-                if (sourceClosed) return
-                sourceClosed = true
-
-                notifyWriters()
-                notifyReaders()
-            }
-        }
-    }
-
-    private inner class Sink : AsyncRawSink {
-        override suspend fun write(source: Buffer, byteCount: Long) {
-            require(byteCount >= 0L)
-            require(source.size >= byteCount)
-
-            var remaining = byteCount
-
-            while (remaining > 0L) {
-                val waiter = mutex.withLock {
-                    check(!sinkClosed) { "sink is closed" }
-                    check(!sourceClosed) { "source is closed" }
-
-                    val writableByteCount = maxBufferSize - buffer.size
-
-                    if (writableByteCount > 0L) {
-                        val writeByteCount = min(remaining, writableByteCount)
-
-                        buffer.write(source, writeByteCount)
-                        remaining -= writeByteCount
-
-                        notifyReaders()
-                        null
-                    } else {
-                        CompletableDeferred<Unit>().also {
-                            writeWaiters.addLast(it)
-                        }
-                    }
-                }
-
-                waiter?.await()
-            }
-        }
-
-        override suspend fun flush() {
-            // memory pipe 不需要 flush
-        }
-
-        override suspend fun close() {
-            mutex.withLock {
-                if (sinkClosed) return
-                sinkClosed = true
-
-                notifyReaders()
-                notifyWriters()
-            }
-        }
-    }
-
-    private fun notifyReaders() {
-        while (readWaiters.isNotEmpty()) {
-            readWaiters.removeFirst().complete(Unit)
-        }
-    }
-
-    private fun notifyWriters() {
-        while (writeWaiters.isNotEmpty()) {
-            writeWaiters.removeFirst().complete(Unit)
         }
     }
 }
