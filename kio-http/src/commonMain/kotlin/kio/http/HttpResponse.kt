@@ -9,7 +9,12 @@ import io.ktor.http.charset
 import io.ktor.http.withCharset
 import io.ktor.utils.io.charsets.Charsets
 import io.ktor.utils.io.core.toByteArray
+import kio.async.AsyncSink
 import kio.async.AsyncSource
+import kio.async.io.buffered
+import kio.async.io.openInMemoryPipe
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlin.text.equals
 import kotlinx.html.TagConsumer
 import kotlinx.html.stream.createHTML
@@ -42,6 +47,24 @@ suspend fun CallContext.respondHtml(
         configTrailers
     )
 }
+
+suspend fun CallContext.respondSinkBuilder(
+    status: HttpStatusCode? = null,
+    configHeaders: HeadersBuilder.() -> Unit = {},
+    configTrailers: HeadersBuilder.() -> Unit = {},
+    maxBufferSize: Long = 64 * 1024L,
+    block: suspend (AsyncSink) -> Unit
+) = coroutineScope {
+    val conn = openInMemoryPipe(maxBufferSize = maxBufferSize).buffered()
+
+    launch {
+        block(conn.sink)
+        conn.sink.close()
+    }
+
+    responseAsync(conn.source, status, configHeaders, configTrailers)
+}
+
 
 suspend fun CallContext.respondText(
     text: String,
