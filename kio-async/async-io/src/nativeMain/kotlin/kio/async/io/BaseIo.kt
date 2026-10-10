@@ -25,12 +25,12 @@ fun SuspendIo.asyncRawSource(fd: Int): AsyncRawSource = DefaultAsyncRawSource(fd
 
 private class DefaultAsyncRawSink(
     private val fd: Int,
-    private val suspendIo: SuspendIo
+    private val io: SuspendIo
 ) : AsyncRawSink {
     @OptIn(UnsafeIoApi::class)
     override suspend fun write(source: Buffer, byteCount: Long) {
         doWrite(fd, source, byteCount) { fd, buf, byte ->
-            suspendIo.write(fd, buf, byte).toLong()
+            io.write(fd, buf, byte).toLong()
         }
     }
 
@@ -39,7 +39,7 @@ private class DefaultAsyncRawSink(
     }
 
     override suspend fun close() {
-        suspendIo.close(fd)
+        io.close(fd)
     }
 }
 
@@ -73,17 +73,17 @@ private inline fun doWrite(
 
 private class DefaultAsyncRawSource(
     private val fd: Int,
-    private val suspendIo: SuspendIo
+    private val io: SuspendIo
 ) : AsyncRawSource {
     @OptIn(UnsafeIoApi::class)
     override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
         return doRead(fd, sink, byteCount) { fd, bytes, nbytes ->
-            suspendIo.read(fd, bytes, nbytes).toLong()
+            io.read(fd, bytes, nbytes).toLong()
         }
     }
 
     override suspend fun close() {
-        close(fd)
+        io.close(fd)
     }
 }
 

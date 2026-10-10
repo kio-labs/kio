@@ -15,6 +15,7 @@ kotlin {
         commonTest.dependencies {
             implementation(project(":kio-async:async-io"))
             implementation(project(":kio-tls"))
+            implementation(project(":kio-compression"))
             implementation(project(":kio-postgres:postgres-connection"))
             implementation(project(":kio-postgres:postgres-migration"))
             implementation(libs.kotlin.test)

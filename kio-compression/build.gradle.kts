@@ -11,6 +11,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":kio-async:async-core"))
+            implementation(project(":kio-async:async-io"))
         }
 
         commonTest.dependencies {
