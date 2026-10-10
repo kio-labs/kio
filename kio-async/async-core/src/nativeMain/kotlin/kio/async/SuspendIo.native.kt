@@ -32,6 +32,8 @@ import platform.posix.stat
 interface PosixApi {
     suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Int
     suspend fun suspendRead(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int
+    suspend fun suspendPread(fd: Int, bytes: CPointer<*>?, nbyte: ULong, offset: Long): Int
+
     suspend fun suspendAccept(fd: Int, addr: CPointer<sockaddr_in>, addrLen: CPointer<UIntVarOf<UInt>>): Int
 
     suspend fun suspendConnect(fd: Int, addr: CPointer<sockaddr>, len: UInt): Int
@@ -44,7 +46,8 @@ interface PosixApi {
     suspend fun suspendSocket(domain: Int, type: Int, protocol: Int): Int
 
     suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?): Int
-    suspend fun suspendStat(path: String?, buf: CPointer<stat>?): Int
+    suspend fun suspendStat(path: String?, buf: CPointer<platform.posix.stat>?): Int
+    suspend fun suspendFstat(fd: Int, buf: CPointer<platform.posix.stat>?): Int
     suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
     suspend fun suspendMkdir(path: String?, mode: UInt): Int
 }
@@ -66,6 +69,7 @@ fun SuspendIo.detachFD(fd: Int, event: PollInterest)  {
 
 expect suspend fun SuspendIo.write(fd: Int, buf: CPointer<*>, byte: ULong): Int
 expect suspend fun SuspendIo.read(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int
+expect suspend fun SuspendIo.pread(fd: Int, bytes: CPointer<*>?, nbyte: ULong, offset: Long): Int
 expect suspend fun SuspendIo.accept(fd: Int, addr: CPointer<sockaddr_in>, addrLen: CPointer<UIntVarOf<UInt>>): Int
 
 expect suspend fun SuspendIo.connect(fd: Int, addr: CPointer<sockaddr>, len: UInt): Int
@@ -100,7 +104,6 @@ interface PosixSuspendIo : DefaultPosixApi, IoPoller {
 
     override suspend fun suspendConnect(fd: Int, addr: CPointer<platform.posix.sockaddr>, len: UInt): Int {
         val ret = platform.posix.connect(fd, addr, len)
-
         if (ret == 0) {
             return 0
         }
@@ -119,6 +122,10 @@ interface PosixSuspendIo : DefaultPosixApi, IoPoller {
 }
 
 interface DefaultPosixApi: PosixApi {
+    override suspend fun suspendPread(fd: Int, bytes: CPointer<*>?, nbyte: ULong, offset: Long): Int {
+        return platform.posix.pread(fd, bytes, nbyte, offset).toInt().negErrno()
+    }
+
     override suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int {
         return platform.posix.open(path, flags, mode).negErrno()
     }
@@ -149,6 +156,10 @@ interface DefaultPosixApi: PosixApi {
 
     override suspend fun suspendStat(path: String?, buf: CPointer<platform.posix.stat>?): Int {
         return platform.posix.stat(path, buf).negErrno()
+    }
+
+    override suspend fun suspendFstat(fd: Int, buf: CPointer<stat>?): Int {
+        return platform.posix.fstat(fd, buf)
     }
 
     override suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int {

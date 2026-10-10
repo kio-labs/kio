@@ -22,3 +22,4 @@ actual suspend fun SuspendIo.listen(fd: Int, backlog: Int): Int = suspendListen(
 actual suspend fun SuspendIo.socket(domain: Int, type: Int, protocol: Int): Int = suspendSocket(domain, type, protocol)
 actual suspend fun SuspendIo.getsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int = suspendGetsockname(fd, addr, len)
 actual suspend fun SuspendIo.mkdir(path: String?, mode: UInt): Int = suspendMkdir(path, mode)
+actual suspend fun SuspendIo.pread(fd: Int, bytes: CPointer<*>?, nbyte: ULong, offset: Long): Int = suspendPread(fd, bytes, nbyte, offset)

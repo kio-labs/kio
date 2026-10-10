@@ -188,7 +188,7 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
                     req.arena.clear()
                 }
                 is UringReq.Close -> completeRequest(req.c, result)
-                is UringReq.Read -> completeRequest(req.c, result)
+                is UringReq.Pread -> completeRequest(req.c, result)
                 is UringReq.Statx -> {
                     completeRequest(req.c, result)
                     req.arena.clear()
@@ -241,22 +241,25 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
         }
     }
 
-    override suspend fun suspendRead(
+    override suspend fun suspendPread(
         fd: Int,
-        bytes: CPointer<*>,
-        nbyte: ULong
+        bytes: CPointer<*>?,
+        nbyte: ULong,
+        offset: Long
     ): Int = suspendCancellableCoroutine { c ->
         val sqe = takeRequestSqe()
 
-        io_uring_prep_read(sqe, fd, bytes, nbyte.toUInt(), (-1).toULong())
+        io_uring_prep_read(sqe, fd, bytes, nbyte.toUInt(), offset.toULong())
         val id = nextActionId()
         io_uring_sqe_set_data64(sqe, id)
-        requestMap[id] = UringReq.Read(c)
+        requestMap[id] = UringReq.Pread(c)
 
         c.invokeOnCancellation {
             cancelRequest(id)
         }
     }
+
+    override suspend fun suspendRead(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int = suspendPread(fd, bytes, nbyte, -1)
 
     override suspend fun suspendAccept(
         fd: Int,
@@ -497,7 +500,7 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
 
 private sealed interface UringReq {
     data class Cancel(val requestId: ULong) : UringReq
-    data class Read(val c: CancellableContinuation<Int>) : UringReq
+    data class Pread(val c: CancellableContinuation<Int>) : UringReq
     data class Accept(val c: CancellableContinuation<Int>) : UringReq
     data class Connect(val c: CancellableContinuation<Int>) : UringReq
     data class Write(val c: CancellableContinuation<Int>) : UringReq
