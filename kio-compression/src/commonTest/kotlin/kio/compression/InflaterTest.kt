@@ -1,6 +1,5 @@
 package kio.compression
 
-
 import kio.async.inMemoryAsyncBuffer
 import kotlinx.coroutines.test.runTest
 import kotlinx.io.Buffer
