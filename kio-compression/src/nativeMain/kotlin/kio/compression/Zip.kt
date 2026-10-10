@@ -39,9 +39,6 @@ import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
 import platform.posix.strerror
 import platform.posix.uint8_tVar
-import kotlin.collections.copy
-import kotlin.text.toInt
-import kotlin.text.toLong
 
 private const val LOCAL_FILE_HEADER_SIGNATURE = 0x4034b50
 private const val CENTRAL_FILE_HEADER_SIGNATURE = 0x2014b50
