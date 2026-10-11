@@ -95,6 +95,10 @@ internal class DeflaterSink(
         target: AsyncSink,
     ) {
         check(!closed) { "closed" }
+        require(sourceExactByteCount in 0..source.size) {
+            "byteCount=$sourceExactByteCount, source.size=${source.size}"
+        }
+        if (sourceExactByteCount == 0L) return
 
         val outputChunk = ByteArray(bufferChunkSize)
         val targetByteCount = bufferChunkSize
@@ -103,7 +107,6 @@ internal class DeflaterSink(
         var targetWrite = 0
         var deflateResult = -1
         while (true) {
-            var reachOutputLimit = false
             UnsafeBufferOperations.readFromHead(source) { data, pos, limit ->
                 val sourceByteCount = minOf(remaining, (limit - pos).toLong())
                 data.asUByteArray().usePinned { pinnedInput ->
@@ -119,7 +122,6 @@ internal class DeflaterSink(
 
                         sourceRead = sourceByteCount - zStream.avail_in.toInt()
                         targetWrite = targetByteCount - zStream.avail_out.toInt()
-                        if (zStream.avail_out.toInt() == 0) reachOutputLimit = true
                     }
                 }
                 sourceRead.toInt()
@@ -132,7 +134,7 @@ internal class DeflaterSink(
                     finished = true
                 }
 
-                else -> if (reachOutputLimit || remaining != 0L) continue
+                else -> if (remaining > 0L) continue
             }
 
             break
