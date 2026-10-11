@@ -22,11 +22,15 @@ import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.SuspendIo
 import kio.async.buffered
+import kio.async.io.buffered
+import kio.async.io.openInMemoryPipe
 import kio.async.readIntLe
 import kio.async.readLongLe
 import kio.async.readShortLe
 import kio.async.readString
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
@@ -144,6 +148,21 @@ suspend fun AsyncSink.writeZip(block: suspend WriteZipScope.() -> Unit) {
 
 interface WriteZipScope {
     suspend fun file(path: String, source: AsyncSource)
+}
+
+suspend fun WriteZipScope.file(
+    path: String,
+    maxBufferSize: Long = 64 * 1024L,
+    block: suspend (AsyncSink) -> Unit
+) = coroutineScope {
+    val conn = openInMemoryPipe(maxBufferSize = maxBufferSize).buffered()
+    launch {
+        block(conn.sink)
+        conn.sink.flush()
+        conn.sink.close()
+    }
+
+    file(path, conn.source)
 }
 
 /**

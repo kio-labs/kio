@@ -24,9 +24,11 @@ abstract class ZipTest {
         val content = "Hello ZIP! 写入测试。".repeat(1000)
         val archive = Buffer()
         archive.inMemoryAsyncBuffer().writeZip {
-            val source = Buffer().inMemoryAsyncBuffer()
-            source.writeString(content)
-            file("hello.txt", source)
+            file("hello.txt") { sink ->
+                repeat(1000) {
+                    sink.writeString("Hello ZIP! 写入测试。")
+                }
+            }
         }
 
         val path = Path("write-zip-${Random.nextLong().toULong()}.zip")
