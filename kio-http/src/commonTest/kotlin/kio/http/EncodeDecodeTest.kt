@@ -2,10 +2,11 @@ package kio.http
 
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
-import kio.async.readByteArray
+import kio.async.buffered
 import kio.async.readString
 import kio.http.util.withHttpServerTest
-import kotlinx.io.bytestring.ByteString
+import kio.compression.gzipSource
+import kio.http.internal.http1.chunked
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -45,23 +46,12 @@ class EncodeDecodeTest {
             headers = { it[HttpHeaders.AcceptEncoding] = "gzip" },
         )
         assertEquals("gzip", getResponse.head.headers[HttpHeaders.ContentEncoding])
-        assertEquals(
-            /**
-             * 1b\r\n
-             * [gzip data 27 byte]
-             * \r\n
-             * 0\r\n
-             * \r\n
-             */
-            ByteString("31620d0a1f8b0800000000000013f248cdc9c95728cf2fca4901000000ffff0d0a300d0a0d0a".hexToByteArray()),
-            ByteString(getResponse.body.readByteArray())
-        )
+        assertEquals("chunked", getResponse.head.headers[HttpHeaders.TransferEncoding])
+        val decoded = getResponse.body.chunked().buffered().gzipSource().buffered()
+        try {
+            assertEquals("Hello world", decoded.readString())
+        } finally {
+            decoded.close()
+        }
     }
-}
-
-private fun String.hexToByteArray(): ByteArray {
-    require(length % 2 == 0)
-    return chunked(2)
-        .map { it.toInt(16).toByte() }
-        .toByteArray()
 }

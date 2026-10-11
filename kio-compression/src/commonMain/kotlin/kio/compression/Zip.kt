@@ -16,29 +16,22 @@
  */
 package kio.compression
 
+import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
+import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.SuspendIo
 import kio.async.buffered
-import kio.async.close
-import kio.async.pread
 import kio.async.readIntLe
 import kio.async.readLongLe
 import kio.async.readShortLe
 import kio.async.readString
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.convert
-import kotlinx.cinterop.reinterpret
-import kotlinx.cinterop.toKString
-import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
-import kotlinx.io.UnsafeIoApi
-import kotlinx.io.unsafe.UnsafeBufferOperations
-import platform.posix.strerror
-import platform.posix.uint8_tVar
+import kotlin.let
 
 private const val LOCAL_FILE_HEADER_SIGNATURE = 0x4034b50
 private const val CENTRAL_FILE_HEADER_SIGNATURE = 0x2014b50
@@ -65,8 +58,9 @@ private const val HEADER_ID_ZIP64_EXTENDED_INFO = 0x1
 private const val HEADER_ID_NTFS_EXTRA = 0x000a
 private const val HEADER_ID_EXTENDED_TIMESTAMP = 0x5455
 
-@OptIn(ExperimentalForeignApi::class)
-suspend fun SuspendIo.readZipEntries(fd: Int): List<ZipEntry> {
+expect class FileHandle
+
+suspend fun SuspendIo.readZipEntries(fd: FileHandle): List<ZipEntry> {
     val io = this
 
     val offset = io.fileSize(fd) - 22
@@ -74,7 +68,7 @@ suspend fun SuspendIo.readZipEntries(fd: Int): List<ZipEntry> {
         throw IOException("not a zip: size=${io.fileSize(fd)}")
     }
 
-    var record = PositionalFileSource(offset, fd, io).buffered().let { source ->
+    var record = io.positionalFileSource(offset, fd).buffered().let { source ->
         if (source.readIntLe() != END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
             throw IOException("EOCD not found")
         }
@@ -84,7 +78,7 @@ suspend fun SuspendIo.readZipEntries(fd: Int): List<ZipEntry> {
 
     // If this is a zip64, read a zip64 central directory record.
     val zip64LocatorOffset = offset - 20 // zip64 end of central directory locator is 20 bytes.
-    PositionalFileSource(zip64LocatorOffset, fd, this).buffered().let { zip64LocatorSource ->
+    io.positionalFileSource(zip64LocatorOffset, fd).buffered().let { zip64LocatorSource ->
         if (zip64LocatorSource.readIntLe() == ZIP64_LOCATOR_SIGNATURE) {
             val diskWithCentralDir = zip64LocatorSource.readIntLe()
             val zip64EocdRecordOffset = zip64LocatorSource.readLongLe()
@@ -93,7 +87,7 @@ suspend fun SuspendIo.readZipEntries(fd: Int): List<ZipEntry> {
                 throw IOException("unsupported zip: spanned")
             }
 
-            PositionalFileSource(zip64EocdRecordOffset, fd, io).buffered().let { zip64EocdSource ->
+            io.positionalFileSource(zip64EocdRecordOffset, fd).buffered().let { zip64EocdSource ->
                 val zip64EocdSignature = zip64EocdSource.readIntLe()
                 if (zip64EocdSignature != ZIP64_EOCD_RECORD_SIGNATURE) {
                     throw IOException("bad zip: expected ${ZIP64_EOCD_RECORD_SIGNATURE} but was ${zip64EocdSignature}")
@@ -105,7 +99,7 @@ suspend fun SuspendIo.readZipEntries(fd: Int): List<ZipEntry> {
 
     // Seek to the first central directory entry and read all of the entries.
     val entries = mutableListOf<ZipEntry>()
-    PositionalFileSource(record.centralDirectoryOffset, fd, io).buffered().let { source ->
+    io.positionalFileSource(record.centralDirectoryOffset, fd).buffered().let { source ->
         for (i in 0 until record.entryCount) {
             val entry = source.readCentralDirectoryZipEntry()
             if (entry.offset >= record.centralDirectoryOffset) {
@@ -119,9 +113,9 @@ suspend fun SuspendIo.readZipEntries(fd: Int): List<ZipEntry> {
     return entries
 }
 
-suspend fun ZipEntry.zipEntrySource(io: SuspendIo, fd: Int): AsyncSource {
+suspend fun ZipEntry.zipEntrySource(io: SuspendIo, fd: FileHandle): AsyncSource {
     val entry = this
-    val source = PositionalFileSource(entry.offset, fd, io).buffered()
+    val source = io.positionalFileSource(entry.offset, fd).buffered()
     source.skipLocalHeader()
 
     return when (entry.compressionMethod) {
@@ -130,11 +124,26 @@ suspend fun ZipEntry.zipEntrySource(io: SuspendIo, fd: Int): AsyncSource {
         }
 
         COMPRESSION_METHOD_DEFLATED -> {
-            source.fixed(entry.size).buffered().deflateSource().buffered()
+            source.fixed(entry.compressedSize).buffered().deflateSource().buffered()
         }
 
         else -> error("Unspport compressionMethod=${entry.compressionMethod}")
     }
+}
+
+/** Writes a classic ZIP archive sequentially. The caller owns the sink and entry sources. */
+suspend fun AsyncSink.writeZip(block: suspend WriteZipScope.() -> Unit) {
+    val scope = WriteZipScopeImpl(this)
+    try {
+        block(scope)
+        scope.finish()
+    } finally {
+        scope.finished = true
+    }
+}
+
+interface WriteZipScope {
+    suspend fun file(path: String, source: AsyncSource)
 }
 
 /**
@@ -514,10 +523,6 @@ internal suspend fun AsyncSource.skipLocalHeader() {
     readOrSkipLocalHeader(null)
 }
 
-internal suspend fun AsyncSource.readLocalHeader(centralDirectoryZipEntry: ZipEntry): ZipEntry {
-    return readOrSkipLocalHeader(centralDirectoryZipEntry)!!
-}
-
 /**
  * If [centralDirectoryZipEntry] is null this will return null. Otherwise, it will return a new
  * entry which unions [centralDirectoryZipEntry] with information from the local header.
@@ -624,41 +629,8 @@ private suspend fun AsyncSource.readExtra(extraSize: Int, block: suspend (Int, L
     }
 }
 
-internal expect suspend fun SuspendIo.fileSize(fd: Int): Long
-
-private class PositionalFileSource(
-    initialOffset: Long,
-    private val fd: Int,
-    private val io: SuspendIo
-) : AsyncRawSource {
-    private var position: Long = initialOffset
-
-    @OptIn(UnsafeIoApi::class, ExperimentalForeignApi::class)
-    override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
-        if (byteCount == 0L) return 0L
-        require(byteCount >= 0) { "byteCount ($byteCount) < 0" }
-
-        val bytesRead = UnsafeBufferOperations.writeToTail(sink, 1) { data, pos, limit ->
-            val maxToCopy = minOf(byteCount, (limit - pos).toLong())
-            val read = data.usePinned { ba ->
-                val bytes = ba.addressOf(pos).reinterpret<uint8_tVar>()
-
-                io.pread(fd, bytes, maxToCopy.convert(), position).toLong()
-            }
-            if (read < 0) throw IOException("failed to do pread, fd=$fd: ${strerror(-read.toInt())?.toKString()}")
-            read.toInt()
-        }
-
-        position += bytesRead
-
-        if (bytesRead == 0) return -1
-        return bytesRead.toLong()
-    }
-
-    override suspend fun close() {
-        io.close(fd)
-    }
-}
+internal expect suspend fun SuspendIo.fileSize(fd: FileHandle): Long
+internal expect suspend fun SuspendIo.positionalFileSource(initialOffset: Long, fd: FileHandle) : AsyncRawSource
 
 private val Int.hex: String
     get() = "0x${this.toString(16)}"
@@ -686,4 +658,170 @@ internal class FixedSizeSource(
     override suspend fun close() {
         upstream.close()
     }
+}
+
+internal class WriteZipScopeImpl(private val sink: AsyncSink): WriteZipScope {
+    private val entries = mutableListOf<WrittenZipEntry>()
+    private var position = 0L
+    private var writing = false
+    private var failed = false
+    internal var finished = false
+
+    /** Writes one file; calls must be sequential. Paths are relative UTF-8 ZIP paths. */
+    override suspend fun file(path: String, source: AsyncSource) {
+        check(!finished && !failed && !writing) { "ZIP writer is not available" }
+        require(path.isNotEmpty() && !path.startsWith('/') && '\\' !in path && ':' !in path && '\u0000' !in path) {
+            "Invalid ZIP path: $path"
+        }
+        require(path.split('/').all { it.isNotEmpty() && it != "." && it != ".." }) {
+            "Expected a relative file path: $path"
+        }
+        require(entries.none { it.path == path }) { "Duplicate ZIP path: $path" }
+        val name = path.encodeToByteArray()
+        require(name.size <= 0xffff) { "ZIP file name is too long" }
+        check(entries.size < 0xfffe) { "ZIP64 is not supported" }
+        writing = true
+        try {
+            val offset = position
+            writeHeader(local = true, name = name)
+            val dataOffset = position
+            var crc = -1
+            var size = 0L
+            var discard = false
+            val target = object : AsyncRawSink {
+                override suspend fun write(source: Buffer, byteCount: Long) {
+                    if (discard) {
+                        source.skip(byteCount)
+                        return
+                    }
+                    checkZipSize(position + byteCount)
+                    sink.write(source, byteCount)
+                    position += byteCount
+                }
+                override suspend fun flush() = Unit
+                override suspend fun close() = Unit
+            }.buffered()
+            val deflater = target.deflateSink()
+            try {
+                val bytes = ByteArray(CHUNK_SIZE)
+                val input = Buffer()
+                while (true) {
+                    val read = source.readAtMostTo(bytes)
+                    if (read == -1) break
+                    if (read == 0) continue
+                    size += read
+                    checkZipSize(size)
+                    repeat(read) { index ->
+                        crc = (crc ushr 8) xor ZIP_CRC_TABLE[(crc xor bytes[index].toInt()) and 0xff]
+                    }
+                    input.write(bytes, 0, read)
+                    deflater.write(input, read.toLong())
+                }
+            } catch (error: Throwable) {
+                // Release the compressor without appending a partial entry to the archive.
+                discard = true
+                try {
+                    withContext(NonCancellable) { deflater.close() }
+                } catch (cleanup: Throwable) {
+                    if (cleanup !== error) error.addSuppressed(cleanup)
+                }
+                throw error
+            }
+            deflater.close()
+            val compressedSize = position - dataOffset
+            val checksum = crc.inv().toLong() and 0xffffffffL
+            writeInt(0x08074b50)
+            writeInt(checksum)
+            writeInt(compressedSize)
+            writeInt(size)
+            entries += WrittenZipEntry(path, name, checksum, compressedSize, size, offset)
+        } catch (error: Throwable) {
+            failed = true
+            throw error
+        } finally {
+            writing = false
+        }
+    }
+
+    internal suspend fun finish() {
+        check(!finished && !failed && !writing) { "ZIP writer is not available" }
+        finished = true
+        val directoryOffset = position
+        for (entry in entries) {
+            writeHeader(false, entry.name, entry.crc, entry.compressedSize, entry.size, entry.offset)
+        }
+        val directorySize = position - directoryOffset
+        writeInt(END_OF_CENTRAL_DIRECTORY_SIGNATURE.toLong())
+        writeShort(0) // Disk number.
+        writeShort(0) // Central directory disk.
+        writeShort(entries.size)
+        writeShort(entries.size)
+        writeInt(directorySize)
+        writeInt(directoryOffset)
+        writeShort(0) // Archive comment.
+        sink.flush()
+    }
+
+    private suspend fun writeHeader(
+        local: Boolean,
+        name: ByteArray,
+        crc: Long = 0,
+        compressedSize: Long = 0,
+        size: Long = 0,
+        offset: Long = 0,
+    ) {
+        writeInt((if (local) LOCAL_FILE_HEADER_SIGNATURE else CENTRAL_FILE_HEADER_SIGNATURE).toLong())
+        if (!local) writeShort(20) // Version made by: ZIP 2.0, MS-DOS.
+        writeShort(20) // Version needed: ZIP 2.0.
+        writeShort(0x0808) // UTF-8 names and trailing data descriptor.
+        writeShort(COMPRESSION_METHOD_DEFLATED)
+        writeShort(0) // DOS time: midnight.
+        writeShort(0x21) // DOS date: 1980-01-01.
+        writeInt(crc)
+        writeInt(compressedSize)
+        writeInt(size)
+        writeShort(name.size)
+        writeShort(0) // Extra fields.
+        if (!local) {
+            writeShort(0) // Entry comment.
+            writeShort(0) // Disk number.
+            writeShort(0) // Internal attributes.
+            writeInt(0) // External attributes.
+            writeInt(offset)
+        }
+        checkZipSize(position + name.size)
+        sink.write(name)
+        position += name.size
+    }
+
+    private suspend fun writeShort(value: Int) {
+        checkZipSize(position + 2)
+        repeat(2) { sink.writeByte((value ushr (it * 8)).toByte()) }
+        position += 2
+    }
+
+    private suspend fun writeInt(value: Long) {
+        checkZipSize(position + 4)
+        repeat(4) { sink.writeByte((value ushr (it * 8)).toByte()) }
+        position += 4
+    }
+
+    private fun checkZipSize(size: Long) {
+        check(size in 0 until MAX_ZIP_ENTRY_AND_ARCHIVE_SIZE) { "ZIP64 is not supported" }
+    }
+}
+
+private class WrittenZipEntry(
+    val path: String,
+    val name: ByteArray,
+    val crc: Long,
+    val compressedSize: Long,
+    val size: Long,
+    val offset: Long,
+)
+
+private val ZIP_CRC_TABLE = IntArray(256) { value ->
+    var crc = value
+    repeat(8) { crc = (crc ushr 1) xor (if (crc and 1 != 0) 0xedb88320.toInt() else 0) }
+    crc
 }

@@ -19,8 +19,10 @@ internal class ChunkedSink(
     val sink: AsyncSink
 ): AsyncRawSink {
     private val buffer = Buffer()
+    private var closed = false
 
     override suspend fun write(source: Buffer, byteCount: Long) {
+        check(!closed) { "closed" }
         buffer.write(source, byteCount)
 
         val byteCount = buffer.completeSegmentByteCount()
@@ -28,16 +30,25 @@ internal class ChunkedSink(
     }
 
     override suspend fun flush() {
-        sink.writeString(buffer.size.toString(16))
-        sink.writeString("\r\n")
-        sink.write(buffer, buffer.size)
-        sink.writeString("\r\n")
+        check(!closed) { "closed" }
+        writeBufferedChunk()
         sink.flush()
     }
 
     override suspend fun close() {
+        if (closed) return
+        closed = true
+        writeBufferedChunk()
         sink.writeString("0\r\n\r\n")
         sink.flush()
+    }
+
+    private suspend fun writeBufferedChunk() {
+        if (buffer.size == 0L) return
+        sink.writeString(buffer.size.toString(16))
+        sink.writeString("\r\n")
+        sink.write(buffer, buffer.size)
+        sink.writeString("\r\n")
     }
 }
 

@@ -11,7 +11,7 @@ import platform.posix.stat
 import platform.posix.strerror
 
 @OptIn(ExperimentalForeignApi::class)
-internal actual suspend fun SuspendIo.fileSize(fd: Int): Long = memScoped {
+internal actual suspend fun SuspendIo.fileSize(fd: FileHandle): Long = memScoped {
     val stat = alloc<stat>()
     val ret = suspendFstat(fd, stat.ptr)
     if (ret < 0) {

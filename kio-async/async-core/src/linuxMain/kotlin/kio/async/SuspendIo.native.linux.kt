@@ -5,10 +5,17 @@ import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.IntVarOf
 import kotlinx.cinterop.UIntVarOf
+import kotlinx.cinterop.cstr
+import kotlinx.cinterop.memScoped
 import linux.platform.AT_FDCWD
 import linux.platform.statx
+import platform.linux.SYS_unlinkat
 import platform.posix.sockaddr
 import platform.posix.sockaddr_in
+import platform.posix.syscall
+
+private const val SYS_STATX = 332L
+private const val SYS_pipe2 = 293L
 
 interface LinuxApi {
     suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int
@@ -36,18 +43,43 @@ suspend fun SuspendIo.unlink(path: String?, flags: Int): Int = suspendUnlink(pat
 suspend fun SuspendIo.unlinkat(fd: Int, path: String?, flags: Int): Int = suspendUnlinkat(fd, path, flags)
 
 interface LinuxSuspendIo: LinuxApi {
-    override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int {
-        // TODO: replace with linux api: pipe2
-        return platform.posix.pipe(fds)
+    override suspend fun suspendPipe(
+        fds: CPointer<IntVarOf<Int>>?,
+        pipeFlags: Int,
+    ): Int {
+        return syscall(
+            SYS_pipe2,
+            fds,
+            pipeFlags,
+        ).toInt().negErrno()
     }
 
-    override suspend fun suspendStatx(dirfd: Int, path: String?, flags: Int, mask: UInt, buf: CPointer<statx>?): Int {
-        // TODO: replace with linux api: statx
-//        return statx(dirfd, path, flags, mask, buf)
-        TODO("suspendStatx not implemented")
-    }
+    override suspend fun suspendStatx(dirfd: Int, path: String?, flags: Int, mask: UInt, buf: CPointer<statx>?) =
+        memScoped {
+            val cPath = path?.cstr?.getPointer(this)
 
-    override suspend fun suspendUnlinkat(fd: Int, path: String?, flags: Int): Int {
-        TODO("Not yet implemented")
+            syscall(
+                SYS_STATX,
+                dirfd,
+                cPath,
+                flags,
+                mask,
+                buf,
+            ).toInt().negErrno()
+        }
+
+    override suspend fun suspendUnlinkat(
+        fd: Int,
+        path: String?,
+        flags: Int,
+    ): Int = memScoped {
+        val cPath = path?.cstr?.getPointer(this)
+
+        syscall(
+            SYS_unlinkat.toLong(),
+            fd,
+            cPath,
+            flags,
+        ).toInt().negErrno()
     }
 }
