@@ -152,10 +152,9 @@ interface WriteZipScope {
 
 suspend fun WriteZipScope.file(
     path: String,
-    maxBufferSize: Long = 64 * 1024L,
     block: suspend (AsyncSink) -> Unit
 ) = coroutineScope {
-    val conn = openInMemoryPipe(maxBufferSize = maxBufferSize).buffered()
+    val conn = openInMemoryPipe().buffered()
     launch {
         block(conn.sink)
         conn.sink.flush()
@@ -377,6 +376,7 @@ internal fun datePartsToEpochMillis(
     return secondCount * 1_000L
 }
 
+// End of central directory record
 private suspend fun AsyncSource.readEocdRecord(): EocdRecord {
     val diskNumber = readShortLe().toInt() and 0xffff
     val diskWithCentralDir = readShortLe().toInt() and 0xffff
@@ -679,12 +679,36 @@ internal class FixedSizeSource(
     }
 }
 
+/**
+ * Overall .ZIP file format:
+ *       [local file header 1]
+ *       [encryption header 1]
+ *       [file data 1]
+ *       [data descriptor 1]
+ *       .
+ *       .
+ *       .
+ *       [local file header n]
+ *       [encryption header n]
+ *       [file data n]
+ *       [data descriptor n]
+ *       [archive decryption header]
+ *       [archive extra data record]
+ *       [central directory header 1]
+ *       .
+ *       .
+ *       .
+ *       [central directory header n]
+ *       [zip64 end of central directory record]
+ *       [zip64 end of central directory locator]
+ *       [end of central directory record]
+ */
 internal class WriteZipScopeImpl(private val sink: AsyncSink): WriteZipScope {
     private val entries = mutableListOf<WrittenZipEntry>()
     private var position = 0L
     private var writing = false
     private var failed = false
-    internal var finished = false
+    var finished = false
 
     /** Writes one file; calls must be sequential. Paths are relative UTF-8 ZIP paths. */
     override suspend fun file(path: String, source: AsyncSource) {
@@ -781,6 +805,49 @@ internal class WriteZipScopeImpl(private val sink: AsyncSink): WriteZipScope {
         sink.flush()
     }
 
+    /**
+     * Local file header:
+     *
+     *       local file header signature     4 bytes  (0x04034b50)
+     *       version needed to extract       2 bytes
+     *       general purpose bit flag        2 bytes
+     *       compression method              2 bytes
+     *       last mod file time              2 bytes
+     *       last mod file date              2 bytes
+     *       crc-32                          4 bytes
+     *       compressed size                 4 bytes
+     *       uncompressed size               4 bytes
+     *       file name length                2 bytes
+     *       extra field length              2 bytes
+     *
+     *       file name (variable size)
+     *       extra field (variable size)
+     *       [central directory header n]
+     *       [digital signature]
+     *
+     * central directory header:
+     *       central file header signature   4 bytes  (0x02014b50)
+     *       version made by                 2 bytes
+     *       version needed to extract       2 bytes
+     *       general purpose bit flag        2 bytes
+     *       compression method              2 bytes
+     *       last mod file time              2 bytes
+     *       last mod file date              2 bytes
+     *       crc-32                          4 bytes
+     *       compressed size                 4 bytes
+     *       uncompressed size               4 bytes
+     *       file name length                2 bytes
+     *       extra field length              2 bytes
+     *       file comment length             2 bytes
+     *       disk number start               2 bytes
+     *       internal file attributes        2 bytes
+     *       external file attributes        4 bytes
+     *       relative offset of local header 4 bytes
+     *
+     *       file name (variable size)
+     *       extra field (variable size)
+     *       file comment (variable size)
+     */
     private suspend fun writeHeader(
         local: Boolean,
         name: ByteArray,
