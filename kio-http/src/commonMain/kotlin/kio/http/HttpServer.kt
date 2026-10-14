@@ -14,10 +14,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
 
-suspend fun httpServer(
+suspend fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection = { buffered() },
-    loggingBackEnd: LoggingBackEnd = ConsoleLogging,
+    loggingBackEnd: LoggingBackEnd = AsyncLoggingBackEnd(this),
     block: suspend Route.() -> Unit
 ) {
     withContext(CoroutineLoggingBackend(loggingBackEnd)) {

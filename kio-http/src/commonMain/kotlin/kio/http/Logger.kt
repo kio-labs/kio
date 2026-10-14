@@ -1,5 +1,12 @@
 package kio.http
 
+import kio.async.AsyncSink
+import kio.async.SuspendIo
+import kio.async.poller
+import kio.async.writeString
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
@@ -42,7 +49,7 @@ enum class LogLevel {
 
 fun LoggingBackEnd.newLogger(name: String, extra: Map<String, Any?> = emptyMap()): Logger = object : Logger {
     override val loggerName: String = name
-    override fun log(
+    override suspend  fun log(
         level: LogLevel,
         message: String,
         cause: Throwable?,
@@ -55,7 +62,7 @@ fun LoggingBackEnd.newLogger(name: String, extra: Map<String, Any?> = emptyMap()
 interface Logger {
     val loggerName: String
 
-    fun log(
+    suspend fun log(
         level: LogLevel,
         message: String,
         cause: Throwable? = null,
@@ -64,7 +71,7 @@ interface Logger {
 }
 
 interface LoggingBackEnd {
-    fun log(
+    suspend fun log(
         name: String,
         level: LogLevel,
         message: String,
@@ -73,41 +80,92 @@ interface LoggingBackEnd {
     )
 }
 
-fun Logger.trace(message: String, fields: Map<String, Any?> = emptyMap()) =
+suspend fun Logger.trace(message: String, fields: Map<String, Any?> = emptyMap()) =
     log(LogLevel.TRACE, message, null, fields)
 
-fun Logger.info(message: String, fields: Map<String, Any?> = emptyMap()) =
+suspend fun Logger.info(message: String, fields: Map<String, Any?> = emptyMap()) =
     log(LogLevel.INFO, message, null, fields)
 
-fun Logger.warn(
+suspend fun Logger.warn(
     message: String,
     cause: Throwable? = null,
     fields: Map<String, Any?> = emptyMap()
 ) = log(LogLevel.WARN, message, cause, fields)
 
-fun Logger.error(
+suspend fun Logger.error(
     message: String,
     cause: Throwable? = null,
     fields: Map<String, Any?> = emptyMap()
 ) = log(LogLevel.ERROR, message, cause, fields)
 
-object ConsoleLogging : LoggingBackEnd {
-    override fun log(
+class AsyncLoggingBackEnd(
+    scope: CoroutineScope,
+    capacity: Int = 1024,
+    private val batchSize: Int = 64,
+) : LoggingBackEnd {
+    init {
+        require(capacity > 0)
+        require(batchSize > 0)
+    }
+
+    private val queue = Channel<String>(capacity)
+    private var _sink: AsyncSink? = null
+    private val sink get() = _sink ?: error("never")
+
+    private val writer = scope.async {
+        try {
+            for (first in queue) {
+                sink.writeString(first)
+
+                var count = 1
+                while (count < batchSize) {
+                    val next = queue.tryReceive().getOrNull() ?: break
+                    sink.writeString(next)
+                    count++
+                }
+
+                sink.flush()
+            }
+        } finally {
+            queue.cancel()
+        }
+    }
+
+    override suspend fun log(
         name: String,
         level: LogLevel,
         message: String,
         cause: Throwable?,
-        fields: Map<String, Any?>
+        fields: Map<String, Any?>,
     ) {
-        val fieldString =
-            fields.entries.joinToString(
-                separator = " ",
-                prefix = if (fields.isEmpty()) "" else " ",
-            ) { (key, value) ->
-                "$key=$value"
+        if (_sink == null) {
+            _sink = currentCoroutineContext().poller.io.stdOutAsyncSink()
+        }
+        val text = buildString {
+            append(level.name.padEnd(5))
+            append(' ')
+            append(name)
+            append(": ")
+            append(message)
+
+            for ((key, value) in fields) {
+                append(' ')
+                append(key)
+                append('=')
+                append(value)
             }
 
-        println("${level.name.padEnd(5)} $name: $message$fieldString")
-        cause?.printStackTrace()
+            append('\n')
+            cause?.let { append(it.stackTraceToString()) }
+        }
+
+        queue.send(text)
+    }
+
+    suspend fun close() {
+        queue.close()
+        writer.await()
     }
 }
+
+expect fun SuspendIo.stdOutAsyncSink(): AsyncSink

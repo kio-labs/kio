@@ -426,7 +426,7 @@ class Http2ConnectionTest {
             supervisorScope {
                 val mockLogger = object : Logger {
                     override val loggerName: String = ""
-                    override fun log(level: LogLevel, message: String, cause: Throwable?, fields: Map<String, Any?>) {}
+                    override suspend fun log(level: LogLevel, message: String, cause: Throwable?, fields: Map<String, Any?>) {}
                 }
                 val mock = MockHttpClientServerConnection(this, mockLogger)
                 val scop = Http2TestScope(mock, this.coroutineContext, mockLogger)

@@ -64,7 +64,6 @@ internal suspend fun http2Connection(
     // Normal stream failures should be handled inside each stream coroutine.
     // This handler is only a last-resort logger.
     val streamExceptionHandler = CoroutineExceptionHandler { context, t ->
-        h2Logger.error("error fall back to streamExceptionHandler", cause = t)
     }
     withContext(streamExceptionHandler) {
         supervisorScope {
@@ -137,7 +136,7 @@ internal class Http2Connection constructor(
         socketConn.sink.flush()
     }
 
-    fun receiveHeader(streamId: Int, isSourceFinished: Boolean, headers: HttpRequestHead) {
+    suspend fun receiveHeader(streamId: Int, isSourceFinished: Boolean, headers: HttpRequestHead) {
         if (isShutdown) return
 
         when (val stream = streams[streamId]) {
@@ -167,9 +166,8 @@ internal class Http2Connection constructor(
         }.also { job ->
             stream.scope = job as CoroutineScope
         }.invokeOnCompletion {
-            val stream = streams.remove(streamId)
+            streams.remove(streamId)
                 ?: error("try to remove stream but Stream[$streamId] not exist.")
-            h2Logger.info("Stream[$streamId] closed. exception=$it")
         }
     }
 
@@ -228,7 +226,7 @@ internal class Http2Connection constructor(
         }
     }
 
-    fun receiveGoAway(lastGoodStreamId: Int, errorCode: ErrorCode, debugData: ByteString) {
+    suspend fun receiveGoAway(lastGoodStreamId: Int, errorCode: ErrorCode, debugData: ByteString) {
         if (debugData.isNotEmpty()) {
             h2Logger.info("receive GoAway from peer: ${debugData.decodeToString()}")
         }
