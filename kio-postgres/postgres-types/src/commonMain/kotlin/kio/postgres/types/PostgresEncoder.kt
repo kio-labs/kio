@@ -21,6 +21,10 @@ internal class PostgresEncoder(
 ) : AbstractEncoder(), Encoder, CompositeEncoder {
     override val serializersModule: SerializersModule = postgres.serializersModule
 
+    override fun encodeNull() {
+        sink.writeInt(-1)
+    }
+
     override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
         return when {
             descriptor.isPostgresBuildInType() -> {

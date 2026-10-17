@@ -911,7 +911,7 @@ internal fun SerialDescriptor.isPostgresMultiRangeType() =
     this.serialName.startsWith(MULTI_RANGE_TYPE_PREFIX)
 
 internal fun SerialDescriptor.isBinaryFormat() =
-    this.serialName.endsWith(BIN_FORMAT_SUFFIX)
+    serialName.removeSuffix("?").endsWith(BIN_FORMAT_SUFFIX)
 
 private const val POSTGRES_INT8_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.int8${BIN_FORMAT_SUFFIX}"
 private const val POSTGRES_INT4_SERIALIZER_BIN = "${PRIMITIVE_TYPE_PREFIX}.int4${BIN_FORMAT_SUFFIX}"

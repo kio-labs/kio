@@ -13,6 +13,7 @@ import kotlinx.io.writeString
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.decodeFromByteArray
 import kotlinx.serialization.encodeToByteArray
 import kotlin.test.Test
@@ -706,6 +707,16 @@ class PostgresFormatTest {
     }
 
     @Test
+    fun postgresEncodeNullableTest() {
+        val data = byteArrayOf(
+            0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte()
+        )
+        val serializer: KSerializer<PgInt8?> = PostgresInt8Serializer.nullable
+        val encode = PostgresFormat.encodeToByteArray(serializer, null)
+        assertEquals(data, encode)
+    }
+
+    @Test
     fun postgresDecodeNullableTest() {
         @Serializable
         data class Foo(
@@ -739,7 +750,7 @@ class PostgresFormatTest {
 }
 
 private fun <T : Any> assertSerializerEncodeAndDecode(
-    serializer: KSerializer<*>,
+    serializer: KSerializer<T>,
     expected: ByteArray,
     source: T
 ) {
