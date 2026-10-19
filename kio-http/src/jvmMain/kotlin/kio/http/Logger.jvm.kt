@@ -20,7 +20,24 @@ actual fun SuspendIo.stdOutAsyncSink(): AsyncSink {
         }
 
         override suspend fun close() {
-            // 标准输出由进程共享，不关闭它。
+            sink.flush()
+        }
+    }.buffered()
+}
+
+actual fun SuspendIo.stdErrorAsyncSink(): AsyncSink {
+    val sink = System.err.asSink()
+
+    return object : AsyncRawSink {
+        override suspend fun write(source: Buffer, byteCount: Long) {
+            sink.write(source, byteCount)
+        }
+
+        override suspend fun flush() {
+            sink.flush()
+        }
+
+        override suspend fun close() {
             sink.flush()
         }
     }.buffered()

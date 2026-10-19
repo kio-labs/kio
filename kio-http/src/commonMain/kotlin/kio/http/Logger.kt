@@ -98,6 +98,11 @@ suspend fun Logger.error(
     fields: Map<String, Any?> = emptyMap()
 ) = log(LogLevel.ERROR, message, cause, fields)
 
+private data class LogEntry(
+    val level: LogLevel,
+    val text: String,
+)
+
 class AsyncLoggingBackEnd(
     scope: CoroutineScope,
     capacity: Int = 1024,
@@ -108,23 +113,32 @@ class AsyncLoggingBackEnd(
         require(batchSize > 0)
     }
 
-    private val queue = Channel<String>(capacity)
-    private var _sink: AsyncSink? = null
-    private val sink get() = _sink ?: error("never")
+    private val queue = Channel<LogEntry>(capacity)
 
     private val writer = scope.async {
+        val io = currentCoroutineContext().poller.io
+        val outSink = io.stdOutAsyncSink()
+        val errSink = io.stdErrorAsyncSink()
+
+        suspend fun writeOnce(entry: LogEntry) {
+            val (level, content) = entry
+            val sink = if (level == LogLevel.ERROR) errSink else outSink
+            sink.writeString(content)
+        }
+
         try {
-            for (first in queue) {
-                sink.writeString(first)
+            for (entry in queue) {
+                writeOnce(entry)
 
                 var count = 1
                 while (count < batchSize) {
                     val next = queue.tryReceive().getOrNull() ?: break
-                    sink.writeString(next)
+                    writeOnce(next)
                     count++
                 }
 
-                sink.flush()
+                outSink.flush()
+                errSink.flush()
             }
         } finally {
             queue.cancel()
@@ -138,9 +152,6 @@ class AsyncLoggingBackEnd(
         cause: Throwable?,
         fields: Map<String, Any?>,
     ) {
-        if (_sink == null) {
-            _sink = currentCoroutineContext().poller.io.stdOutAsyncSink()
-        }
         val text = buildString {
             append(level.name.padEnd(5))
             append(' ')
@@ -159,7 +170,7 @@ class AsyncLoggingBackEnd(
             cause?.let { append(it.stackTraceToString()) }
         }
 
-        queue.send(text)
+        queue.send(LogEntry(level, text))
     }
 
     suspend fun close() {
@@ -169,3 +180,4 @@ class AsyncLoggingBackEnd(
 }
 
 expect fun SuspendIo.stdOutAsyncSink(): AsyncSink
+expect fun SuspendIo.stdErrorAsyncSink(): AsyncSink
