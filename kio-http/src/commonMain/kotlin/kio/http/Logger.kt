@@ -47,15 +47,21 @@ enum class LogLevel {
     ;
 }
 
-fun LoggingBackEnd.newLogger(name: String, extra: Map<String, Any?> = emptyMap()): Logger = object : Logger {
+fun LoggingBackEnd.newLogger(
+    name: String,
+    extra: Map<String, Any?> = emptyMap(),
+    logWrapper: suspend (suspend () -> Unit) -> Unit = { it() }
+): Logger = object : Logger {
     override val loggerName: String = name
-    override suspend  fun log(
+    override suspend fun log(
         level: LogLevel,
         message: String,
         cause: Throwable?,
         fields: Map<String, Any?>
     ) {
-        log(loggerName, level, message, cause, fields + extra)
+        logWrapper {
+            log(loggerName, level, message, cause, fields + extra)
+        }
     }
 }
 
@@ -107,6 +113,7 @@ class AsyncLoggingBackEnd(
     scope: CoroutineScope,
     capacity: Int = 1024,
     private val batchSize: Int = 64,
+    private val enableTrace: Boolean = false,
 ) : LoggingBackEnd {
     init {
         require(capacity > 0)
@@ -152,6 +159,10 @@ class AsyncLoggingBackEnd(
         cause: Throwable?,
         fields: Map<String, Any?>,
     ) {
+        if (!enableTrace && level == LogLevel.TRACE) {
+            return
+        }
+
         val text = buildString {
             append(level.name.padEnd(5))
             append(' ')
