@@ -1,7 +1,7 @@
 package kio.http
 
-import kio.async.AsyncSink
-import kio.async.SuspendIo
+import kio.async.io.stdErrorAsyncSink
+import kio.async.io.stdOutAsyncSink
 import kio.async.poller
 import kio.async.writeString
 import kotlinx.coroutines.CoroutineScope
@@ -189,6 +189,3 @@ class AsyncLoggingBackEnd(
         writer.await()
     }
 }
-
-expect fun SuspendIo.stdOutAsyncSink(): AsyncSink
-expect fun SuspendIo.stdErrorAsyncSink(): AsyncSink

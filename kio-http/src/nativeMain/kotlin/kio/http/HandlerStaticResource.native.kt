@@ -1,17 +1,13 @@
 package kio.http
 
 import kio.async.AsyncRawSource
-import kio.async.POLL_INTEREST_READ
 import kio.async.SuspendIo
-import kio.async.attachFD
-import kio.async.detachFD
 import kio.async.io.asyncRawSource
 import kio.async.open
 import kio.async.poller
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.io.Buffer
 import kotlinx.io.IOException
 import platform.posix.EINTR
 import platform.posix.F_GETFL
@@ -31,21 +27,8 @@ internal actual suspend fun openFileSource(path: String): AsyncRawSource {
     val fd = io.openFile(path)
 
     setNonBlocking(fd)
-    io.attachFD(fd, POLL_INTEREST_READ)
 
-    val source = io.asyncRawSource(fd)
-    return object : AsyncRawSource {
-        override suspend fun readAtMostTo(
-            sink: Buffer,
-            byteCount: Long
-        ): Long = source.readAtMostTo(sink, byteCount)
-
-        override suspend fun close() {
-            io.detachFD(fd, POLL_INTEREST_READ)
-
-            source.close()
-        }
-    }
+    return io.asyncRawSource(fd)
 }
 
 private fun setNonBlocking(fd: Int): Int {

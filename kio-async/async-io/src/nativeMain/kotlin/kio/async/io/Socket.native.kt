@@ -186,10 +186,6 @@ private class FdRawAsyncConnection(
     override val source: AsyncRawSource = io.asyncRawSource(fd),
     override val sink: AsyncRawSink = io.asyncRawSink(fd)
 ) : AsyncRawConnection {
-    init {
-        io.attachFD(fd, POLL_INTEREST_WRITE)
-        io.attachFD(fd, POLL_INTEREST_READ)
-    }
 
     private val closed = atomic(false)
 
@@ -208,9 +204,6 @@ private class FdRawAsyncConnection(
         } catch (e: IOException) {
             // Ignore exception when close.
         } finally {
-            io.detachFD(fd, POLL_INTEREST_WRITE)
-            io.detachFD(fd, POLL_INTEREST_READ)
-
             io.close(fd)
         }
     }
