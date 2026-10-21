@@ -61,6 +61,7 @@ import linux.uring.io_uring_prep_open
 import linux.uring.io_uring_prep_pipe
 import linux.uring.io_uring_prep_recvmsg
 import linux.uring.io_uring_prep_sendmsg
+import linux.uring.io_uring_prep_sendto
 import linux.uring.io_uring_prep_shutdown
 import linux.uring.io_uring_prep_socket
 import linux.uring.io_uring_prep_statx
@@ -214,6 +215,7 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
                 }
                 is UringReq.Sendmsg -> completeRequest(req.c, result)
                 is UringReq.Recvmsg -> completeRequest(req.c, result)
+                is UringReq.SendTo -> completeRequest(req.c, result)
                 is UringReq.Cancel -> Unit
             }
         } finally {
@@ -473,6 +475,19 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
         }
     }
 
+    override suspend fun suspnedSendto(fd: Int, buf: CPointer<*>?, n: ULong, flags: Int, addr: CPointer<sockaddr>?, addrLen: UInt): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeRequestSqe()
+
+        io_uring_prep_sendto(sqe, fd, buf, n, flags, addr?.reinterpret(), addrLen)
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.SendTo(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
+
     override fun shutdown() {
         check(!closed)
         if (shuttingDown) return
@@ -547,6 +562,7 @@ private sealed interface UringReq {
     data class UnlinkAt(val arena: Arena, val c: CancellableContinuation<Int>) : UringReq
     data class Sendmsg(val c: CancellableContinuation<Int>) : UringReq
     data class Recvmsg(val c: CancellableContinuation<Int>) : UringReq
+    data class SendTo(val c: CancellableContinuation<Int>) : UringReq
 }
 
 private fun errnoMessage(result: Int? = null): String {

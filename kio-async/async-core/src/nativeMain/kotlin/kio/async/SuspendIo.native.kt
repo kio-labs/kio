@@ -53,6 +53,8 @@ interface PosixApi {
 
     suspend fun suspendSendmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int
     suspend fun suspendRecvmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int
+
+    suspend fun suspnedSendto(fd: Int, buf: CPointer<*>?, n: ULong, flags: Int, addr: CPointer<sockaddr>?, addrLen: UInt): Int
 }
 
 actual interface IoPoller {
@@ -93,6 +95,11 @@ interface PosixSuspendIo : DefaultPosixApi, IoPoller {
 
     override suspend fun suspendSendmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int = posixCall(
         func = { platform.posix.sendmsg(fd, message, flags).toInt() },
+        waitIO = { awaitIo(fd, POLL_INTEREST_WRITE) }
+    )
+
+    override suspend fun suspnedSendto(fd: Int, buf: CPointer<*>?, n: ULong, flags: Int, addr: CPointer<sockaddr>?, addrLen: UInt): Int = posixCall(
+        func = { platform.posix.sendto(fd, buf, n, flags, addr, addrLen).toInt() },
         waitIO = { awaitIo(fd, POLL_INTEREST_WRITE) }
     )
 
@@ -190,6 +197,10 @@ interface DefaultPosixApi: PosixApi {
 
     override suspend fun suspendSendmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int {
         return platform.posix.sendmsg(fd, message, flags).toInt().negErrno()
+    }
+
+    override suspend fun suspnedSendto(fd: Int, buf: CPointer<*>?, n: ULong, flags: Int, addr: CPointer<sockaddr>?, addrLen: UInt): Int {
+        return platform.posix.sendto(fd, buf, n, flags, addr, addrLen).toInt().negErrno()
     }
 }
 
