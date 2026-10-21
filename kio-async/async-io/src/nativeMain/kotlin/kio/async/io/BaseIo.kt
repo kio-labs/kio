@@ -32,6 +32,7 @@ private class DefaultAsyncRawSink(
     private val io: SuspendIo
 ) : AsyncRawSink {
     init {
+        setNonBlocking(fd)
         io.attachFD(fd, POLL_INTEREST_WRITE)
     }
 
@@ -84,6 +85,7 @@ private class DefaultAsyncRawSource(
     private val io: SuspendIo
 ) : AsyncRawSource {
     init {
+        setNonBlocking(fd)
         io.attachFD(fd, POLL_INTEREST_READ)
     }
 

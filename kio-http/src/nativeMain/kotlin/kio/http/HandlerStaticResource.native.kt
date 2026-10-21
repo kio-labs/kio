@@ -26,16 +26,7 @@ internal actual suspend fun openFileSource(path: String): AsyncRawSource {
     val io = currentCoroutineContext().poller.io
     val fd = io.openFile(path)
 
-    setNonBlocking(fd)
-
     return io.asyncRawSource(fd)
-}
-
-private fun setNonBlocking(fd: Int): Int {
-    val flags = fcntl(fd, F_GETFL, 0)
-    if (flags < 0) return -1
-    if (fcntl(fd, F_SETFL, flags or O_NONBLOCK) < 0) return -1
-    return 0
 }
 
 @OptIn(ExperimentalForeignApi::class)
