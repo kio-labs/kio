@@ -24,8 +24,6 @@ import kotlinx.io.Buffer
 import kotlinx.io.IOException
 import kotlin.Int
 
-actual typealias SockAddr = sockaddr
-
 @OptIn(ExperimentalForeignApi::class)
 actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection = memScoped {
     val poller = currentCoroutineContext().poller

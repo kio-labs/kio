@@ -128,5 +128,3 @@ private class ChannelServerSocket(
         io.detachKey(acceptHandle, POLL_INTEREST_ACCEPT)
     }
 }
-
-actual typealias SockAddr = InetSocketAddress
