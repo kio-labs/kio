@@ -87,30 +87,9 @@ internal class ChannelRawAsyncConnection(
     }
 }
 
-actual suspend fun tcpBind(
-    host: String,
-    port: Int,
-): ServerSocket {
-    val io = currentCoroutineContext().poller.io
-    val backlog = 128
-    val channel = ServerSocketChannel.open()
-
-    try {
-        channel.configureBlocking(false)
-
-        channel.setOption(StandardSocketOptions.SO_REUSEADDR, true)
-
-        channel.bind(
-            InetSocketAddress(host, port),
-            backlog,
-        )
-
-        return ChannelServerSocket(io, channel)
-    } catch (t: Throwable) {
-        channel.close()
-        throw t
-    }
-}
+fun SuspendIo.serverSocket(
+    serverChannel: ServerSocketChannel,
+): ServerSocket = ChannelServerSocket(this, serverChannel)
 
 private class ChannelServerSocket(
     private val io: SuspendIo,
@@ -149,3 +128,5 @@ private class ChannelServerSocket(
         io.detachKey(acceptHandle, POLL_INTEREST_ACCEPT)
     }
 }
+
+actual typealias SockAddr = InetSocketAddress

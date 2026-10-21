@@ -1,6 +1,6 @@
-package kio.async.io
+package kio.util
 
-import platform.linux.inet_addr
+import platform.darwin.inet_addr
 
 internal actual fun inet_addr(host: String?): UInt {
     return inet_addr(host)

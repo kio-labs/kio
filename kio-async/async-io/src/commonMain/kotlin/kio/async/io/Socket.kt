@@ -1,8 +1,8 @@
 package kio.async.io
 
-expect suspend fun openConnection(host: String, port: Int): AsyncRawConnection
+expect class SockAddr
 
-expect suspend fun tcpBind(host: String, port: Int): ServerSocket
+expect suspend fun openConnection(host: String, port: Int): AsyncRawConnection
 
 interface ServerSocket {
     suspend fun getBoundPort(): Result<Int>

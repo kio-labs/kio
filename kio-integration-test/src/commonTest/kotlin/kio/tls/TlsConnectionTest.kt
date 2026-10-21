@@ -2,8 +2,8 @@ package kio.tls
 
 import kio.async.PollerFactory
 import kio.async.io.openConnection
-import kio.async.io.tcpBind
 import kio.async.runPollEventLoop
+import kio.util.tcpBind
 import kotlinx.coroutines.launch
 import kotlin.test.Test
 import kotlin.test.assertEquals

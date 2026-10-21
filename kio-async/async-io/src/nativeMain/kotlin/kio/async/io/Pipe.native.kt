@@ -6,9 +6,6 @@ import kio.async.SuspendIo
 import kio.async.close
 
 internal fun pipeConnection(io: SuspendIo, readFd: Int, writeFd: Int): AsyncRawConnection {
-    setNonBlocking(readFd)
-    setNonBlocking(writeFd)
-
     return object : AsyncRawConnection {
         override val source: AsyncRawSource =
             io.asyncRawSource(readFd)
