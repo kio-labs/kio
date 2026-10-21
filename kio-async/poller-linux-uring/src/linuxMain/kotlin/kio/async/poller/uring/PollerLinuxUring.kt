@@ -59,12 +59,16 @@ import linux.uring.io_uring_prep_listen
 import linux.uring.io_uring_prep_mkdir
 import linux.uring.io_uring_prep_open
 import linux.uring.io_uring_prep_pipe
+import linux.uring.io_uring_prep_recvmsg
+import linux.uring.io_uring_prep_sendmsg
+import linux.uring.io_uring_prep_sendto
 import linux.uring.io_uring_prep_shutdown
 import linux.uring.io_uring_prep_socket
 import linux.uring.io_uring_prep_statx
 import linux.uring.io_uring_prep_unlinkat
 import linux.uring.io_uring_queue_exit
 import linux.uring.io_uring_sqe
+import platform.posix.msghdr
 import platform.posix.sockaddr_in
 
 /**
@@ -209,6 +213,9 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
                     completeRequest(req.c, result)
                     req.arena.clear()
                 }
+                is UringReq.Sendmsg -> completeRequest(req.c, result)
+                is UringReq.Recvmsg -> completeRequest(req.c, result)
+                is UringReq.SendTo -> completeRequest(req.c, result)
                 is UringReq.Cancel -> Unit
             }
         } finally {
@@ -442,6 +449,45 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
         }
     }
 
+    override suspend fun suspendSendmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeRequestSqe()
+
+        io_uring_prep_sendmsg(sqe, fd, message?.reinterpret(), flags.toUInt())
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.Sendmsg(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
+
+    override suspend fun suspendRecvmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeRequestSqe()
+
+        io_uring_prep_recvmsg(sqe, fd, message?.reinterpret(), flags.toUInt())
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.Recvmsg(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
+
+    override suspend fun suspnedSendto(fd: Int, buf: CPointer<*>?, n: ULong, flags: Int, addr: CPointer<sockaddr>?, addrLen: UInt): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeRequestSqe()
+
+        io_uring_prep_sendto(sqe, fd, buf, n, flags, addr?.reinterpret(), addrLen)
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.SendTo(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
+
     override fun shutdown() {
         check(!closed)
         if (shuttingDown) return
@@ -514,6 +560,9 @@ private sealed interface UringReq {
     data class Socket(val c: CancellableContinuation<Int>) : UringReq
     data class Mkdir(val arena: Arena, val c: CancellableContinuation<Int>) : UringReq
     data class UnlinkAt(val arena: Arena, val c: CancellableContinuation<Int>) : UringReq
+    data class Sendmsg(val c: CancellableContinuation<Int>) : UringReq
+    data class Recvmsg(val c: CancellableContinuation<Int>) : UringReq
+    data class SendTo(val c: CancellableContinuation<Int>) : UringReq
 }
 
 private fun errnoMessage(result: Int? = null): String {
