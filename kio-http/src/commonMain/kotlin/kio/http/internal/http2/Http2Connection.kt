@@ -42,8 +42,14 @@ class StreamResetCancellationException(
     val errorCode: ErrorCode,
 ) : CancellationException("stream was reset: $errorCode")
 
-internal suspend fun Route.http2Connection(conn: AsyncConnection) {
-    val h2Logger = currentLoggingBackend().newLogger("Http2Connection")
+internal suspend fun Route.http2Connection(
+    conn: AsyncConnection,
+    enableProtocolLogger: Boolean
+) {
+    val h2Logger = currentLoggingBackend().newLogger(
+        name = "Http2Connection",
+        logWrapper = { if (enableProtocolLogger) it() }
+    )
 
     with(h2Logger) {
         http2Connection(conn) { conn, stream ->

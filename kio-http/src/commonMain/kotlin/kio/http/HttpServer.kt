@@ -6,13 +6,11 @@ import kio.async.io.ServerSocket
 import kio.async.io.accept
 import kio.async.io.asAsyncConnection
 import kio.async.io.buffered
-import kio.async.poller
 import kio.http.internal.http1.http1Connection
 import kio.http.internal.http2.http2Connection
 import kio.tls.SslConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.io.EOFException
@@ -22,6 +20,7 @@ suspend fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection = { buffered() },
     loggingBackEnd: LoggingBackEnd = AsyncLoggingBackEnd(this),
+    enableProtocolLogger: Boolean = false,
     block: suspend Route.() -> Unit
 ) {
     withContext(CoroutineLoggingBackend(loggingBackEnd)) {
@@ -34,7 +33,7 @@ suspend fun CoroutineScope.httpServer(
 
         logger.info("HTTP server started")
 
-        with(logger) { startHttpServer(route, serverSocket, connectionWrapper) }
+        with(logger) { startHttpServer(route, serverSocket, enableProtocolLogger, connectionWrapper) }
 
         logger.info("HTTP server stopped")
     }
@@ -44,9 +43,9 @@ context(logger: Logger)
 private suspend fun CoroutineScope.startHttpServer(
     route: Route,
     serverSocket: ServerSocket,
+    enableProtocolLogger: Boolean,
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection,
 ) {
-    val io = currentCoroutineContext().poller.io
     while (true) {
         val raw = try {
             serverSocket.accept().asAsyncConnection()
@@ -70,7 +69,7 @@ private suspend fun CoroutineScope.startHttpServer(
 
                 val selectedAlpn = sslConnection?.getSelectedAlpn()
                 when (selectedAlpn) {
-                    "h2" -> route.http2Connection(conn)
+                    "h2" -> route.http2Connection(conn, enableProtocolLogger)
                     else -> route.http1Connection(conn)
                 }
             } catch (_: EOFException) {
