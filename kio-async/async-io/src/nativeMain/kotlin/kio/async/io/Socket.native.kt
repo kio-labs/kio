@@ -12,6 +12,7 @@ import kio.async.attachFD
 import kio.async.close
 import kio.async.connect
 import kio.async.detachFD
+import kio.async.getpeername
 import kio.async.getsockname
 import kio.async.poller
 import kio.async.shutdown
@@ -81,47 +82,29 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
     }
 }
 
-fun SuspendIo.serverSocket(serverFd: Int): ServerSocket = FdServerSocket(this, serverFd)
 
-private class FdServerSocket(
-    private val io: SuspendIo,
-    private val serverFd: Int,
-) : ServerSocket {
-    init {
-        io.attachFD(serverFd, POLL_INTEREST_READ)
-    }
+actual suspend fun Socket.asAsyncConnection(): AsyncRawConnection {
+    val io = currentCoroutineContext().poller.io
+    return FdRawAsyncConnection(io, this)
+}
 
-    override suspend fun getBoundPort(): Result<Int> {
-        return getBoundPort(io, serverFd)
-    }
+fun SuspendIo.serverSocket(serverFd: Int): ServerSocket {
+    attachFD(serverFd, POLL_INTEREST_READ)
+    return serverFd
+}
 
-    override suspend fun accept(): AsyncRawConnection = memScoped {
-        val clientAddr = alloc<sockaddr_in> {}
-        val clientAddrLen = alloc<UIntVar> { value = sizeOf<sockaddr_in>().convert() }
+actual typealias ServerSocket = Int
+actual typealias Socket = Int
 
-        val clientFd =
-            io.accept(serverFd, clientAddr.ptr, clientAddrLen.ptr)
+actual suspend fun ServerSocket.accept(): Socket {
+    val io = currentCoroutineContext().poller.io
+    return io.accept(this, null, null)
+}
 
-        if (clientFd < 0) {
-            throw IOException("ERROR: could not accept connection from client: ${resultErrorMessage(clientFd)}")
-        }
-
-        try {
-            if (setNonBlocking(clientFd) < 0) {
-                throw IOException("ERROR: could not set client socket non-blocking.")
-            }
-
-            FdRawAsyncConnection(io, clientFd)
-        } catch (t: Throwable) {
-            io.close(clientFd)
-            throw t
-        }
-    }
-
-    override suspend fun close() {
-        io.detachFD(serverFd, POLL_INTEREST_READ)
-        io.close(serverFd)
-    }
+actual suspend fun ServerSocket.close() {
+    val io = currentCoroutineContext().poller.io
+    io.detachFD(this, POLL_INTEREST_READ)
+    io.close(this)
 }
 
 private class FdRawAsyncConnection(
@@ -130,6 +113,10 @@ private class FdRawAsyncConnection(
     override val source: AsyncRawSource = io.asyncRawSource(fd),
     override val sink: AsyncRawSink = io.asyncRawSink(fd)
 ) : AsyncRawConnection {
+    init {
+        io.attachFD(fd, POLL_INTEREST_WRITE)
+        io.attachFD(fd, POLL_INTEREST_READ)
+    }
 
     private val closed = atomic(false)
 
@@ -148,6 +135,9 @@ private class FdRawAsyncConnection(
         } catch (e: IOException) {
             // Ignore exception when close.
         } finally {
+            io.detachFD(fd, POLL_INTEREST_WRITE)
+            io.detachFD(fd, POLL_INTEREST_READ)
+
             io.close(fd)
         }
     }
@@ -160,22 +150,74 @@ internal fun setNonBlocking(fd: Int): Int {
     return 0
 }
 
-private suspend fun getBoundPort(io: SuspendIo, fd: Int): Result<Int> = memScoped {
-    val addr = alloc<sockaddr_in>()
-    val addrLen = alloc<socklen_tVar>().apply {
-        value = sizeOf<sockaddr_in>().convert()
+actual class SocketAddress internal constructor(
+    internal val value: CValue<sockaddr_storage>,
+)
+
+actual suspend fun ServerSocket.getAddress(): Result<SocketAddress> {
+    val io = currentCoroutineContext().poller.io
+    return io.getsockname(this)
+}
+
+actual suspend fun Socket.getLocalAddress(): Result<SocketAddress> {
+    val io = currentCoroutineContext().poller.io
+    return io.getsockname(this)
+}
+
+actual suspend fun Socket.getRemoteAddress(): Result<SocketAddress> {
+    val io = currentCoroutineContext().poller.io
+    return io.getpeername(this)
+}
+
+private suspend fun SuspendIo.getsockname(fd: Int) = memScoped {
+    val io = this@getsockname
+    val addr = alloc<sockaddr_storage>()
+    val len = alloc<socklen_tVar>().apply {
+        value = sizeOf<sockaddr_storage>().convert()
     }
 
-    val ret = io.getsockname(fd, addr.ptr.reinterpret(), addrLen.ptr)
-    if (ret == 0) {
-        Result.success(ntohs(addr.sin_port).toInt())
-    } else {
-        Result.failure(IOException("getsockname failed: ${resultErrorMessage(ret)}"))
+    val ret = io.getsockname(fd, addr.ptr.reinterpret(), len.ptr)
+    if (ret < 0) {
+        return@memScoped Result.failure(IOException("getsockname failed: ${resultErrorMessage(ret)}"))
     }
+
+    Result.success(SocketAddress(addr.readValue()))
 }
+
+
+private suspend fun SuspendIo.getpeername(fd: Int): Result<SocketAddress> = memScoped {
+    val io = this@getpeername
+    val addr = alloc<sockaddr_storage>()
+    val len = alloc<socklen_tVar>().apply {
+        value = sizeOf<sockaddr_storage>().convert()
+    }
+
+    val ret = io.getpeername(fd, addr.ptr.reinterpret(), len.ptr)
+    if (ret < 0) {
+        val error = errno
+        return@memScoped Result.failure(IOException("getpeername failed: ${resultErrorMessage(-error)}"))
+    }
+
+    Result.success(SocketAddress(addr.readValue()))
+}
+
+@OptIn(UnsafeNumber::class)
+actual val SocketAddress.port: Int
+    get() = value.useContents {
+        when (ss_family.toInt()) {
+            AF_INET ->
+                ntohs(ptr.reinterpret<sockaddr_in>().pointed.sin_port).toInt()
+
+            AF_INET6 ->
+                ntohs(ptr.reinterpret<sockaddr_in6>().pointed.sin6_port).toInt()
+
+            else -> error("Socket address has no IP port: $ss_family")
+        }
+    }
 
 private fun ntohs(value: UShort): UShort {
     val v = value.toUInt()
     return (((v and 0x00FFu) shl 8) or
             ((v and 0xFF00u) shr 8)).toUShort()
 }
+

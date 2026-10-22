@@ -1,8 +1,11 @@
 package kio.tls
 
 import kio.async.PollerFactory
+import kio.async.io.accept
+import kio.async.io.asAsyncConnection
 import kio.async.io.openConnection
 import kio.async.runPollEventLoop
+import kio.util.getBoundPort
 import kio.util.tcpBind
 import kotlinx.coroutines.launch
 import kotlin.test.Test
@@ -22,7 +25,7 @@ abstract class TlsConnectionTest {
             conn.sink.flush()
         }
 
-        val clientConn = server.accept().withServerTls(
+        val clientConn = server.accept().asAsyncConnection().withServerTls(
             certificate = "server.crt".pem,
             privateKeyFile = "server.key".pem,
         )
@@ -46,7 +49,7 @@ abstract class TlsConnectionTest {
             conn.sink.flush()
         }
 
-        val clientConn = server.accept().withServerTls(
+        val clientConn = server.accept().asAsyncConnection().withServerTls(
             certificate = "server.crt".pem,
             privateKeyFile = "server.key".pem,
             supportAlpnProtocols = listOf("h2")

@@ -3,13 +3,13 @@ package kio.async.io
 import kio.async.PollerFactory
 import kio.async.poller
 import kio.async.runPollEventLoop
+import kio.util.getBoundPort
 import kio.util.tcpBind
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFails
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
@@ -198,7 +198,7 @@ abstract class PollEventLoopTest {
             conn.sink.flush()
         }
 
-        val clientConn = server.accept()
+        val clientConn = server.accept().asAsyncConnection()
         assertEquals(122, clientConn.buffered().source.readInt())
     }
 

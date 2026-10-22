@@ -33,7 +33,6 @@ private class DefaultAsyncRawSink(
 ) : AsyncRawSink {
     init {
         setNonBlocking(fd)
-        io.attachFD(fd, POLL_INTEREST_WRITE)
     }
 
     override suspend fun write(source: Buffer, byteCount: Long) {
@@ -47,7 +46,6 @@ private class DefaultAsyncRawSink(
     }
 
     override suspend fun close() {
-        io.detachFD(fd, POLL_INTEREST_WRITE)
         io.close(fd)
     }
 }
@@ -86,7 +84,6 @@ private class DefaultAsyncRawSource(
 ) : AsyncRawSource {
     init {
         setNonBlocking(fd)
-        io.attachFD(fd, POLL_INTEREST_READ)
     }
 
     override suspend fun readAtMostTo(sink: Buffer, byteCount: Long): Long {
@@ -96,7 +93,6 @@ private class DefaultAsyncRawSource(
     }
 
     override suspend fun close() {
-        io.detachFD(fd, POLL_INTEREST_READ)
         io.close(fd)
     }
 }

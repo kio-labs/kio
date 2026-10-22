@@ -52,7 +52,7 @@ internal class ChannelRawAsyncConnection(
     private val io: SuspendIo,
     private val channel: SocketChannel,
     override val source: AsyncRawSource = asyncChannelRawSource(channel, channel, io),
-    override val sink: AsyncRawSink = asyncChannelRawSink(channel, channel,io),
+    override val sink: AsyncRawSink = asyncChannelRawSink(channel, channel, io),
 ) : AsyncRawConnection {
     private val readHandle = SelectionKeyWrapper(channel)
     private val writeHandle = SelectionKeyWrapper(channel)
@@ -86,15 +86,21 @@ internal class ChannelRawAsyncConnection(
         io.detachKey(writeHandle, POLL_INTEREST_WRITE)
     }
 }
+actual class Socket(val delegate: SocketChannel)
+actual class ServerSocket internal constructor(internal val delegate: ServerSocketInternal)
 
-fun SuspendIo.serverSocket(
-    serverChannel: ServerSocketChannel,
-): ServerSocket = ChannelServerSocket(this, serverChannel)
+fun SuspendIo.serverSocket(serverChannel: ServerSocketChannel): ServerSocket = ServerSocket(ServerSocketInternal(this, serverChannel))
+actual suspend fun Socket.asAsyncConnection(): AsyncRawConnection {
+    val io = currentCoroutineContext().poller.io
+    return ChannelRawAsyncConnection(io, delegate)
+}
+actual suspend fun ServerSocket.accept(): Socket = delegate.accept()
+actual suspend fun ServerSocket.close() = delegate.close()
 
-private class ChannelServerSocket(
+internal class ServerSocketInternal(
     private val io: SuspendIo,
-    private val serverChannel: ServerSocketChannel,
-) : ServerSocket {
+    val serverChannel: ServerSocketChannel,
+) {
 
     private val acceptHandle = SelectionKeyWrapper(serverChannel)
 
@@ -102,11 +108,8 @@ private class ChannelServerSocket(
         io.attachKey(acceptHandle, POLL_INTEREST_ACCEPT)
     }
 
-    override suspend fun getBoundPort(): Result<Int> = runCatching {
-        (serverChannel.localAddress as InetSocketAddress).port
-    }
 
-    override suspend fun accept(): AsyncRawConnection {
+    suspend fun accept(): Socket {
         while (true) {
             io.suspendAccept(serverChannel)
 
@@ -115,7 +118,7 @@ private class ChannelServerSocket(
             if (client != null) {
                 try {
                     client.configureBlocking(false)
-                    return ChannelRawAsyncConnection(io, client)
+                    return Socket(client)
                 } catch (t: Throwable) {
                     client.close()
                     throw t
@@ -124,7 +127,32 @@ private class ChannelServerSocket(
         }
     }
 
-    override suspend fun close() {
+    fun close() {
         io.detachKey(acceptHandle, POLL_INTEREST_ACCEPT)
     }
 }
+
+actual class SocketAddress internal constructor(
+    internal val value: java.net.SocketAddress,
+)
+
+actual suspend fun Socket.getLocalAddress(): Result<SocketAddress> = runCatching {
+    val address = delegate.localAddress
+        ?: throw java.io.IOException("Socket is not bound")
+    SocketAddress(address)
+}
+
+actual suspend fun Socket.getRemoteAddress(): Result<SocketAddress> = runCatching {
+    val address = delegate.remoteAddress
+        ?: throw java.io.IOException("Socket is not connected")
+    SocketAddress(address)
+}
+
+actual suspend fun ServerSocket.getAddress(): Result<SocketAddress> = runCatching {
+    val address = delegate.serverChannel.localAddress
+        ?: throw java.io.IOException("Socket is not bound")
+    SocketAddress(address)
+}
+
+actual val SocketAddress.port: Int
+    get() = (value as InetSocketAddress).port

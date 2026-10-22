@@ -3,12 +3,16 @@ package kio.http
 import kio.async.io.AsyncConnection
 import kio.async.io.AsyncRawConnection
 import kio.async.io.ServerSocket
+import kio.async.io.accept
+import kio.async.io.asAsyncConnection
 import kio.async.io.buffered
+import kio.async.poller
 import kio.http.internal.http1.http1Connection
 import kio.http.internal.http2.http2Connection
 import kio.tls.SslConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.io.EOFException
@@ -42,9 +46,10 @@ private suspend fun CoroutineScope.startHttpServer(
     serverSocket: ServerSocket,
     connectionWrapper: AsyncRawConnection.() -> AsyncConnection,
 ) {
+    val io = currentCoroutineContext().poller.io
     while (true) {
         val raw = try {
-            serverSocket.accept()
+            serverSocket.accept().asAsyncConnection()
         } catch (t: IOException) {
             logger.warn("failed when accept new connection", t)
             continue

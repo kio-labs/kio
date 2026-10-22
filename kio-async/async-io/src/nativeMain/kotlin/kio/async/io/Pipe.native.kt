@@ -2,10 +2,17 @@ package kio.async.io
 
 import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
+import kio.async.POLL_INTEREST_READ
+import kio.async.POLL_INTEREST_WRITE
 import kio.async.SuspendIo
+import kio.async.attachFD
 import kio.async.close
+import kio.async.detachFD
 
 internal fun pipeConnection(io: SuspendIo, readFd: Int, writeFd: Int): AsyncRawConnection {
+    io.attachFD(readFd, POLL_INTEREST_READ)
+    io.attachFD(writeFd, POLL_INTEREST_WRITE)
+
     return object : AsyncRawConnection {
         override val source: AsyncRawSource =
             io.asyncRawSource(readFd)
@@ -17,6 +24,9 @@ internal fun pipeConnection(io: SuspendIo, readFd: Int, writeFd: Int): AsyncRawC
         override suspend fun close() {
             if (closed) return
             closed = true
+
+            io.detachFD(readFd, POLL_INTEREST_READ)
+            io.detachFD(writeFd, POLL_INTEREST_WRITE)
 
             io.close(readFd)
             io.close(writeFd)
