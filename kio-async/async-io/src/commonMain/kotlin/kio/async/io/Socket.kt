@@ -1,11 +1,11 @@
 package kio.async.io
 
 expect suspend fun openConnection(host: String, port: Int): AsyncRawConnection
+expect suspend fun Socket.asAsyncConnection(): AsyncRawConnection
 
-interface ServerSocket {
-    suspend fun getBoundPort(): Result<Int>
+expect class ServerSocket
+expect class Socket
 
-    suspend fun accept(): AsyncRawConnection
-
-    suspend fun close()
-}
+expect suspend fun ServerSocket.getBoundPort(): Result<Int>
+expect suspend fun ServerSocket.accept(): Socket
+expect suspend fun ServerSocket.close()

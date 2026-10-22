@@ -1,32 +1,33 @@
 package kio.http
 
-import kio.async.AsyncRawSource
-import kio.async.SuspendIo
+import kio.async.*
 import kio.async.io.asyncRawSource
-import kio.async.open
-import kio.async.poller
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.io.Buffer
 import kotlinx.io.IOException
-import platform.posix.EINTR
-import platform.posix.F_GETFL
-import platform.posix.F_SETFL
-import platform.posix.O_CLOEXEC
-import platform.posix.O_CREAT
-import platform.posix.O_NONBLOCK
-import platform.posix.O_RDONLY
-import platform.posix.O_TRUNC
-import platform.posix.O_WRONLY
-import platform.posix.errno
-import platform.posix.fcntl
-import platform.posix.strerror
+import platform.posix.*
 
 internal actual suspend fun openFileSource(path: String): AsyncRawSource {
     val io = currentCoroutineContext().poller.io
     val fd = io.openFile(path)
 
-    return io.asyncRawSource(fd)
+    io.attachFD(fd, POLL_INTEREST_READ)
+
+    val source = io.asyncRawSource(fd)
+    return object : AsyncRawSource {
+        override suspend fun readAtMostTo(
+            sink: Buffer,
+            byteCount: Long
+        ): Long = source.readAtMostTo(sink, byteCount)
+
+        override suspend fun close() {
+            io.detachFD(fd, POLL_INTEREST_READ)
+
+            source.close()
+        }
+    }
 }
 
 @OptIn(ExperimentalForeignApi::class)

@@ -270,12 +270,12 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
 
     override suspend fun suspendAccept(
         fd: Int,
-        addr: CPointer<sockaddr_in>,
-        addrLen: CPointer<UIntVarOf<UInt>>
+        addr: CPointer<sockaddr_in>?,
+        addrLen: CPointer<UIntVarOf<UInt>>?
     ): Int = suspendCancellableCoroutine { c ->
         val sqe = takeRequestSqe()
 
-        io_uring_prep_accept(sqe, fd, addr.reinterpret(), addrLen, 0)
+        io_uring_prep_accept(sqe, fd, addr?.reinterpret(), addrLen, 0)
         val id = nextActionId()
         io_uring_sqe_set_data64(sqe, id)
         requestMap[id] = UringReq.Accept(c)

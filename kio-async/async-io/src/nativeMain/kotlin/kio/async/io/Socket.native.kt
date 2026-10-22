@@ -81,47 +81,33 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
     }
 }
 
-fun SuspendIo.serverSocket(serverFd: Int): ServerSocket = FdServerSocket(this, serverFd)
 
-private class FdServerSocket(
-    private val io: SuspendIo,
-    private val serverFd: Int,
-) : ServerSocket {
-    init {
-        io.attachFD(serverFd, POLL_INTEREST_READ)
-    }
+actual suspend fun Socket.asAsyncConnection(): AsyncRawConnection {
+    val io = currentCoroutineContext().poller.io
+    return FdRawAsyncConnection(io, this)
+}
 
-    override suspend fun getBoundPort(): Result<Int> {
-        return getBoundPort(io, serverFd)
-    }
+fun SuspendIo.serverSocket(serverFd: Int): ServerSocket {
+    attachFD(serverFd, POLL_INTEREST_READ)
+    return serverFd
+}
 
-    override suspend fun accept(): AsyncRawConnection = memScoped {
-        val clientAddr = alloc<sockaddr_in> {}
-        val clientAddrLen = alloc<UIntVar> { value = sizeOf<sockaddr_in>().convert() }
+actual typealias ServerSocket = Int
+actual typealias Socket = Int
+actual suspend fun ServerSocket.accept(): Socket {
+    val io = currentCoroutineContext().poller.io
+    return io.accept(this, null, null)
+}
 
-        val clientFd =
-            io.accept(serverFd, clientAddr.ptr, clientAddrLen.ptr)
+actual suspend fun ServerSocket.close() {
+    val io = currentCoroutineContext().poller.io
+    io.detachFD(this, POLL_INTEREST_READ)
+    io.close(this)
+}
 
-        if (clientFd < 0) {
-            throw IOException("ERROR: could not accept connection from client: ${resultErrorMessage(clientFd)}")
-        }
-
-        try {
-            if (setNonBlocking(clientFd) < 0) {
-                throw IOException("ERROR: could not set client socket non-blocking.")
-            }
-
-            FdRawAsyncConnection(io, clientFd)
-        } catch (t: Throwable) {
-            io.close(clientFd)
-            throw t
-        }
-    }
-
-    override suspend fun close() {
-        io.detachFD(serverFd, POLL_INTEREST_READ)
-        io.close(serverFd)
-    }
+actual suspend fun ServerSocket.getBoundPort(): Result<Int> {
+    val io = currentCoroutineContext().poller.io
+    return getBoundPort(io, this)
 }
 
 private class FdRawAsyncConnection(
@@ -130,6 +116,10 @@ private class FdRawAsyncConnection(
     override val source: AsyncRawSource = io.asyncRawSource(fd),
     override val sink: AsyncRawSink = io.asyncRawSink(fd)
 ) : AsyncRawConnection {
+    init {
+        io.attachFD(fd, POLL_INTEREST_WRITE)
+        io.attachFD(fd, POLL_INTEREST_READ)
+    }
 
     private val closed = atomic(false)
 
@@ -148,6 +138,9 @@ private class FdRawAsyncConnection(
         } catch (e: IOException) {
             // Ignore exception when close.
         } finally {
+            io.detachFD(fd, POLL_INTEREST_WRITE)
+            io.detachFD(fd, POLL_INTEREST_READ)
+
             io.close(fd)
         }
     }

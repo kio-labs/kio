@@ -28,7 +28,7 @@ actual interface SuspendIo: PosixApi, LinuxApi
 
 actual suspend fun SuspendIo.write(fd: Int, buf: CPointer<*>, byte: ULong): Int = suspendWrite(fd, buf, byte)
 actual suspend fun SuspendIo.read(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int = suspendRead(fd, bytes, nbyte)
-actual suspend fun SuspendIo.accept(fd: Int, addr: CPointer<sockaddr_in>, addrLen: CPointer<UIntVarOf<UInt>>): Int = suspendAccept(fd, addr, addrLen)
+actual suspend fun SuspendIo.accept(fd: Int, addr: CPointer<sockaddr_in>?, addrLen: CPointer<UIntVarOf<UInt>>?): Int = suspendAccept(fd, addr, addrLen)
 actual suspend fun SuspendIo.connect(fd: Int, addr: CPointer<sockaddr>, len: UInt): Int = suspendConnect(fd, addr, len)
 actual suspend fun SuspendIo.open(path: String?, flags: Int, mode: UInt): Int = suspendOpen(path, flags, mode)
 actual suspend fun SuspendIo.close(fd: Int): Int = suspendClose(fd)
