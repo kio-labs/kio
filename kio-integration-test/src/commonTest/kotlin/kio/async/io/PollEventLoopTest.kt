@@ -3,6 +3,7 @@ package kio.async.io
 import kio.async.PollerFactory
 import kio.async.poller
 import kio.async.runPollEventLoop
+import kio.util.getBoundPort
 import kio.util.tcpBind
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay

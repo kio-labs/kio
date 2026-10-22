@@ -3,6 +3,8 @@ package kio.util
 import kio.async.bind
 import kio.async.close
 import kio.async.io.ServerSocket
+import kio.async.io.getAddress
+import kio.async.io.port
 import kio.async.io.serverSocket
 import kio.async.listen
 import kio.async.poller

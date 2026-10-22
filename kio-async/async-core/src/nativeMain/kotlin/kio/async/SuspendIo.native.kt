@@ -49,6 +49,7 @@ interface PosixApi {
     suspend fun suspendStat(path: String?, buf: CPointer<platform.posix.stat>?): Int
     suspend fun suspendFstat(fd: Int, buf: CPointer<platform.posix.stat>?): Int
     suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
+    suspend fun suspendGetpeername(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
     suspend fun suspendMkdir(path: String?, mode: UInt): Int
 
     suspend fun suspendSendmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int
@@ -85,6 +86,7 @@ expect suspend fun SuspendIo.bind(fd: Int, addr: CPointer<sockaddr>?, addrlen: U
 expect suspend fun SuspendIo.listen(fd: Int, backlog: Int): Int
 expect suspend fun SuspendIo.socket(domain: Int, type: Int, protocol: Int): Int
 expect suspend fun SuspendIo.getsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
+expect suspend fun SuspendIo.getpeername(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
 expect suspend fun SuspendIo.mkdir(path: String?, mode: UInt): Int
 
 interface PosixSuspendIo : DefaultPosixApi, IoPoller {
@@ -184,6 +186,10 @@ interface DefaultPosixApi: PosixApi {
 
     override suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int {
         return platform.posix.getsockname(fd, addr, len).negErrno()
+    }
+
+    override suspend fun suspendGetpeername(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int {
+        return platform.posix.getpeername(fd, addr, len).negErrno()
     }
 
     @OptIn(UnsafeNumber::class)

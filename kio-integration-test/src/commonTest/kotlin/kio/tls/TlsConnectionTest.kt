@@ -3,9 +3,9 @@ package kio.tls
 import kio.async.PollerFactory
 import kio.async.io.accept
 import kio.async.io.asAsyncConnection
-import kio.async.io.getBoundPort
 import kio.async.io.openConnection
 import kio.async.runPollEventLoop
+import kio.util.getBoundPort
 import kio.util.tcpBind
 import kotlinx.coroutines.launch
 import kotlin.test.Test
