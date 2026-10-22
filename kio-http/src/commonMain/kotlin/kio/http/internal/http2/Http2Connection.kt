@@ -7,13 +7,12 @@ import io.ktor.http.HttpStatusCode
 import kio.async.buffered
 import kio.async.io.AsyncConnection
 import kio.async.io.buffered
+import kotlin.time.TimeSource
 import kio.http.CallContext
 import kio.http.Logger
 import kio.http.Route
 import kio.http.currentLoggingBackend
 import kio.http.trace
-import kio.http.error
-import kio.http.info
 import kio.http.internal.HttpRequestHead
 import kio.http.internal.HttpResponseHead
 import kio.http.internal.http2.Http2.FLAG_ACK
@@ -38,14 +37,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.io.IOException
 import kotlinx.io.bytestring.ByteString
 import kotlinx.io.bytestring.decodeToString
-import kotlinx.io.bytestring.isNotEmpty
 
 class StreamResetCancellationException(
     val errorCode: ErrorCode,
 ) : CancellationException("stream was reset: $errorCode")
 
 internal suspend fun Route.http2Connection(conn: AsyncConnection) {
-    val h2Logger = currentLoggingBackend().newLogger("HTTP2")
+    val h2Logger = currentLoggingBackend().newLogger("Http2Connection")
 
     with(h2Logger) {
         http2Connection(conn) { conn, stream ->
@@ -64,6 +62,8 @@ internal suspend fun http2Connection(
     // Normal stream failures should be handled inside each stream coroutine.
     // This handler is only a last-resort logger.
     val streamExceptionHandler = CoroutineExceptionHandler { context, t ->
+        // This callback cannot suspend; do not launch another failing logging coroutine.
+        println("ERROR Http2Connection: Unhandled failure\n${t.stackTraceToString()}")
     }
     withContext(streamExceptionHandler) {
         supervisorScope {
@@ -159,10 +159,11 @@ internal class Http2Connection constructor(
         )
 
         streams[streamId] = stream
-        h2Logger.info("Stream[$streamId] created.")
+        h2Logger.trace("Stream created", mapOf("streamId" to streamId))
 
         connectionScope.launch {
             handleStreamConnection(stream)
+            h2Logger.trace("Stream completed", mapOf("streamId" to streamId))
         }.also { job ->
             stream.scope = job as CoroutineScope
         }.invokeOnCompletion {
@@ -227,8 +228,15 @@ internal class Http2Connection constructor(
     }
 
     suspend fun receiveGoAway(lastGoodStreamId: Int, errorCode: ErrorCode, debugData: ByteString) {
-        if (debugData.isNotEmpty()) {
-            h2Logger.info("receive GoAway from peer: ${debugData.decodeToString()}")
+        val fields = mapOf(
+            "lastStreamId" to lastGoodStreamId,
+            "errorCode" to errorCode,
+            "debugData" to debugData.decodeToString(),
+        )
+        if (errorCode == ErrorCode.NO_ERROR) {
+            h2Logger.trace("GOAWAY received", fields)
+        } else {
+            h2Logger.warn("Peer reported HTTP/2 connection error", fields = fields)
         }
 
         streams.forEach { (streamId, stream) ->
@@ -414,17 +422,20 @@ context(http2Connection: Http2Connection)
 private suspend fun Route.handleHttp2Request(
     stream: Http2Stream,
 ) {
-    val logger = http2Connection.h2Logger
     val head = stream.requestHead
-    val fields = mapOf("method" to head.method, "target" to head.uri)
-    logger.trace("request head decoded.", fields)
+    val fields = mapOf("protocol" to "HTTP/2", "streamId" to stream.streamId, "method" to head.method, "target" to head.uri)
+    val handlerLogger = currentLoggingBackend().newLogger("HttpCall", extra = fields)
+
+    val started = TimeSource.Monotonic.markNow()
+    handlerLogger.trace("Request headers decoded")
     val (params, handler) = this.resolveHandler(head.uri, head.method)
 
     val conn = stream.buffered()
     val callContext = CallContext(
-        conn,
+        conn = conn,
         requestHead = head,
         body = conn.source,
+        logger = handlerLogger,
         getRequestTrailers = { stream.trailers },
         parameters = params,
         responseSink = { head, trailer ->
@@ -441,15 +452,28 @@ private suspend fun Route.handleHttp2Request(
     )
 
     try {
-        handler?.invoke(callContext)
-        logger.trace("handled request success.")
-    } finally {
-        callContext.requestBody?.close()
+        try {
+            handler?.invoke(callContext)
+        } finally {
+            callContext.requestBody?.close()
+        }
+
+        callContext.responseSink.flush()
+        callContext.responseSink.close()
+
+        handlerLogger.trace("Response sent", mapOf(
+            "status" to callContext.responseHead.statusCode.value,
+            "durationMs" to started.elapsedNow().inWholeMilliseconds,
+        ))
+    } catch (e: CancellationException) {
+        throw e
+    } catch (t: Throwable) {
+        // The connection boundary reports the exception; retain request context here.
+        handlerLogger.trace("Request failed", mapOf(
+            "reason" to t.toString(),
+            "headersCommitted" to callContext.isHeaderCommit,
+            "durationMs" to started.elapsedNow().inWholeMilliseconds,
+        ))
+        throw t
     }
-
-    // write response
-    callContext.responseSink.flush()
-    callContext.responseSink.close()
-
-    logger.trace("handled request finished.")
 }

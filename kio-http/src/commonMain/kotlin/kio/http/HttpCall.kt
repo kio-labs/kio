@@ -31,6 +31,7 @@ fun interface CallInterceptor {
 class CallContext internal constructor(
     internal val conn: AsyncConnection,
     requestHead: HttpRequestHead,
+    internal val logger: Logger? = null,
     body: AsyncRawSource = emptyAsyncRawSource(),
     parameters: Parameters = Parameters.Empty,
     private val getRequestTrailers: () -> Headers? = { null },

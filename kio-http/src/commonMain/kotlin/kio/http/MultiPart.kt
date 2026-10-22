@@ -1,7 +1,6 @@
 package kio.http
 
 import io.ktor.http.ContentDisposition
-import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpHeaders

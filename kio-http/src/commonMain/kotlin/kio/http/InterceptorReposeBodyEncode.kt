@@ -51,7 +51,7 @@ private suspend fun CallContext.encodeResponseBodyIfNeeded() {
 
     val encoder = encoders.first()
 
-    currentLoggerOrNull()?.trace("Encode response with encoder[${encoder.name}]")
+    logger?.trace("Encode response with encoder[${encoder.name}]")
 
     if (requestProtocolVersion == HttpProtocolVersion.HTTP_1_1) {
         wrapChunkedResponseSink()

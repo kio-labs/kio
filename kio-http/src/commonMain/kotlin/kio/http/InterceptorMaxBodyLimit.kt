@@ -13,7 +13,7 @@ fun MaxBodyLimit(max: Long): CallInterceptor = CallInterceptor { context, procee
         proceed(context)
     } catch (e: MaxBodyLimitException) {
         if (!context.isHeaderCommit) {
-            currentLoggerOrNull()?.warn("body limit reached", e)
+            context.logger?.trace("Request body too large; responding with HTTP 413", mapOf("maxBytes" to max))
             context.respond(HttpStatusCode.PayloadTooLarge)
         } else {
             throw e

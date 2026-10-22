@@ -52,7 +52,7 @@ private suspend fun CallContext.decodeRequestBodyIfNeeded() {
             ?: error("Unsupported Content-Encoding: ${encoding.value}")
     }
 
-    currentLoggerOrNull()?.trace("Decode request with decoders[${decoders}]")
+    logger?.trace("Decode request with decoders[${decoders}]")
 
     wrapRequestSource { src ->
         decoders.foldRight(src) { decoder, acc ->

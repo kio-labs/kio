@@ -12,7 +12,7 @@ fun Timeout(duration: Duration) : CallInterceptor = CallInterceptor { context, p
         }
     } catch (t: TimeoutCancellationException) {
         if (!context.isHeaderCommit) {
-            currentLoggerOrNull()?.warn("timeout", t)
+            context.logger?.warn("Request timed out; responding with HTTP 504", fields = mapOf("timeout" to duration))
             context.respond(HttpStatusCode.GatewayTimeout)
         } else {
             throw t

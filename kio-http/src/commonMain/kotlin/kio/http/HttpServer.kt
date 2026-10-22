@@ -25,18 +25,18 @@ suspend fun CoroutineScope.httpServer(
     block: suspend Route.() -> Unit
 ) {
     withContext(CoroutineLoggingBackend(loggingBackEnd)) {
-        val logger = loggingBackEnd.newLogger("Server")
+        val logger = loggingBackEnd.newLogger("HttpServer")
 
-        logger.info("start")
+        logger.trace("Configuring HTTP server")
 
         val route = Route(RootSegment, ArrayDeque())
         route.block()
 
-        logger.info("setup route complete")
+        logger.info("HTTP server started")
 
         with(logger) { startHttpServer(route, serverSocket, connectionWrapper) }
 
-        logger.info("stop")
+        logger.info("HTTP server stopped")
     }
 }
 
@@ -51,26 +51,21 @@ private suspend fun CoroutineScope.startHttpServer(
         val raw = try {
             serverSocket.accept().asAsyncConnection()
         } catch (t: IOException) {
-            logger.warn("failed when accept new connection", t)
+            logger.warn("Failed to accept connection", t)
             continue
         }
 
-        logger.info("Connection accepted")
+        logger.trace("Connection accepted")
 
         val conn = raw.connectionWrapper()
         launch {
             try {
                 val sslConnection = conn as? SslConnection
                 sslConnection?.let { ssl ->
-                    logger.info("tls handshake started")
-                    try {
-                        ssl.handShake()
-                        val fields = mapOf("alpn" to ssl.getSelectedAlpn())
-                        logger.info("tls handshake completed", fields)
-                    } catch (e: IOException) {
-                        logger.warn("tls handshake failed", e)
-                        throw e
-                    }
+                    logger.trace("TLS handshake started")
+                    ssl.handShake()
+                    val fields = mapOf("alpn" to ssl.getSelectedAlpn())
+                    logger.trace("TLS handshake completed", fields)
                 }
 
                 val selectedAlpn = sslConnection?.getSelectedAlpn()
@@ -81,14 +76,14 @@ private suspend fun CoroutineScope.startHttpServer(
             } catch (_: EOFException) {
                 logger.trace("connection closed by peer")
             } catch (e: IOException) {
-                logger.warn("connection disconnected with exception", e)
+                logger.trace("Connection I/O failed", mapOf("reason" to e.message))
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                logger.error("connection failed with exception", t)
+                logger.error("Unexpected connection failure", t)
             } finally {
                 conn.close()
-                logger.info("connection closed")
+                logger.trace("Connection closed")
             }
         }
     }
