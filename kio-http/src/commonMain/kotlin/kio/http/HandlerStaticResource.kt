@@ -1,6 +1,8 @@
 package kio.http
 
+import io.ktor.http.CacheControl
 import io.ktor.http.ContentType
+import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -14,6 +16,8 @@ import kotlinx.io.files.Path
 fun Route.staticResource(
     remotePath: String,
     basePackage: String,
+    configHeaders: HeadersBuilder.(Path) -> Unit = {},
+    configTrailers: HeadersBuilder.(Path) -> Unit = {},
     index: String? = "index.html",
 ) {
     route(remotePath) {
@@ -28,7 +32,12 @@ fun Route.staticResource(
                     return@registerCallHandler
                 }
 
+
                 val (resolvedFilePath, size) = resolvedResult
+
+                responseHead.headers.configHeaders(Path(resolvedFilePath))
+                responseTrailer.configTrailers(Path(resolvedFilePath))
+
                 respondFile(resolvedFilePath, size)
             }
         }
