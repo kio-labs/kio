@@ -531,9 +531,19 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
     var id = 0UL
     private fun nextActionId() = id++
 
-    private fun takeSqe() =
-        io_uring_get_sqe(ring.ptr)
-            ?: throw IOException("No available SQE.")
+    private fun takeSqe(): CPointer<io_uring_sqe> {
+        io_uring_get_sqe(ring.ptr)?.let { return it }
+
+        val ret = io_uring_submit(ring.ptr)
+        if (ret < 0) {
+            throw IOException(
+                "io_uring_submit failed: ${errnoMessage(ret)}"
+            )
+        }
+
+        return io_uring_get_sqe(ring.ptr)
+            ?: throw IOException("No available SQE after submission.")
+    }
 
     private fun takeRequestSqe(): CPointer<io_uring_sqe> {
         check(!shuttingDown && !closed) {
