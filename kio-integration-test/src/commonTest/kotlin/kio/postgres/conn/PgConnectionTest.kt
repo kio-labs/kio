@@ -6,10 +6,12 @@ import kio.async.io.buffered
 import kio.async.io.openPipe
 import kio.async.runPollEventLoop
 import kio.async.writeString
-import kio.postgres.types.PgBool
+import kio.postgres.types.PgArray
 import kio.postgres.types.PgInt4
 import kio.postgres.types.PgText
 import kio.postgres.types.PgTimestamp
+import kio.postgres.types.PostgresArraySerializer
+import kio.postgres.types.PostgresBoolSerializer
 import kio.postgres.types.PostgresFormat
 import kio.postgres.types.PostgresInt4Serializer
 import kio.postgres.types.PostgresTextSerializer
@@ -89,27 +91,29 @@ abstract class PgConnectionTest {
 
     @Test
     fun insertBooleanArrayTest() = withTestPgDatabase {
-        @Serializable
-        class Foo(val a: List<PgBool>)
         exec("create temporary table foo(spice bool[])")
         assertEquals(
             "INSERT 0 1",
-            exec("insert into foo(spice) values($1)", Foo(listOf(true, false, true)))
+            exec("insert into foo(spice) values($1)") {
+                param(PgArray(listOf(true, false, true)), PostgresArraySerializer(PostgresBoolSerializer))
+            }
         )
     }
 
     @Test
     fun insertTimestampArrayTest() = withTestPgDatabase {
         @Serializable
-        class Foo(val a: List<PgTimestamp>)
+        class Foo(val a: PgArray<PgTimestamp>)
         exec("create temporary table foo(spice timestamp[]);")
         assertEquals(
             "INSERT 0 1",
             exec(
                 "insert into foo(spice) values($1)", Foo(
-                    listOf(
-                        LocalDateTime(2014, 12, 21, 6, 34, 27),
-                        LocalDateTime(2014, 12, 21, 6, 34, 32),
+                    PgArray(
+                        listOf(
+                            LocalDateTime(2014, 12, 21, 6, 34, 27),
+                            LocalDateTime(2014, 12, 21, 6, 34, 32),
+                        )
                     )
                 )
             )

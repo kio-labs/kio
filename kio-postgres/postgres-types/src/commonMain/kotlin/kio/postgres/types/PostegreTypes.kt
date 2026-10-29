@@ -12,6 +12,8 @@ import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
@@ -580,8 +582,23 @@ object PostgresCircleSerializer : KSerializer<PgCircle> {
 class PostgresArraySerializer<T>(
     private val elementSerializer: KSerializer<T>
 ) : KSerializer<PgArray<T>> {
-    override val descriptor: SerialDescriptor =
-        buildClassSerialDescriptor(ARRAY_TYPE)
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor(
+        ARRAY_TYPE,
+        elementSerializer.descriptor,
+    ) {
+        element(
+            "values",
+            ListSerializer(elementSerializer).descriptor,
+        )
+        element(
+            "lengths",
+            ListSerializer(Int.serializer()).descriptor,
+        )
+        element(
+            "lowerBounds",
+            ListSerializer(Int.serializer()).descriptor,
+        )
+    }
 
     override fun serialize(encoder: Encoder, value: PgArray<T>) {
         encoder.encodeStructure(descriptor) {
@@ -915,9 +932,9 @@ fun getFormat(descriptor: SerialDescriptor): Short {
 
 fun getTypeOid(descriptor: SerialDescriptor): Int {
     return when {
-        descriptor.kind == StructureKind.LIST -> {
-            val childDescripter = descriptor.getElementDescriptor(0)
-            childDescripter.postegreArrayTypeOid()
+        descriptor.isPostgresArrayType() -> {
+            val childDescriptor = descriptor.getElementDescriptor(0).getElementDescriptor(0)
+            childDescriptor.postegreArrayTypeOid()
         }
 
         descriptor.isPostgresBuildInType() -> descriptor.postgresPrimitiveTypeOid()
