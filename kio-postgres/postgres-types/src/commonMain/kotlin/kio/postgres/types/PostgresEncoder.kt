@@ -8,7 +8,6 @@ import kotlinx.io.writeString
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationStrategy
 import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.encoding.AbstractEncoder
 import kotlinx.serialization.encoding.CompositeEncoder
 import kotlinx.serialization.encoding.Encoder
@@ -30,6 +29,11 @@ internal class PostgresEncoder(
             descriptor.isPostgresBuildInType() -> {
                 PostgresPrimitiveEncoder(postgres, sink)
             }
+
+            descriptor.isPostgresArrayType() -> {
+                PostgresArrayEncoder(postgres, sink)
+            }
+
             else -> {
                 sink.writeShort(descriptor.elementsCount.toShort())
                 InternalCompositePostgresEncoder(postgres, sink)
@@ -58,35 +62,28 @@ private class InternalCompositePostgresEncoder(
         }
     }
 
-    override fun <T> encodeSerializableElement(
-        descriptor: SerialDescriptor,
-        index: Int,
-        serializer: SerializationStrategy<T>,
-        value: T
-    ) {
-        val elementDescriptor = descriptor.getElementDescriptor(index)
+    override fun beginStructure(descriptor: SerialDescriptor): CompositeEncoder {
         val encoder = when {
-            elementDescriptor.isPostgresBuildInType() -> {
+            descriptor.isPostgresBuildInType() -> {
                 PostgresPrimitiveEncoder(postgres, sink)
             }
 
-            elementDescriptor.isPostgresMultiRangeType() -> {
+            descriptor.isPostgresMultiRangeType() -> {
                 PostgresMultiRangeEncoder(sink, postgres)
             }
 
-            elementDescriptor.kind == StructureKind.LIST -> {
-                val pgArray = descriptor.getElementAnnotations(index).filterIsInstance<PgArray>()
-                    .singleOrNull()
-                PostgresArrayEncoder(sink, pgArray, postgres)
+            descriptor.isPostgresArrayType() -> {
+                PostgresArrayEncoder(postgres, sink)
             }
 
-            elementDescriptor.isPostgresRangeType() -> {
+            descriptor.isPostgresRangeType() -> {
                 PostgresRangeEncoder(sink, postgres)
             }
 
             else -> this
         }
-        encoder.encodeSerializableValue(serializer, value)
+
+        return encoder
     }
 
     @ExperimentalSerializationApi
@@ -167,48 +164,31 @@ private class PostgresRangeEncoder(
 }
 
 @OptIn(ExperimentalSerializationApi::class)
-private class PostgresArrayEncoder(
-    private val sink: Sink,
-    private val pgArray: PgArray? = null,
+internal class PostgresArrayEncoder(
     private val postgres: PostgresFormat,
+    private val sink: Sink,
 ) : AbstractEncoder(), Encoder, CompositeEncoder {
     override val serializersModule: SerializersModule = postgres.serializersModule
 
-    var hasNull = false
-    var collectionSize: Int? = null
-    val tempBuffer = Buffer()
-    var elementOid : Int? = null
-
-    override fun <T> encodeSerializableElement(
-        descriptor: SerialDescriptor,
-        index: Int,
+    fun <T> encodePgArray(
         serializer: SerializationStrategy<T>,
-        value: T
+        pgArray: PgArray<T>,
     ) {
-        val elementDescriptor = descriptor.getElementDescriptor(index)
-        when {
-            elementDescriptor.isPostgresBuildInType() -> {
-                if (elementOid == null) elementOid = elementDescriptor.postgresPrimitiveTypeOid()
+        val elementOid = serializer.descriptor.postgresPrimitiveTypeOid()
+        val collectionSize = pgArray.values.size
+        val tempBuffer = Buffer()
+        var hasNull = false
 
-                val encoder = PostgresPrimitiveEncoder(postgres, tempBuffer)
-                encoder.encodeSerializableValue(serializer, value)
-                if (encoder.isMarkedNull) hasNull = true
+        for (value in pgArray.values) {
+            val encoder = PostgresPrimitiveEncoder(postgres, tempBuffer)
+            encoder.encodeSerializableValue(serializer, value)
+
+            if (encoder.isMarkedNull) {
+                hasNull = true
             }
-
-            else -> encodeSerializableValue(serializer, value)
         }
-    }
 
-    override fun beginCollection(
-        descriptor: SerialDescriptor,
-        collectionSize: Int
-    ): CompositeEncoder {
-        this.collectionSize = collectionSize
-        return this
-    }
-
-    override fun endStructure(descriptor: SerialDescriptor) {
-        val ndim = pgArray?.dimension ?: 1
+        val ndim = pgArray.dimension
 
         // write size header
         val headerSize = (3 + 2 * ndim) * 4
@@ -218,17 +198,17 @@ private class PostgresArrayEncoder(
         // write array header
         sink.writeInt(ndim)
         sink.writeInt(if (hasNull) 1 else 0)
-        sink.writeInt(elementOid!!)
+        sink.writeInt(elementOid)
 
         if (ndim == 1) {
-            val dimLength = pgArray?.lengths?.getOrNull(0)
-                ?: collectionSize!!.div(ndim)
+            val dimLength = pgArray.lengths.getOrNull(0)
+                ?: collectionSize.div(ndim)
             sink.writeInt(dimLength)
-            val lowerBound = pgArray?.lowerBounds?.getOrNull(0) ?: 1
+            val lowerBound = pgArray.lowerBounds.getOrNull(0) ?: 1
             sink.writeInt(lowerBound)
         } else {
             repeat(ndim) { i ->
-                val dimLength = pgArray?.lengths?.getOrNull(i)
+                val dimLength = pgArray.lengths.getOrNull(i)
                     ?: error("dimension length is required when setting array for $ndim dimension.")
                 sink.writeInt(dimLength)
                 val lowerBound = pgArray.lowerBounds.getOrNull(i) ?: 1

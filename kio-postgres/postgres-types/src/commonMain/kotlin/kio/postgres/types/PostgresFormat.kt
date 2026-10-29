@@ -28,9 +28,6 @@ object PostgresFormat : BinaryFormat {
         deserializer: DeserializationStrategy<T>,
         bytes: ByteArray
     ): T {
-        check(deserializer.descriptor.kind == StructureKind.CLASS) {
-            "only support class decode"
-        }
         val input = Buffer().apply { write(bytes) }
         val reader = PostgresDecoder(this, input)
         return reader.decodeSerializableValue(deserializer)

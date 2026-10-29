@@ -6,6 +6,7 @@ import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.io.Buffer
+import kotlinx.io.bytestring.ByteString
 import kotlinx.io.readByteArray
 import kotlinx.io.writeDouble
 import kotlinx.io.writeFloat
@@ -378,7 +379,7 @@ class PostgresFormatTest {
     @Test
     fun postgresIntArraySerializerTest() {
         @Serializable
-        data class Foo(@PgArray val value: List<PgInt4>)
+        data class Foo(val value: PgArray<PgInt4>)
 
         val intArray = byteArrayOf(
             0x00, 0x00, 0x00, 0x01, // ndim = 1
@@ -401,14 +402,41 @@ class PostgresFormatTest {
             Foo.serializer(),
             Buffer().apply { writeShort(1); writeInt(intArray.size); write(intArray) }
                 .readByteArray(),
-            Foo(listOf(1, 2, 3))
+            Foo(PgArray(listOf(1, 2, 3)))
+        )
+    }
+
+    @Test
+    fun postgresIntArraySerializerTest2() {
+        val intArray = byteArrayOf(
+            0x00, 0x00, 0x00, 0x01, // ndim = 1
+            0x00, 0x00, 0x00, 0x00, // has_null = 0
+            0x00, 0x00, 0x00, 0x17, // element_oid = 23
+
+            0x00, 0x00, 0x00, 0x03, // dim length = 3
+            0x00, 0x00, 0x00, 0x01, // lower bound = 1
+
+            0x00, 0x00, 0x00, 0x04, // element length = 4
+            0x00, 0x00, 0x00, 0x01, // value = 1
+
+            0x00, 0x00, 0x00, 0x04,
+            0x00, 0x00, 0x00, 0x02,
+
+            0x00, 0x00, 0x00, 0x04,
+            0x00, 0x00, 0x00, 0x03,
+        )
+        assertSerializerEncodeAndDecode(
+            PostgresArraySerializer(PostgresInt4Serializer),
+            Buffer().apply { writeInt(intArray.size); write(intArray) }
+                .readByteArray(),
+            PgArray(listOf(1, 2, 3))
         )
     }
 
     @Test
     fun postgresNullableIntArraySerializerTest() {
         @Serializable
-        data class Foo(@PgArray val value: List<PgInt4?>)
+        data class Foo(val value: PgArray<PgInt4?>)
 
         val intArray = byteArrayOf(
             0x00, 0x00, 0x00, 0x01, // ndim = 1
@@ -430,14 +458,14 @@ class PostgresFormatTest {
             Foo.serializer(),
             Buffer().apply { writeShort(1); writeInt(intArray.size); write(intArray) }
                 .readByteArray(),
-            Foo(listOf(1, null, 3))
+            Foo(PgArray(listOf(1, null, 3)))
         )
     }
 
     @Test
     fun postgres2DIntArraySerializerTest() {
         @Serializable
-        data class Foo(@PgArray(dimension = 2, lengths = [2, 2]) val value: List<PgInt4?>)
+        data class Foo(val value: PgArray<PgInt4?>)
 
         val intArray = byteArrayOf(
             0x00, 0x00, 0x00, 0x02,   // ndim = 2
@@ -463,14 +491,14 @@ class PostgresFormatTest {
             Foo.serializer(),
             Buffer().apply { writeShort(1); writeInt(intArray.size); write(intArray) }
                 .readByteArray(),
-            Foo(listOf(1, 2, 3, 4))
+            Foo(PgArray(listOf(1, 2, 3, 4), listOf(2, 2)))
         )
     }
 
     @Test
     fun postgres2DNullableStringArraySerializerTest() {
         @Serializable
-        data class Foo(val value: List<PgText?>)
+        data class Foo(val value: PgArray<PgText?>)
 
         val intArray = byteArrayOf(
             0x00, 0x00, 0x00, 0x01,   // ndim = 1
@@ -495,7 +523,7 @@ class PostgresFormatTest {
             Foo.serializer(),
             Buffer().apply { writeShort(1); writeInt(intArray.size); write(intArray) }
                 .readByteArray(),
-            Foo(listOf(null, "12313123123", "1", "3"))
+            Foo(PgArray(listOf(null, "12313123123", "1", "3")))
         )
     }
 
@@ -713,7 +741,7 @@ class PostgresFormatTest {
         )
         val serializer: KSerializer<PgInt8?> = PostgresInt8Serializer.nullable
         val encode = PostgresFormat.encodeToByteArray(serializer, null)
-        assertEquals(data, encode)
+        assertEquals(ByteString(data), ByteString(encode))
     }
 
     @Test
@@ -754,7 +782,7 @@ private fun <T : Any> assertSerializerEncodeAndDecode(
     expected: ByteArray,
     source: T
 ) {
-    val encode = PostgresFormat.encodeToByteArray(serializer as KSerializer<T>, source)
+    val encode = PostgresFormat.encodeToByteArray(serializer, source)
     assertByteArrayEquals(expected, encode)
     assertEquals(source, PostgresFormat.decodeFromByteArray(serializer, encode))
 }

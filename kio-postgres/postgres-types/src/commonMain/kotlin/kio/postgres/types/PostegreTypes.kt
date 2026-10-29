@@ -12,6 +12,8 @@ import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
@@ -23,7 +25,6 @@ import kotlinx.serialization.encoding.encodeStructure
 import kotlin.experimental.and
 import kotlin.experimental.or
 import kotlin.time.Instant
-import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 // TODO: Support get types from PgType Serializer.
@@ -48,7 +49,6 @@ typealias PgTimestampTz = @Serializable(PostgresTimestampTzSerializer::class) In
 typealias PgBytea = @Serializable(PostgresByteaSerializer::class) ByteArray
 typealias PgDate = @Serializable(PostgresDateSerializer::class) LocalDate
 typealias PgTime = @Serializable(PostgresTimeSerializer::class) LocalTime
-@OptIn(ExperimentalUuidApi::class)
 typealias PgUuid = @Serializable(PostgresUuidSerializer::class) Uuid
 typealias PgInt4Range = @Serializable(PostgresInt4RangeSerializer::class) PgRange<PgInt4>
 typealias PgInt8Range = @Serializable(PostgresInt8RangeSerializer::class) PgRange<PgInt8>
@@ -67,6 +67,34 @@ typealias PgTsTzMultiRange = @Serializable(PostgresTimeStampTzMultiRangeSerializ
 @Serializable(PostgresPathSerializer::class) data class PgPath(val closed: Boolean, val points: List<PgPoint>)
 @Serializable(PostgresPolygonSerializer::class) data class PgPolygon(val points: List<PgPoint>)
 @Serializable(PostgresCircleSerializer::class) data class PgCircle(val center: PgPoint, val radius: Double)
+
+
+@Serializable(with = PostgresArraySerializer::class)
+data class PgArray<T>(
+    val values: List<T>,
+    val lengths: List<Int> = if (values.isEmpty()) emptyList() else listOf(values.size),
+    val lowerBounds: List<Int> = List(lengths.size) { 1 },
+) {
+    val dimension: Int get() = lengths.size
+
+    init {
+        require(lengths.size == lowerBounds.size)
+        require(lengths.all { it > 0 })
+
+        if (lengths.isEmpty()) {
+            require(values.isEmpty())
+        } else {
+            var remaining = values.size
+            require(remaining > 0)
+
+            for (length in lengths) {
+                require(remaining % length == 0)
+                remaining /= length
+            }
+            require(remaining == 1)
+        }
+    }
+}
 
 data class PgRange<T>(
     val lower: T?,
@@ -334,7 +362,6 @@ object PostgresTimeSerializer : KSerializer<LocalTime> {
     }
 }
 
-@OptIn(ExperimentalUuidApi::class)
 object PostgresUuidSerializer : KSerializer<Uuid> {
     override val descriptor: SerialDescriptor =
         buildClassSerialDescriptor(POSTGRES_UUID_SERIALIZER_BIN) {}
@@ -552,16 +579,38 @@ object PostgresCircleSerializer : KSerializer<PgCircle> {
     }
 }
 
-private interface PostgresTextFormatSerializer : KSerializer<String> {
-    override fun serialize(encoder: Encoder, value: String) {
+class PostgresArraySerializer<T>(
+    private val elementSerializer: KSerializer<T>
+) : KSerializer<PgArray<T>> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor(
+        ARRAY_TYPE,
+        elementSerializer.descriptor,
+    ) {
+        element(
+            "values",
+            ListSerializer(elementSerializer).descriptor,
+        )
+        element(
+            "lengths",
+            ListSerializer(Int.serializer()).descriptor,
+        )
+        element(
+            "lowerBounds",
+            ListSerializer(Int.serializer()).descriptor,
+        )
+    }
+
+    override fun serialize(encoder: Encoder, value: PgArray<T>) {
         encoder.encodeStructure(descriptor) {
-            encodeStringElement(descriptor, 0, value)
+            val pgArrayEncoder = this as? PostgresArrayEncoder ?: error("PgArray requires PostgresFormat")
+            pgArrayEncoder.encodePgArray(elementSerializer, value)
         }
     }
 
-    override fun deserialize(decoder: Decoder): String {
+    override fun deserialize(decoder: Decoder): PgArray<T> {
         return decoder.decodeStructure(descriptor) {
-            decodeStringElement(descriptor, 0)
+            val pgArrayDecoder = this as? PostgresArrayDecoder ?: error("PgArray requires PostgresFormat")
+            pgArrayDecoder.decodePgArray(elementSerializer)
         }
     }
 }
@@ -883,9 +932,9 @@ fun getFormat(descriptor: SerialDescriptor): Short {
 
 fun getTypeOid(descriptor: SerialDescriptor): Int {
     return when {
-        descriptor.kind == StructureKind.LIST -> {
-            val childDescripter = descriptor.getElementDescriptor(0)
-            childDescripter.postegreArrayTypeOid()
+        descriptor.isPostgresArrayType() -> {
+            val childDescriptor = descriptor.getElementDescriptor(0).getElementDescriptor(0)
+            childDescriptor.postegreArrayTypeOid()
         }
 
         descriptor.isPostgresBuildInType() -> descriptor.postgresPrimitiveTypeOid()
@@ -896,10 +945,14 @@ fun getTypeOid(descriptor: SerialDescriptor): Int {
 }
 
 private const val PRIMITIVE_TYPE_PREFIX = "postegre.primitive.types"
+private const val ARRAY_TYPE = "postgres.types.array"
 private const val RANGE_TYPE_PREFIX = "postegre.range.types"
 private const val MULTI_RANGE_TYPE_PREFIX = "postegre.multirange.types"
 private const val BIN_FORMAT_SUFFIX = ".bin"
 private const val TEXT_FORMAT_SUFFIX = ".text"
+
+internal fun SerialDescriptor.isPostgresArrayType() =
+    this.serialName.startsWith(ARRAY_TYPE)
 
 internal fun SerialDescriptor.isPostgresBuildInType() =
     this.serialName.startsWith(PRIMITIVE_TYPE_PREFIX)

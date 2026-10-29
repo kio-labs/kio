@@ -9,6 +9,8 @@ import kotlinx.io.readFloat
 import kotlinx.io.readString
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.StructureKind
 import kotlinx.serialization.encoding.AbstractDecoder
@@ -42,6 +44,13 @@ internal class PostgresDecoder(
                 val isNull = input.readPgElementTo(buffer)
                 check(input.exhausted())
                 PostgresPrimitiveDecoder(postgres, buffer, isNull)
+            }
+
+            descriptor.isPostgresArrayType() -> {
+                val buffer = Buffer()
+                val isNull = input.readPgElementTo(buffer)
+                check(input.exhausted())
+                PostgresArrayDecoder(postgres, buffer)
             }
 
             else -> {
@@ -82,7 +91,7 @@ private class InternalCompositePostgresDecoder(
                 PostgresMultiRangeDecoder(postegre, buffer)
             }
 
-            descriptor.kind == StructureKind.LIST -> {
+            descriptor.isPostgresArrayType() -> {
                 PostgresArrayDecoder(postegre, buffer)
             }
 
@@ -223,7 +232,7 @@ internal class PostgresRangeDecoder(
 
 @OptIn(ExperimentalSerializationApi::class)
 internal class PostgresArrayDecoder(
-    val postegre: PostgresFormat,
+    val postgres: PostgresFormat,
     val source: Buffer,
 ) : AbstractDecoder(), Decoder, CompositeDecoder {
     private val ndm = source.readInt()
@@ -240,7 +249,7 @@ internal class PostgresArrayDecoder(
         }
     }
 
-    override val serializersModule: SerializersModule = postegre.serializersModule
+    override val serializersModule: SerializersModule = postgres.serializersModule
 
     override fun decodeSequentially(): Boolean = true
 
@@ -273,13 +282,31 @@ internal class PostgresArrayDecoder(
             elementDescriptor.isPostgresBuildInType() -> {
                 val buffer = Buffer()
                 val isNull = source.readPgElementTo(buffer)
-                PostgresPrimitiveDecoder(postegre, buffer, isNull)
+                PostgresPrimitiveDecoder(postgres, buffer, isNull)
             }
 
             else -> this
         }
 
         return decoder.decodeSerializableValue(deserializer, previousValue)
+    }
+
+    fun <T> decodePgArray(
+        deserializer: KSerializer<T>,
+    ): PgArray<T> {
+        val values = decodeSerializableValue(
+            ListSerializer(deserializer),
+        )
+
+        check(source.exhausted()) {
+            "Unexpected trailing bytes in array"
+        }
+
+        return PgArray(
+            values = values,
+            lengths = dimensionLengthArray.toList(),
+            lowerBounds = lowerBoundArray.toList(),
+        )
     }
 }
 
