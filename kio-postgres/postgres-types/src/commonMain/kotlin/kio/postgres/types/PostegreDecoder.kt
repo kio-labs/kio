@@ -40,17 +40,11 @@ internal class PostgresDecoder(
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder {
         return when {
             descriptor.isPostgresBuildInType() -> {
-                val buffer = Buffer()
-                val isNull = input.readPgElementTo(buffer)
-                check(input.exhausted())
-                PostgresPrimitiveDecoder(postgres, buffer, isNull)
+                PostgresPrimitiveDecoder(postgres, input)
             }
 
             descriptor.isPostgresArrayType() -> {
-                val buffer = Buffer()
-                val isNull = input.readPgElementTo(buffer)
-                check(input.exhausted())
-                PostgresArrayDecoder(postgres, buffer)
+                PostgresArrayDecoder(postgres, input)
             }
 
             else -> {
@@ -76,26 +70,26 @@ private class InternalCompositePostgresDecoder(
     }
 
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder {
-        val buffer = Buffer()
-        val isNull = input.readPgElementTo(buffer)
         val decoder = when {
             descriptor.isPostgresBuildInType() -> {
-                PostgresPrimitiveDecoder(postegre, buffer, isNull)
+                PostgresPrimitiveDecoder(postegre, input)
             }
 
             descriptor.isPostgresRangeType() -> {
-                PostgresRangeDecoder(postegre, buffer)
+                PostgresRangeDecoder(postegre, input)
             }
 
             descriptor.isPostgresMultiRangeType() -> {
-                PostgresMultiRangeDecoder(postegre, buffer)
+                PostgresMultiRangeDecoder(postegre, input)
             }
 
             descriptor.isPostgresArrayType() -> {
-                PostgresArrayDecoder(postegre, buffer)
+                PostgresArrayDecoder(postegre, input)
             }
 
             descriptor.kind == StructureKind.CLASS -> {
+                val buffer = Buffer()
+                val isNull = input.readPgElementTo(buffer)
                 PostgresCompositeDecoder(postegre, descriptor, buffer)
             }
 
@@ -144,9 +138,7 @@ internal class PostgresCompositeDecoder(
         val oid = source.readInt()
         val decoder = when {
             elementDescriptor.isPostgresBuildInType() -> {
-                val buffer = Buffer()
-                val isNull = source.readPgElementTo(buffer)
-                PostgresPrimitiveDecoder(postegre, buffer, isNull)
+                PostgresPrimitiveDecoder(postegre, source)
             }
 
             elementDescriptor.kind == StructureKind.CLASS -> {
@@ -167,6 +159,8 @@ internal class PostgresMultiRangeDecoder(
     val postegre: PostgresFormat,
     val source: Buffer,
 ) : AbstractDecoder(), Decoder, CompositeDecoder {
+    private val size = source.readInt()
+
     override val serializersModule: SerializersModule = postegre.serializersModule
 
     override fun decodeSequentially(): Boolean = true
@@ -176,11 +170,9 @@ internal class PostgresMultiRangeDecoder(
     }
 
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder {
-        val buffer = Buffer()
-        val isNull = source.readPgElementTo(buffer)
         val decoder = when {
             descriptor.isPostgresRangeType() -> {
-                PostgresRangeDecoder(postegre, buffer)
+                PostgresRangeDecoder(postegre, source)
             }
 
             else -> error("not support decode ${descriptor.serialName} in multi-range decoder")
@@ -198,6 +190,8 @@ internal class PostgresRangeDecoder(
     val postegre: PostgresFormat,
     val source: Buffer,
 ) : AbstractDecoder(), Decoder, CompositeDecoder {
+    private val size = source.readInt()
+
     override val serializersModule: SerializersModule = postegre.serializersModule
 
     override fun decodeByte(): Byte {
@@ -215,12 +209,9 @@ internal class PostgresRangeDecoder(
     }
 
     override fun beginStructure(descriptor: SerialDescriptor): CompositeDecoder {
-        val buffer = Buffer()
-        val isNull = source.readPgElementTo(buffer)
-
         val decoder = when {
             descriptor.isPostgresBuildInType() -> {
-                PostgresPrimitiveDecoder(postegre, buffer, isNull)
+                PostgresPrimitiveDecoder(postegre, source)
             }
 
             else -> error("not support ${descriptor.serialName} in range decoder")
@@ -235,6 +226,8 @@ internal class PostgresArrayDecoder(
     val postgres: PostgresFormat,
     val source: Buffer,
 ) : AbstractDecoder(), Decoder, CompositeDecoder {
+    private val size = source.readInt()
+
     private val ndm = source.readInt()
     private val hasNull = source.readInt() != 0
     private val elementOid = source.readInt()
@@ -280,9 +273,7 @@ internal class PostgresArrayDecoder(
 
         val decoder = when {
             elementDescriptor.isPostgresBuildInType() -> {
-                val buffer = Buffer()
-                val isNull = source.readPgElementTo(buffer)
-                PostgresPrimitiveDecoder(postgres, buffer, isNull)
+                PostgresPrimitiveDecoder(postgres, source)
             }
 
             else -> this
@@ -327,13 +318,10 @@ private fun Source.readPgElementTo(buffer: Buffer): Boolean {
 private class PostgresPrimitiveDecoder(
     postegre: PostgresFormat,
     private val buffer: Buffer,
-    private val isNull: Boolean,
 ) : AbstractDecoder(), PgDecoder, PgCompositeDecoder {
     override val serializersModule: SerializersModule = postegre.serializersModule
 
-    override fun endStructure(descriptor: SerialDescriptor) {
-        check(buffer.exhausted())
-    }
+    private val size = buffer.readInt()
 
     override fun decodeElementIndex(descriptor: SerialDescriptor): Int {
         TODO("Not yet implemented")
@@ -371,7 +359,7 @@ private class PostgresPrimitiveDecoder(
     }
 
     override fun decodeString(): String {
-        return buffer.readString()
+        return buffer.readString(size.toLong())
     }
 
     override fun decodeFloat(): Float {
@@ -383,6 +371,6 @@ private class PostgresPrimitiveDecoder(
     }
 
     override fun decodeNotNullMark(): Boolean {
-        return !isNull
+        return size != -1
     }
 }
