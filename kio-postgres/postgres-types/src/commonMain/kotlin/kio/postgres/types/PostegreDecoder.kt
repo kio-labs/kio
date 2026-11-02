@@ -228,6 +228,7 @@ internal class PostgresArrayDecoder(
 ) : AbstractDecoder(), Decoder, CompositeDecoder {
     private val size = source.readInt()
 
+    private val remainingBeforeArray = source.size
     private val ndm = source.readInt()
     private val hasNull = source.readInt() != 0
     private val elementOid = source.readInt()
@@ -251,6 +252,7 @@ internal class PostgresArrayDecoder(
     }
 
     override fun decodeCollectionSize(descriptor: SerialDescriptor): Int {
+        if (ndm == 0) return 0
         return dimensionLengthArray.fold(1) { acc, i -> acc * i }
     }
 
@@ -289,8 +291,9 @@ internal class PostgresArrayDecoder(
             ListSerializer(deserializer),
         )
 
-        check(source.exhausted()) {
-            "Unexpected trailing bytes in array"
+        val consumed = remainingBeforeArray - source.size
+        check(consumed == size.toLong()) {
+            "Array size mismatch: expected $size bytes, consumed $consumed"
         }
 
         return PgArray(
