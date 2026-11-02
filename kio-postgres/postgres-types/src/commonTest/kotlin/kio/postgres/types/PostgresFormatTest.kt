@@ -528,6 +528,21 @@ class PostgresFormatTest {
     }
 
     @Test
+    fun postgresZeroDimensionStringArraySerializerTest() {
+        val intArray = byteArrayOf(
+            0x00, 0x00, 0x00, 0x00, // ndim = 0
+            0x00, 0x00, 0x00, 0x00, // has_null = 0
+            0x00, 0x00, 0x00, 0x19, // element_oid = 25 (text)
+        )
+        assertSerializerEncodeAndDecode(
+            PostgresArraySerializer(PostgresTextSerializer),
+            Buffer().apply { writeInt(intArray.size); write(intArray) }
+                .readByteArray(),
+            PgArray(listOf())
+        )
+    }
+
+    @Test
     fun postgresCompositeSerializerTest() {
         @Serializable
         data class Person(val id: PgInt4, val name: PgText)
