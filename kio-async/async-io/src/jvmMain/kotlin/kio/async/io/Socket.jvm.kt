@@ -13,8 +13,8 @@ import kio.async.detachKey
 import kio.async.poller
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.io.Buffer
+import kotlinx.io.IOException
 import java.net.InetSocketAddress
-import java.net.StandardSocketOptions
 import java.nio.channels.ServerSocketChannel
 import java.nio.channels.SocketChannel
 
@@ -75,15 +75,20 @@ internal class ChannelRawAsyncConnection(
 
             val buf = Buffer()
 
-            while (true) {
-                val read = source.readAtMostTo(buf, 1024)
-                if (read == -1L) break
-                buf.skip(buf.size)
+            try {
+                while (true) {
+                    val read = source.readAtMostTo(buf, 1024)
+                    if (read == -1L) break
+                    buf.skip(buf.size)
+                }
+            } catch (e: IOException) {
+                // Ignore exception when close.
+            } finally {
+                io.detachKey(readHandle, POLL_INTEREST_READ)
+                io.detachKey(writeHandle, POLL_INTEREST_WRITE)
+                channel.close()
             }
         }
-
-        io.detachKey(readHandle, POLL_INTEREST_READ)
-        io.detachKey(writeHandle, POLL_INTEREST_WRITE)
     }
 }
 actual class Socket(val delegate: SocketChannel)
