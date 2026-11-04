@@ -19,27 +19,25 @@ import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
 
 fun Route.websocket(uri: String, handler: suspend CoroutineScope.(WebsocketContext) -> Unit) {
-    route(uri) {
-        registerCallHandler(HttpMethod.Get) {
-            val key = requestHeaders[HttpHeaders.SecWebSocketKey]
+    registerCall(HttpMethod.Get, uri) {
+        val key = requestHeaders[HttpHeaders.SecWebSocketKey]
 
-            // Do handshake
-            responseHead.apply {
-                statusCode = HttpStatusCode.SwitchingProtocols
-                headers[HttpHeaders.Upgrade] = "websocket"
-                headers[HttpHeaders.Connection] = "Upgrade"
-                if (key != null) {
-                    headers[HttpHeaders.SecWebSocketAccept] = websocketServerAccept(key)
-                }
+        // Do handshake
+        responseHead.apply {
+            statusCode = HttpStatusCode.SwitchingProtocols
+            headers[HttpHeaders.Upgrade] = "websocket"
+            headers[HttpHeaders.Connection] = "Upgrade"
+            if (key != null) {
+                headers[HttpHeaders.SecWebSocketAccept] = websocketServerAccept(key)
             }
-
-            responseSink.flush()
-
-            val wsConnection = conn.upgradeToWsConnection()
-            val context = WebsocketContext()
-
-            doWebsocketConnection(wsConnection, context, handler)
         }
+
+        responseSink.flush()
+
+        val wsConnection = conn.upgradeToWsConnection()
+        val context = WebsocketContext()
+
+        doWebsocketConnection(wsConnection, context, handler)
     }
 }
 
