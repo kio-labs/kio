@@ -10,6 +10,7 @@ import kio.websocket.WebSocketEvent
 import kio.websocket.WsConnection
 import kio.websocket.sendTextMessage
 import kio.websocket.upgradeToWsConnection
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.channels.SendChannel
@@ -17,7 +18,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
 
-fun Route.websocket(uri: String, handler: suspend (WebsocketContext) -> Unit) {
+fun Route.websocket(uri: String, handler: suspend CoroutineScope.(WebsocketContext) -> Unit) {
     route(uri) {
         registerCallHandler(HttpMethod.Get) {
             val key = requestHeaders[HttpHeaders.SecWebSocketKey]
@@ -42,8 +43,6 @@ fun Route.websocket(uri: String, handler: suspend (WebsocketContext) -> Unit) {
     }
 }
 
-typealias WebsocketHandler = suspend WebsocketContext.() -> Unit
-
 class WebsocketContext {
     internal val receiveChannel = Channel<WebSocketEvent.Message>()
     val incoming: ReceiveChannel<WebSocketEvent.Message> = receiveChannel
@@ -63,10 +62,10 @@ suspend fun WebsocketContext.sendBinary(buffer: Buffer) {
 private suspend fun doWebsocketConnection(
     wsConnection: WsConnection,
     context: WebsocketContext,
-    handler: WebsocketHandler
+    handler: suspend CoroutineScope.(WebsocketContext) -> Unit
 ) = coroutineScope {
     val handlerJob = launch {
-        handler(context)
+        coroutineScope { handler(context) }
         wsConnection.sendClose(CloseCode.NORMAL)
     }
 
