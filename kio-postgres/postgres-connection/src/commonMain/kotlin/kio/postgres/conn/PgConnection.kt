@@ -34,8 +34,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -477,7 +475,7 @@ internal class InternalPgConnection(
     override val coroutineContext: CoroutineContext = parentContext + Job()
 
     private val messageChannel = Channel<Message>()
-    private val notificationSharedFlow = MutableSharedFlow<PgNotification>()
+    private val notificationChannel = Channel<PgNotification>(capacity = 64)
 
     private val messageDispatchJob = launchMessageDispatchLoop()
 
@@ -506,7 +504,7 @@ internal class InternalPgConnection(
 // Server notification
                 is Message.ParameterStatus -> parameterStatuses[msg.name] = msg.value
                 is Message.NoticeResponse -> onNotice(buildPgException(msg.errors))
-                is Message.NotificationResponse -> notificationSharedFlow.emit(PgNotification(msg.processId, msg.channel, msg.message))
+                is Message.NotificationResponse -> notificationChannel.send(PgNotification(msg.processId, msg.channel, msg.message))
 // Ignore Authentication message
                 else -> Unit
             }
@@ -560,7 +558,7 @@ internal class InternalPgConnection(
     override suspend fun exec(sql: String, parameters: PgParameterScope.() -> Unit): String =  exec(sql, parameters, lock = true)
 
     override suspend fun waitNotification(): PgNotification {
-        return notificationSharedFlow.first()
+        return notificationChannel.receive()
     }
 
     override suspend fun copyTo(sql: String, sink: Sink) = withRequestCycle(
