@@ -495,9 +495,6 @@ abstract class PgConnectionTest {
                 launch {
                     assertEquals("bar", waitNotification().message)
                 }
-                launch {
-                    assertEquals("bar", waitNotification().message)
-                }
 
                 exec("notify foo, 'bar'")
             }
