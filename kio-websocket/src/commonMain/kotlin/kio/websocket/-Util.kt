@@ -19,7 +19,7 @@
  * limitations under the License.
  */
 
-package kio.http.internal.ws
+package kio.websocket
 
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException

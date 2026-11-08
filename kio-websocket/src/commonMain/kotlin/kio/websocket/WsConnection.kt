@@ -4,8 +4,6 @@ import kio.async.AsyncSink
 import kio.async.AsyncSource
 import kio.async.io.AsyncConnection
 import kio.async.readByteArray
-import kio.http.internal.ws.InvalidUtf8Exception
-import kio.http.internal.ws.readCodePointValueOrThrow
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
@@ -17,7 +15,7 @@ import kotlinx.io.writeUShort
 import kotlin.experimental.and
 import kotlin.experimental.xor
 
-internal fun AsyncConnection.upgradeToWsConnection(): WsConnection = InternalWebSocket(false, this)
+fun AsyncConnection.upgradeToWsConnection(): WsConnection = InternalWebSocket(false, this)
 
 fun AsyncConnection.asWsClientConnection(): WsConnection = InternalWebSocket(true, this)
 
@@ -41,18 +39,6 @@ enum class CloseCode(val code: Int) {
     SERVICE_RESTART(1012),
     TRY_AGAIN_LATER(1013),
     BAD_GATEWAY(1014),
-}
-
-internal enum class MessageType {
-    TEXT,
-    BIN,
-}
-
-internal fun Message(messageType: MessageType, buffer: Buffer): WebSocketEvent.Message {
-    return when (messageType) {
-        MessageType.TEXT -> WebSocketEvent.Text(buffer.readString())
-        MessageType.BIN -> WebSocketEvent.Binary(buffer)
-    }
 }
 
 sealed interface WebSocketEvent {
@@ -79,6 +65,18 @@ interface WsConnection {
 
 suspend fun WsConnection.sendTextMessage(text: String, chunkSize: Long = CHUNK_SIZE) {
     sendMessage(MessageType.TEXT, payload = Buffer().apply { writeString(text) }, chunkSize)
+}
+
+internal enum class MessageType {
+    TEXT,
+    BIN,
+}
+
+internal fun Message(messageType: MessageType, buffer: Buffer): WebSocketEvent.Message {
+    return when (messageType) {
+        MessageType.TEXT -> WebSocketEvent.Text(buffer.readString())
+        MessageType.BIN -> WebSocketEvent.Binary(buffer)
+    }
 }
 
 internal class InternalWebSocket(
@@ -291,7 +289,6 @@ private fun isValidReceivedCloseCode(code: Int): Boolean {
 }
 
 
-@OptIn(ExperimentalUnsignedTypes::class)
 internal suspend fun AsyncSink.sendFrame(
     isClient: Boolean,
     isFin: Boolean,

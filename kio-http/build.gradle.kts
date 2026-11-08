@@ -16,6 +16,7 @@ kotlin {
             api(libs.kotlinx.html)
             api(libs.ktor.http)
             implementation(project(":kio-tls"))
+            implementation(project(":kio-websocket"))
             implementation(project(":kio-async:async-io"))
             implementation(project(":kio-compression"))
         }
