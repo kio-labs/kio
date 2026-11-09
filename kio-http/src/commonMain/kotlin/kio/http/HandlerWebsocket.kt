@@ -17,6 +17,7 @@ import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
+import kotlinx.io.Source
 
 fun Route.websocket(uri: String, handler: suspend CoroutineScope.(WebsocketContext) -> Unit) {
     registerCall(HttpMethod.Get, uri) {
@@ -45,16 +46,16 @@ class WebsocketContext {
     internal val receiveChannel = Channel<WebSocketEvent.Message>()
     val incoming: ReceiveChannel<WebSocketEvent.Message> = receiveChannel
 
-    internal val sendChannel = Channel<WebSocketEvent.Message>()
-    val outgoing: SendChannel<WebSocketEvent.Message> = sendChannel
+    internal val sendChannel = Channel<Any>()
+    internal val outgoing: SendChannel<Any> = sendChannel
 }
 
 suspend fun WebsocketContext.sendText(text: String) {
-    outgoing.send(WebSocketEvent.Text(text))
+    outgoing.send(text)
 }
 
-suspend fun WebsocketContext.sendBinary(buffer: Buffer) {
-    outgoing.send(WebSocketEvent.Binary(buffer))
+suspend fun WebsocketContext.sendBinary(buffer: Source) {
+    outgoing.send(buffer)
 }
 
 private suspend fun doWebsocketConnection(
@@ -69,9 +70,11 @@ private suspend fun doWebsocketConnection(
 
     val receiveJob = launch {
         try {
+            val buffer = Buffer()
             while (true) {
-                when (val event = wsConnection.readMessage()) {
-                    WebSocketEvent.Close -> {
+                buffer.clear()
+                when (val event = wsConnection.readMessage(buffer)) {
+                    is WebSocketEvent.Close -> {
                         break
                     }
 
@@ -88,8 +91,8 @@ private suspend fun doWebsocketConnection(
     val sendJob = launch {
         for (message in context.sendChannel) {
             when (message) {
-                is WebSocketEvent.Binary -> wsConnection.sendBinMessage(message.buffer)
-                is WebSocketEvent.Text -> wsConnection.sendTextMessage(message.text)
+                is Source -> wsConnection.sendBinMessage(message)
+                is String -> wsConnection.sendTextMessage(message)
             }
         }
     }
