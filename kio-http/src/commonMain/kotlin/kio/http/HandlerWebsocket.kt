@@ -8,7 +8,6 @@ import kio.websocket.CloseCode
 import kio.websocket.ProtocolException
 import kio.websocket.WebSocketEvent
 import kio.websocket.WsConnection
-import kio.websocket.sendTextMessage
 import kio.websocket.upgradeToWsConnection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -18,6 +17,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.io.Buffer
 import kotlinx.io.Source
+import kotlinx.io.writeString
 
 fun Route.websocket(uri: String, handler: suspend CoroutineScope.(WebsocketContext) -> Unit) {
     registerCall(HttpMethod.Get, uri) {
@@ -54,9 +54,11 @@ suspend fun WebsocketContext.sendText(text: String) {
     outgoing.send(text)
 }
 
-suspend fun WebsocketContext.sendBinary(buffer: Source) {
-    outgoing.send(buffer)
+suspend fun WebsocketContext.sendBinary(buffer: Source, length: Long) {
+    outgoing.send(WebSocketBin(buffer, length))
 }
+
+private data class WebSocketBin(val data: Source, val length: Long)
 
 private suspend fun doWebsocketConnection(
     wsConnection: WsConnection,
@@ -89,11 +91,21 @@ private suspend fun doWebsocketConnection(
     }
 
     val sendJob = launch {
+        val bufferToSend = Buffer()
         for (message in context.sendChannel) {
+            check(bufferToSend.size == 0L)
             when (message) {
-                is Source -> wsConnection.sendBinMessage(message)
-                is String -> wsConnection.sendTextMessage(message)
+                is WebSocketBin -> {
+                    val (buffer, length) = message
+                    bufferToSend.write(buffer, length)
+                    wsConnection.sendBinMessage(bufferToSend)
+                }
+                is String -> {
+                    bufferToSend.writeString(message)
+                    wsConnection.sendTextMessage(bufferToSend)
+                }
             }
+
         }
     }
 
