@@ -13,7 +13,6 @@ import kio.websocket.WebSocketEvent
 import kio.websocket.WsConnection
 import kio.websocket.asWsClientConnection
 import kio.websocket.sendFrame
-import kio.websocket.sendTextMessage
 import kio.websocket.upgradeToWsConnection
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.CoroutineScope
@@ -197,11 +196,15 @@ private fun withWebSocketTest(
 
     val serverJob = launch {
         try {
-            val buffer = Buffer()
+            val readBuffer = Buffer()
+            val writeBuffer = Buffer()
             while (isActive) {
-                buffer.skip(buffer.size)
-                when (val msg = mock.wsServerConn.readMessage(buffer)) {
-                    is WebSocketEvent.Text -> mock.wsServerConn.sendTextMessage(msg.text)
+                readBuffer.skip(readBuffer.size)
+                when (val msg = mock.wsServerConn.readMessage(readBuffer)) {
+                    is WebSocketEvent.Text -> {
+                        writeBuffer.writeString(msg.text)
+                        mock.wsServerConn.sendTextMessage(writeBuffer)
+                    }
                     is WebSocketEvent.Binary -> mock.wsServerConn.sendBinMessage(msg.buffer)
                     is WebSocketEvent.Close -> break
                 }

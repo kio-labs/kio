@@ -76,14 +76,12 @@ interface WsConnection {
     suspend fun sendClose(code: CloseCode, reason: String? = null)
 }
 
-suspend fun WsConnection.sendTextMessage(text: String, chunkSize: Long = CHUNK_SIZE) {
-    sendMessage(MessageType.TEXT, payload = Buffer().apply { writeString(text) }, chunkSize)
-}
-
 internal class InternalWebSocket(
     override val isClient: Boolean,
     val conn: AsyncConnection,
 ) : WsConnection, KWebSocket {
+    val readBuffer = Buffer()
+
     override var needSendCloseEvent: Boolean = true
 
     override suspend fun sendClose(code: CloseCode, reason: String?) {
@@ -370,20 +368,19 @@ internal suspend fun InternalWebSocket.readMessage(
     outBuffer: Buffer,
 ): WebSocketEvent {
     var messageType: MessageType? = null
-    val tempBuffer = Buffer()
     while (true) {
-        require(tempBuffer.size == 0L)
+        require(readBuffer.size == 0L)
 
-        val (isFin, rsv1, rsv2, rsv3, opCode) = conn.source.readFrame(tempBuffer)
-        val payloadLength = tempBuffer.size.toULong()
+        val (isFin, rsv1, rsv2, rsv3, opCode) = conn.source.readFrame(readBuffer)
+        val payloadLength = readBuffer.size.toULong()
 
         if (rsv1 || rsv2 || rsv3) throw ProtocolException(CloseCode.PROTOCOL_ERROR, "RSV must be 0")
 
         when (opCode) {
             Opcode.CLOSE -> {
-                checkControlFrame(opCode, isFin, tempBuffer, payloadLength)
+                checkControlFrame(opCode, isFin, readBuffer, payloadLength)
 
-                val content = tempBuffer.peek()
+                val content = readBuffer.peek()
                 val code = if (payloadLength >= 2UL) {
                     val value = content.readUShort().toInt()
                     CloseCode.entries.firstOrNull { it.code == value }
@@ -392,23 +389,23 @@ internal suspend fun InternalWebSocket.readMessage(
                 }
                 val reason = content.readString()
 
-                conn.sink.sendFrame(isClient, true, Opcode.CLOSE, tempBuffer, payloadLength)
+                conn.sink.sendFrame(isClient, true, Opcode.CLOSE, readBuffer, payloadLength)
                 this.needSendCloseEvent = false
 
                 return WebSocketEvent.Close(code, reason)
             }
 
             Opcode.PING -> {
-                checkControlFrame(opCode, isFin, tempBuffer, payloadLength)
+                checkControlFrame(opCode, isFin, readBuffer, payloadLength)
 
-                conn.sink.sendFrame(isClient, true, Opcode.PONG, tempBuffer, payloadLength)
+                conn.sink.sendFrame(isClient, true, Opcode.PONG, readBuffer, payloadLength)
                 continue
             }
 
             Opcode.PONG -> {
-                checkControlFrame(opCode, isFin, tempBuffer, payloadLength)
+                checkControlFrame(opCode, isFin, readBuffer, payloadLength)
 
-                tempBuffer.skip(payloadLength.toLong())
+                readBuffer.skip(payloadLength.toLong())
                 continue
             }
 
@@ -419,7 +416,7 @@ internal suspend fun InternalWebSocket.readMessage(
                 )
 
                 messageType = MessageType.TEXT
-                outBuffer.write(tempBuffer, payloadLength.toLong())
+                outBuffer.write(readBuffer, payloadLength.toLong())
             }
 
             Opcode.BIN -> {
@@ -429,7 +426,7 @@ internal suspend fun InternalWebSocket.readMessage(
                 )
 
                 messageType = MessageType.BIN
-                outBuffer.write(tempBuffer, payloadLength.toLong())
+                outBuffer.write(readBuffer, payloadLength.toLong())
             }
 
             Opcode.CONT -> {
@@ -437,7 +434,7 @@ internal suspend fun InternalWebSocket.readMessage(
                     CloseCode.PROTOCOL_ERROR,
                     "Continuation Frame received, but there is nothing to continue"
                 )
-                outBuffer.write(tempBuffer, payloadLength.toLong())
+                outBuffer.write(readBuffer, payloadLength.toLong())
             }
         }
 
