@@ -36,13 +36,15 @@ fun Route.websocket(uri: String, handler: suspend CoroutineScope.(WebsocketConte
         responseSink.flush()
 
         val wsConnection = conn.upgradeToWsConnection()
-        val context = WebsocketContext()
+        val context = WebsocketContext(this)
 
         doWebsocketConnection(wsConnection, context, handler)
     }
 }
 
-class WebsocketContext {
+class WebsocketContext(
+    val call: CallContext
+) {
     internal val receiveChannel = Channel<WebSocketEvent.Message>()
     val incoming: ReceiveChannel<WebSocketEvent.Message> = receiveChannel
 
