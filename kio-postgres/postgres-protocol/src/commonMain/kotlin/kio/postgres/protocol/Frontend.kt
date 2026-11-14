@@ -240,5 +240,7 @@ private suspend fun AsyncSink.writeCString(value: String) {
 private const val SHORT_SIZE = 2
 private const val INT_SIZE = 4
 private const val BYTE_SIZE = 1
-private fun cStringSize(value: String) = value.length + 1
+
+// TODO: calculate length of String without encode to byte array
+private fun cStringSize(value: String) = value.encodeToByteArray().size + 1
 private fun <T> countedListSize(list: List<T>, itemSize: Int) = SHORT_SIZE + list.size * itemSize

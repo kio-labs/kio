@@ -6,6 +6,10 @@ import kio.async.io.AsyncConnection
 import kio.async.readByteArray
 import kio.http.internal.ws.InvalidUtf8Exception
 import kio.http.internal.ws.readCodePointValueOrThrow
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.io.Buffer
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
@@ -81,6 +85,8 @@ internal class InternalWebSocket(
     val conn: AsyncConnection,
 ) : WsConnection, KWebSocket {
     val readBuffer = Buffer()
+    val writerMutex = Mutex()
+    val messageMutex = Mutex()
 
     override var needSendCloseEvent: Boolean = true
 
@@ -283,7 +289,6 @@ private fun isValidReceivedCloseCode(code: Int): Boolean {
     }
 }
 
-
 internal suspend fun AsyncSink.sendFrame(
     isClient: Boolean,
     isFin: Boolean,
@@ -345,22 +350,23 @@ internal suspend fun InternalWebSocket.doSendClose(
     code: CloseCode,
     reason: String? = null,
 ) {
-    if (!needSendCloseEvent) throw IOException("already send close event.")
+    writeWsFrameNonCancellable {
+        if (!needSendCloseEvent) throw IOException("already send close event.")
 
-    val payload = Buffer().apply {
-        writeUShort(code.code.toUShort())
-        reason?.let { writeString(it) }
+        val payload = Buffer().apply {
+            writeUShort(code.code.toUShort())
+            reason?.let { writeString(it) }
+        }
+        conn.sink.sendFrame(
+            isClient,
+            true,
+            Opcode.CLOSE,
+            payload,
+            payload.size.toULong()
+        )
+
+        needSendCloseEvent = false
     }
-
-    conn.sink.sendFrame(
-        isClient,
-        true,
-        Opcode.CLOSE,
-        payload,
-        payload.size.toULong()
-    )
-
-    needSendCloseEvent = false
 }
 
 internal suspend fun InternalWebSocket.readMessage(
@@ -389,7 +395,9 @@ internal suspend fun InternalWebSocket.readMessage(
                 }
                 val reason = content.readString()
 
-                conn.sink.sendFrame(isClient, true, Opcode.CLOSE, readBuffer, payloadLength)
+                writeWsFrameNonCancellable {
+                    conn.sink.sendFrame(isClient, true, Opcode.CLOSE, readBuffer, payloadLength)
+                }
                 this.needSendCloseEvent = false
 
                 return WebSocketEvent.Close(code, reason)
@@ -398,7 +406,9 @@ internal suspend fun InternalWebSocket.readMessage(
             Opcode.PING -> {
                 checkControlFrame(opCode, isFin, readBuffer, payloadLength)
 
-                conn.sink.sendFrame(isClient, true, Opcode.PONG, readBuffer, payloadLength)
+                writeWsFrameNonCancellable {
+                    conn.sink.sendFrame(isClient, true, Opcode.PONG, readBuffer, payloadLength)
+                }
                 continue
             }
 
@@ -454,7 +464,7 @@ internal suspend fun InternalWebSocket.sendMessage(
     type: MessageType,
     payload: Source,
     chunkSize: Long = CHUNK_SIZE,
-) {
+) = messageMutex.withLock {
     var isFirst = true
 
     val buffer = Buffer()
@@ -463,16 +473,25 @@ internal suspend fun InternalWebSocket.sendMessage(
 
         val isFinal = read == -1L // payload is exhausted
 
-        conn.sink.sendFrame(
-            isClient,
-            isFinal,
-            if (isFirst) type.toOpcode() else Opcode.CONT,
-            buffer,
-            read.coerceAtLeast(0L).toULong()
-        )
+        writeWsFrameNonCancellable {
+            conn.sink.sendFrame(
+                isClient,
+                isFinal,
+                if (isFirst) type.toOpcode() else Opcode.CONT,
+                buffer,
+                read.coerceAtLeast(0L).toULong()
+            )
+        }
 
         isFirst = false
 
         if (isFinal) break
     }
 }
+
+internal suspend inline fun InternalWebSocket.writeWsFrameNonCancellable(crossinline block: suspend () -> Unit) =
+    writerMutex.withLock {
+        withContext(NonCancellable) {
+            block()
+        }
+    }
