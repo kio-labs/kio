@@ -66,9 +66,12 @@ import linux.uring.io_uring_prep_shutdown
 import linux.uring.io_uring_prep_socket
 import linux.uring.io_uring_prep_statx
 import linux.uring.io_uring_prep_unlinkat
+import linux.uring.io_uring_prep_waitid
 import linux.uring.io_uring_queue_exit
 import linux.uring.io_uring_sqe
+import platform.posix.idtype_t
 import platform.posix.msghdr
+import platform.posix.siginfo_t
 import platform.posix.sockaddr_in
 
 /**
@@ -216,6 +219,7 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
                 is UringReq.Sendmsg -> completeRequest(req.c, result)
                 is UringReq.Recvmsg -> completeRequest(req.c, result)
                 is UringReq.SendTo -> completeRequest(req.c, result)
+                is UringReq.Waitid -> completeRequest(req.c, result)
                 is UringReq.Cancel -> Unit
             }
         } finally {
@@ -488,6 +492,23 @@ private class PollerLinuxUring(entries: Int) : Poller, SuspendIo, PosixApi, Defa
         }
     }
 
+    override suspend fun suspendWaitid(idtype: idtype_t, id: UInt, infop: CPointer<siginfo_t>?, options: Int): Int = suspendCancellableCoroutine { c ->
+        val sqe = takeRequestSqe()
+        val linuxIdType = when (idtype) {
+            idtype_t.P_ALL -> linux.uring.idtype_t.P_ALL
+            idtype_t.P_PID -> linux.uring.idtype_t.P_PID
+            idtype_t.P_PGID -> linux.uring.idtype_t.P_PGID
+        }
+        io_uring_prep_waitid(sqe, linuxIdType, id, infop?.reinterpret(), options, 0u)
+        val id = nextActionId()
+        io_uring_sqe_set_data64(sqe, id)
+        requestMap[id] = UringReq.Waitid(c)
+
+        c.invokeOnCancellation {
+            cancelRequest(id)
+        }
+    }
+
     override fun shutdown() {
         check(!closed)
         if (shuttingDown) return
@@ -573,6 +594,7 @@ private sealed interface UringReq {
     data class Sendmsg(val c: CancellableContinuation<Int>) : UringReq
     data class Recvmsg(val c: CancellableContinuation<Int>) : UringReq
     data class SendTo(val c: CancellableContinuation<Int>) : UringReq
+    data class Waitid(val c: CancellableContinuation<Int>) : UringReq
 }
 
 private fun errnoMessage(result: Int? = null): String {

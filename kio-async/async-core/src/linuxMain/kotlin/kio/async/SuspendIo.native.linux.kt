@@ -10,6 +10,8 @@ import kotlinx.cinterop.memScoped
 import linux.platform.AT_FDCWD
 import linux.platform.statx
 import platform.linux.SYS_unlinkat
+import platform.posix.idtype_t
+import platform.posix.siginfo_t
 import platform.posix.sockaddr
 import platform.posix.sockaddr_in
 import platform.posix.syscall
@@ -40,6 +42,7 @@ actual suspend fun SuspendIo.getsockname(fd: Int, addr: CPointer<sockaddr>?, len
 actual suspend fun SuspendIo.getpeername(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int = suspendGetpeername(fd, addr, len)
 actual suspend fun SuspendIo.mkdir(path: String?, mode: UInt): Int = suspendMkdir(path, mode)
 actual suspend fun SuspendIo.pread(fd: Int, bytes: CPointer<*>?, nbyte: ULong, offset: Long): Int = suspendPread(fd, bytes, nbyte, offset)
+actual suspend fun SuspendIo.waitid(idtype: idtype_t, id: UInt, infop: CPointer<siginfo_t>?, options: Int): Int = suspendWaitid(idtype, id, infop, options)
 suspend fun SuspendIo.unlink(path: String?, flags: Int): Int = suspendUnlink(path, flags)
 suspend fun SuspendIo.unlinkat(fd: Int, path: String?, flags: Int): Int = suspendUnlinkat(fd, path, flags)
 

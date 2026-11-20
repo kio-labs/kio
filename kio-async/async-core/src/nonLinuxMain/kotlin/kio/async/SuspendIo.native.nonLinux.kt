@@ -5,6 +5,8 @@ package kio.async
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.UIntVarOf
+import platform.posix.idtype_t
+import platform.posix.siginfo_t
 import platform.posix.sockaddr
 import platform.posix.sockaddr_in
 
@@ -24,3 +26,4 @@ actual suspend fun SuspendIo.getsockname(fd: Int, addr: CPointer<sockaddr>?, len
 actual suspend fun SuspendIo.mkdir(path: String?, mode: UInt): Int = suspendMkdir(path, mode)
 actual suspend fun SuspendIo.pread(fd: Int, bytes: CPointer<*>?, nbyte: ULong, offset: Long): Int = suspendPread(fd, bytes, nbyte, offset)
 actual suspend fun SuspendIo.getpeername(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int = suspendGetpeername(fd, addr, len)
+actual suspend fun SuspendIo.waitid(idtype: idtype_t, id: UInt, infop: CPointer<siginfo_t>?, options: Int): Int = suspendWaitid(idtype, id, infop, options)
