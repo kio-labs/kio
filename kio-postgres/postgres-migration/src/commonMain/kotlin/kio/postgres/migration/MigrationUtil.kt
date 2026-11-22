@@ -33,7 +33,8 @@ sealed interface MigrationResult {
 
 suspend fun PgConnection.migrate(
     migrations: List<Migration>,
-    targetVersion: Long? = getLargestVersion(migrations)
+    targetVersion: Long? = getLargestVersion(migrations),
+    onMigrate: (Migration) -> Unit = {}
 ): MigrationResult {
     ensureMigrationHistoryTable()
 
@@ -73,6 +74,7 @@ suspend fun PgConnection.migrate(
             )
         } else {
             migrated.add(migration)
+            onMigrate(migration)
         }
     }
 
