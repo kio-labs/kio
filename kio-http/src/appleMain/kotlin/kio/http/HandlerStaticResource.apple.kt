@@ -1,6 +1,7 @@
 package kio.http
 
 import kio.async.SuspendIo
+import kio.async.posix
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.memScoped
 import platform.posix.*
@@ -10,7 +11,7 @@ import kotlinx.cinterop.*
 @OptIn(ExperimentalForeignApi::class)
 internal actual suspend fun SuspendIo.getFileStatus(path: String): FileData? = memScoped {
     val struct_stat = alloc<stat>()
-    if (suspendStat(path, struct_stat.ptr) != 0) {
+    if (posix.stat(path, struct_stat.ptr) != 0) {
         if (errno == ENOENT) return null
         throw IOException("stat failed to ${path}: ${strerror(errno)?.toKString()}")
     }

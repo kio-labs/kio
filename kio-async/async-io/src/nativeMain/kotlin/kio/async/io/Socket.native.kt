@@ -7,16 +7,10 @@ import kio.async.AsyncRawSource
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.SuspendIo
-import kio.async.accept
 import kio.async.attachFD
-import kio.async.close
-import kio.async.connect
 import kio.async.detachFD
-import kio.async.getpeername
-import kio.async.getsockname
 import kio.async.poller
-import kio.async.shutdown
-import kio.async.socket
+import kio.async.posix
 import kotlinx.atomicfu.atomic
 import platform.posix.*
 import kotlinx.cinterop.*
@@ -49,7 +43,7 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
         var ai = result.value
 
         while (ai != null) {
-            val fd = io.socket(ai.pointed.ai_family, ai.pointed.ai_socktype, ai.pointed.ai_protocol)
+            val fd = io.posix.socket(ai.pointed.ai_family, ai.pointed.ai_socktype, ai.pointed.ai_protocol)
             if (fd < 0) {
                 lastError = IOException(resultErrorMessage(fd))
                 ai = ai.pointed.ai_next
@@ -65,13 +59,13 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
 
                 val aiAddr = ai.pointed.ai_addr ?: throw IOException("no ai_addr value")
                 io.attachFD(fd, POLL_INTEREST_WRITE)
-                io.connect(fd, aiAddr, ai.pointed.ai_addrlen)
+                io.posix.connect(fd, aiAddr, ai.pointed.ai_addrlen)
 
                 return@memScoped FdRawAsyncConnection(io = io, fd = fd)
             } catch (t: Throwable) {
                 lastError = t
                 io.detachFD(fd, POLL_INTEREST_WRITE)
-                io.close(fd)
+                io.posix.close(fd)
                 ai = ai.pointed.ai_next
             }
         }
@@ -98,13 +92,13 @@ actual typealias Socket = Int
 
 actual suspend fun ServerSocket.accept(): Socket {
     val io = currentCoroutineContext().poller.io
-    return io.accept(this, null, null)
+    return io.posix.accept(this, null, null)
 }
 
 actual suspend fun ServerSocket.close() {
     val io = currentCoroutineContext().poller.io
     io.detachFD(this, POLL_INTEREST_READ)
-    io.close(this)
+    io.posix.close(this)
 }
 
 private class FdRawAsyncConnection(
@@ -123,7 +117,7 @@ private class FdRawAsyncConnection(
     override suspend fun close() {
         if (!closed.compareAndSet(expect = false, update = true)) return
 
-        io.shutdown(fd, SHUT_WR)
+        io.posix.shutdown(fd, SHUT_WR)
 
         try {
             // drain source buffer
@@ -138,7 +132,7 @@ private class FdRawAsyncConnection(
             io.detachFD(fd, POLL_INTEREST_WRITE)
             io.detachFD(fd, POLL_INTEREST_READ)
 
-            io.close(fd)
+            io.posix.close(fd)
         }
     }
 }
@@ -176,7 +170,7 @@ private suspend fun SuspendIo.getsockname(fd: Int) = memScoped {
         value = sizeOf<sockaddr_storage>().convert()
     }
 
-    val ret = io.getsockname(fd, addr.ptr.reinterpret(), len.ptr)
+    val ret = io.posix.getsockname(fd, addr.ptr.reinterpret(), len.ptr)
     if (ret < 0) {
         return@memScoped Result.failure(IOException("getsockname failed: ${resultErrorMessage(ret)}"))
     }
@@ -192,7 +186,7 @@ private suspend fun SuspendIo.getpeername(fd: Int): Result<SocketAddress> = memS
         value = sizeOf<sockaddr_storage>().convert()
     }
 
-    val ret = io.getpeername(fd, addr.ptr.reinterpret(), len.ptr)
+    val ret = io.posix.getpeername(fd, addr.ptr.reinterpret(), len.ptr)
     if (ret < 0) {
         val error = errno
         return@memScoped Result.failure(IOException("getpeername failed: ${resultErrorMessage(-error)}"))

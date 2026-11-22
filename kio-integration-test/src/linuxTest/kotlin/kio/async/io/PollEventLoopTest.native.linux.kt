@@ -62,7 +62,7 @@ class UringEventLoopTest : PollEventLoopTest() {
         } else if (pid > 0) {
             memScoped {
                 val info = alloc<siginfo_t>()
-                val result = io.suspendWaitid(idtype_t.P_PID, pid.toUInt(), info.ptr, WEXITED)
+                val result = io.waitid(idtype_t.P_PID, pid.toUInt(), info.ptr, WEXITED)
                 assertEquals(0, result)
                 assertEquals(CLD_EXITED, info.si_code)
                 assertEquals(42, info._sifields._sigchld.si_status)

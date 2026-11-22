@@ -1,6 +1,7 @@
 package kio.compression
 
 import kio.async.SuspendIo
+import kio.async.posix
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
@@ -13,7 +14,7 @@ import platform.posix.strerror
 @OptIn(ExperimentalForeignApi::class)
 internal actual suspend fun SuspendIo.fileSize(fd: FileHandle): Long = memScoped {
     val stat = alloc<stat>()
-    val ret = suspendFstat(fd, stat.ptr)
+    val ret = posix.fstat(fd, stat.ptr)
     if (ret < 0) {
         throw IOException("stat failed to ${fd}: ${strerror(-ret)?.toKString()}")
     }

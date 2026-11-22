@@ -31,7 +31,7 @@ private class AsyncChannelRawSource(
         byteCount: Long,
     ): Long {
         while (true) {
-            val result = suspendIo.suspendRead(selectable, channel, sink, byteCount)
+            val result = suspendIo.read(selectable, channel, sink, byteCount)
 
             if (result == -1L) return -1
             if (result > 0L) return result
@@ -55,7 +55,7 @@ private class AsyncChannelRawSink(
         var remaining = byteCount
 
         while (remaining > 0) {
-            val written = suspendIo.suspendWrite(selectableChannel, channel, source, remaining)
+            val written = suspendIo.write(selectableChannel, channel, source, remaining)
 
             remaining -= written
         }

@@ -19,7 +19,7 @@ import platform.posix.strerror
 @OptIn(ExperimentalForeignApi::class)
 internal actual suspend fun SuspendIo.getFileStatus(path: String): FileData? = memScoped {
     val struct_stat = alloc<statx>()
-    val ret = suspendStatx(AT_FDCWD, path, 0, STATX_BASIC_STATS, struct_stat.ptr)
+    val ret = this@getFileStatus.statx(AT_FDCWD, path, 0, STATX_BASIC_STATS, struct_stat.ptr)
     if (ret != 0) {
         if (ret == -ENOENT) return null
         throw IOException("stat failed to ${path}: ${resultErrorMessage(ret)}")

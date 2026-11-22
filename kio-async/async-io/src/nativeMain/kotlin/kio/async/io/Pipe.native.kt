@@ -6,8 +6,8 @@ import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.SuspendIo
 import kio.async.attachFD
-import kio.async.close
 import kio.async.detachFD
+import kio.async.posix
 
 internal fun pipeConnection(io: SuspendIo, readFd: Int, writeFd: Int): AsyncRawConnection {
     io.attachFD(readFd, POLL_INTEREST_READ)
@@ -28,8 +28,8 @@ internal fun pipeConnection(io: SuspendIo, readFd: Int, writeFd: Int): AsyncRawC
             io.detachFD(readFd, POLL_INTEREST_READ)
             io.detachFD(writeFd, POLL_INTEREST_WRITE)
 
-            io.close(readFd)
-            io.close(writeFd)
+            io.posix.close(readFd)
+            io.posix.close(writeFd)
         }
     }
 }

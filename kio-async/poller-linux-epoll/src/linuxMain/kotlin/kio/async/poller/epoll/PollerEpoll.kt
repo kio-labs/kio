@@ -1,6 +1,6 @@
 package kio.async.poller.epoll
 
-import kio.async.LinuxSuspendIo
+import kio.async.LinuxApi
 import kio.async.POLL_INTEREST_READ
 import kio.async.POLL_INTEREST_WRITE
 import kio.async.PollInterest
@@ -38,7 +38,7 @@ object EPoll : PollerFactory {
 
 private const val EVENT_CAPACITY = 64
 
-private class EpollPoller : Poller, SuspendIo, LinuxSuspendIo, PosixSuspendIo {
+private class EpollPoller : Poller, SuspendIo, PosixSuspendIo {
     val epollfd = epoll_create1(0)
 
     @OptIn(ExperimentalForeignApi::class)

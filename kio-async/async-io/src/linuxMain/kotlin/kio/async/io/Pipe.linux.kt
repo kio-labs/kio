@@ -12,7 +12,7 @@ import kotlinx.cinterop.memScoped
 suspend fun pipe(pipeFlags: Int): AsyncRawConnection = memScoped {
     val io = currentCoroutineContext().poller.io
     val fds = allocArray<IntVar>(2)
-    check(io.suspendPipe(fds, pipeFlags) == 0)
+    check(io.pipe(fds, pipeFlags) == 0)
 
     val readFd: Int = fds[0]
     val writeFd: Int = fds[1]
