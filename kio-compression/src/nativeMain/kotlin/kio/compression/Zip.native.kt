@@ -2,12 +2,11 @@ package kio.compression
 
 import kio.async.AsyncRawSource
 import kio.async.SuspendIo
+import kio.async.posix
 import kotlinx.io.Buffer
 import kotlinx.io.IOException
 import kotlinx.io.UnsafeIoApi
 import kotlinx.io.unsafe.UnsafeBufferOperations
-import kio.async.close
-import kio.async.pread
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
@@ -41,7 +40,7 @@ private class PositionalFileSource(
             val read = data.usePinned { ba ->
                 val bytes = ba.addressOf(pos).reinterpret<uint8_tVar>()
 
-                io.pread(fd, bytes, maxToCopy.convert(), position).toLong()
+                io.posix.pread(fd, bytes, maxToCopy.convert(), position).toLong()
             }
             if (read < 0) throw IOException("failed to do pread, fd=$fd: ${strerror(-read.toInt())?.toKString()}")
             read.toInt()
@@ -54,7 +53,7 @@ private class PositionalFileSource(
     }
 
     override suspend fun close() {
-        io.close(fd)
+        io.posix.close(fd)
     }
 }
 

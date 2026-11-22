@@ -5,57 +5,50 @@ import kotlinx.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.ReadableByteChannel
 import java.nio.channels.SelectableChannel
+import java.nio.channels.SelectionKey
 import java.nio.channels.WritableByteChannel
 
-actual interface IoPoller {
-    suspend fun awaitIo(handle: SelectionKeyWrapper, interest: PollInterest)
+interface IoPoller {
+    suspend fun awaitIo(handle: SelectionKeyWrapper, selectionKey: Int)
 
-    fun attach(handle: SelectionKeyWrapper, event: PollInterest)
-    fun detach(handle: SelectionKeyWrapper, event: PollInterest)
-}
-
-fun SuspendIo.attachKey(handle: SelectionKeyWrapper, event: PollInterest) {
-    (this as? IoPoller)?.attach(handle, event)
-}
-
-fun SuspendIo.detachKey(handle: SelectionKeyWrapper, event: PollInterest) {
-    (this as? IoPoller)?.detach(handle, event)
+    fun attach(handle: SelectionKeyWrapper, selectionKey: Int)
+    fun detach(handle: SelectionKeyWrapper, selectionKey: Int)
 }
 
 actual interface SuspendIo {
-    suspend fun suspendRead(selectableChannel: SelectableChannel, channel: ReadableByteChannel, sink: Buffer, byteCount: Long): Long
-    suspend fun suspendWrite(selectableChannel: SelectableChannel, channel: WritableByteChannel, source: Buffer, byteCount: Long): Long
+    suspend fun read(selectableChannel: SelectableChannel, channel: ReadableByteChannel, sink: Buffer, byteCount: Long): Long
+    suspend fun write(selectableChannel: SelectableChannel, channel: WritableByteChannel, source: Buffer, byteCount: Long): Long
 
-    suspend fun suspendConnect(selectableChannel: SelectableChannel)
-    suspend fun suspendAccept(selectableChannel: SelectableChannel)
+    suspend fun connect(selectableChannel: SelectableChannel)
+    suspend fun accept(selectableChannel: SelectableChannel)
 }
 
 interface SuspendChannelIo : SuspendIo, IoPoller {
 
-    override suspend fun suspendRead(selectableChannel: SelectableChannel, channel: ReadableByteChannel, sink: Buffer, byteCount: Long): Long {
-        awaitIo(SelectionKeyWrapper(selectableChannel), POLL_INTEREST_READ)
+    override suspend fun read(selectableChannel: SelectableChannel, channel: ReadableByteChannel, sink: Buffer, byteCount: Long): Long {
+        awaitIo(SelectionKeyWrapper(selectableChannel), SelectionKey.OP_READ)
         val result = doRead(sink, byteCount) { byteBuffer ->
             channel.read(byteBuffer)
         }
         return result
     }
 
-    override suspend fun suspendWrite(selectableChannel: SelectableChannel, channel: WritableByteChannel, source: Buffer, byteCount: Long): Long {
+    override suspend fun write(selectableChannel: SelectableChannel, channel: WritableByteChannel, source: Buffer, byteCount: Long): Long {
         val written = doWriteOnce(source, byteCount) { byteBuffer ->
             channel.write(byteBuffer)
         }
         if (written == 0L) {
-            awaitIo(SelectionKeyWrapper(selectableChannel), POLL_INTEREST_WRITE)
+            awaitIo(SelectionKeyWrapper(selectableChannel), SelectionKey.OP_WRITE)
         }
         return written
     }
 
-    override suspend fun suspendConnect(selectableChannel: SelectableChannel) {
-        awaitIo(SelectionKeyWrapper(selectableChannel), POLL_INTEREST_CONNECT)
+    override suspend fun connect(selectableChannel: SelectableChannel) {
+        awaitIo(SelectionKeyWrapper(selectableChannel), SelectionKey.OP_CONNECT)
     }
 
-    override suspend fun suspendAccept(selectableChannel: SelectableChannel) {
-        awaitIo(SelectionKeyWrapper(selectableChannel), POLL_INTEREST_ACCEPT)
+    override suspend fun accept(selectableChannel: SelectableChannel) {
+        awaitIo(SelectionKeyWrapper(selectableChannel), SelectionKey.OP_ACCEPT)
     }
 }
 

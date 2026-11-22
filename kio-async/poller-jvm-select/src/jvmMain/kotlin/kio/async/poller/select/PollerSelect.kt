@@ -1,10 +1,5 @@
 package kio.async.poller.select
 
-import kio.async.POLL_INTEREST_ACCEPT
-import kio.async.POLL_INTEREST_CONNECT
-import kio.async.PollInterest
-import kio.async.POLL_INTEREST_READ
-import kio.async.POLL_INTEREST_WRITE
 import kio.async.Poller
 import kio.async.PollerFactory
 import kio.async.SelectionKeyWrapper
@@ -24,43 +19,40 @@ object Select : PollerFactory {
 internal class PollerSelect : Poller, SuspendChannelIo {
     private val selector = Selector.open()
 
-    private val continuationMap: MutableMap<Pair<SelectionKeyWrapper, PollInterest>, CancellableContinuation<Unit>> =
+    private val continuationMap: MutableMap<Pair<SelectionKeyWrapper, Int>, CancellableContinuation<Unit>> =
         mutableMapOf()
 
-    override fun attach(handle: SelectionKeyWrapper, event: PollInterest) {
-        val op = event.toOp()
-
+    override fun attach(handle: SelectionKeyWrapper, selectionKey: Int) {
         val key = handle.channel.keyFor(selector)
 
         if (key == null || !key.isValid) {
-            handle.channel.register(selector, op)
+            handle.channel.register(selector, selectionKey)
         } else {
-            key.interestOps(key.interestOps() or op)
+            key.interestOps(key.interestOps() or selectionKey)
         }
     }
 
-    override fun detach(handle: SelectionKeyWrapper, event: PollInterest) {
+    override fun detach(handle: SelectionKeyWrapper, selectionKey: Int) {
         val key = handle.channel.keyFor(selector)
         if (key == null || !key.isValid) return
 
-        val op = event.toOp()
-        val newOps = key.interestOps() and op.inv()
+        val newOps = key.interestOps() and selectionKey.inv()
 
         key.interestOps(newOps)
     }
 
-    override suspend fun awaitIo(handle: SelectionKeyWrapper, interest: PollInterest) = suspendCancellableCoroutine { c ->
-        continuationMap[handle to interest] = c
+    override suspend fun awaitIo(handle: SelectionKeyWrapper, selectionKey: Int) = suspendCancellableCoroutine { c ->
+        continuationMap[handle to selectionKey] = c
         c.invokeOnCancellation {
-            continuationMap.remove(handle to interest)
+            continuationMap.remove(handle to selectionKey)
         }
     }
 
     override val io: SuspendIo = this
 
     override fun poll(timeoutMillis: Long) {
-        fun onActive(handle: Any, event: PollInterest) {
-            val c  = continuationMap.remove(handle to event)
+        fun onActive(handle: Any, selectionKey: Int) {
+            val c  = continuationMap.remove(handle to selectionKey)
             c?.resume(Unit)
         }
         when (timeoutMillis) {
@@ -76,13 +68,13 @@ internal class PollerSelect : Poller, SuspendChannelIo {
             val channel = SelectionKeyWrapper(key.channel())
             val readyOp = key.readyOps()
             if (readyOp and SelectionKey.OP_READ != 0) {
-                onActive(channel, POLL_INTEREST_READ)
+                onActive(channel, SelectionKey.OP_READ)
             } else if (readyOp and SelectionKey.OP_ACCEPT != 0) {
-                onActive(channel, POLL_INTEREST_ACCEPT)
+                onActive(channel, SelectionKey.OP_ACCEPT)
             } else if (readyOp and SelectionKey.OP_WRITE != 0) {
-                onActive(channel, POLL_INTEREST_WRITE)
+                onActive(channel, SelectionKey.OP_WRITE)
             } else if (readyOp and SelectionKey.OP_CONNECT != 0) {
-                onActive(channel, POLL_INTEREST_CONNECT)
+                onActive(channel, SelectionKey.OP_CONNECT)
             }
         }
     }
@@ -100,13 +92,5 @@ internal class PollerSelect : Poller, SuspendChannelIo {
 
     override fun close() {
         selector.close()
-    }
-
-    private fun PollInterest.toOp(): Int = when (this) {
-        POLL_INTEREST_READ -> SelectionKey.OP_READ
-        POLL_INTEREST_WRITE -> SelectionKey.OP_WRITE
-        POLL_INTEREST_CONNECT -> SelectionKey.OP_CONNECT
-        POLL_INTEREST_ACCEPT -> SelectionKey.OP_ACCEPT
-        else -> error("invalid POLL_INTEREST $this")
     }
 }

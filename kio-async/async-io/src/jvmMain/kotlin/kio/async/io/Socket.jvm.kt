@@ -2,19 +2,15 @@ package kio.async.io
 
 import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
-import kio.async.POLL_INTEREST_ACCEPT
-import kio.async.POLL_INTEREST_CONNECT
-import kio.async.POLL_INTEREST_READ
-import kio.async.POLL_INTEREST_WRITE
+import kio.async.IoPoller
 import kio.async.SelectionKeyWrapper
 import kio.async.SuspendIo
-import kio.async.attachKey
-import kio.async.detachKey
 import kio.async.poller
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.io.Buffer
 import kotlinx.io.IOException
 import java.net.InetSocketAddress
+import java.nio.channels.SelectionKey
 import java.nio.channels.ServerSocketChannel
 import java.nio.channels.SocketChannel
 
@@ -23,16 +19,17 @@ actual suspend fun openConnection(
     port: Int,
 ): AsyncRawConnection {
     val io = currentCoroutineContext().poller.io
+    check(io is IoPoller)
     val channel = SocketChannel.open()
     val connectHandle = SelectionKeyWrapper(channel)
     try {
         channel.configureBlocking(false)
-        io.attachKey(connectHandle, POLL_INTEREST_CONNECT)
+        io.attach(connectHandle, SelectionKey.OP_CONNECT)
 
         channel.connect(InetSocketAddress(host, port))
 
         while (true) {
-            io.suspendConnect(channel)
+            io.connect(channel)
 
             if (channel.finishConnect()) {
                 break
@@ -44,7 +41,7 @@ actual suspend fun openConnection(
         channel.close()
         throw t
     } finally {
-        io.detachKey(connectHandle, POLL_INTEREST_CONNECT)
+        io.detach(connectHandle, SelectionKey.OP_CONNECT)
     }
 }
 
@@ -56,10 +53,11 @@ internal class ChannelRawAsyncConnection(
 ) : AsyncRawConnection {
     private val readHandle = SelectionKeyWrapper(channel)
     private val writeHandle = SelectionKeyWrapper(channel)
+    private val ioPoller = io as IoPoller
 
     init {
-        io.attachKey(readHandle, POLL_INTEREST_READ)
-        io.attachKey(writeHandle, POLL_INTEREST_WRITE)
+        ioPoller.attach(readHandle, SelectionKey.OP_READ)
+        ioPoller.attach(writeHandle, SelectionKey.OP_WRITE)
     }
 
     private var closed = false
@@ -84,8 +82,8 @@ internal class ChannelRawAsyncConnection(
             } catch (e: IOException) {
                 // Ignore exception when close.
             } finally {
-                io.detachKey(readHandle, POLL_INTEREST_READ)
-                io.detachKey(writeHandle, POLL_INTEREST_WRITE)
+                ioPoller.detach(readHandle, SelectionKey.OP_READ)
+                ioPoller.detach(writeHandle, SelectionKey.OP_WRITE)
                 channel.close()
             }
         }
@@ -107,16 +105,17 @@ internal class ServerSocketInternal(
     val serverChannel: ServerSocketChannel,
 ) {
 
+    private val ioPoller = io as IoPoller
     private val acceptHandle = SelectionKeyWrapper(serverChannel)
 
     init {
-        io.attachKey(acceptHandle, POLL_INTEREST_ACCEPT)
+        ioPoller.attach(acceptHandle, SelectionKey.OP_ACCEPT)
     }
 
 
     suspend fun accept(): Socket {
         while (true) {
-            io.suspendAccept(serverChannel)
+            io.accept(serverChannel)
 
             val client = serverChannel.accept()
 
@@ -133,7 +132,7 @@ internal class ServerSocketInternal(
     }
 
     fun close() {
-        io.detachKey(acceptHandle, POLL_INTEREST_ACCEPT)
+        ioPoller.detach(acceptHandle, SelectionKey.OP_ACCEPT)
     }
 }
 

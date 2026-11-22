@@ -4,83 +4,32 @@ package kio.async
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.IntVarOf
-import kotlinx.cinterop.UIntVarOf
 import kotlinx.cinterop.cstr
 import kotlinx.cinterop.memScoped
 import linux.platform.AT_FDCWD
 import linux.platform.statx
 import platform.linux.SYS_unlinkat
-import platform.posix.sockaddr
-import platform.posix.sockaddr_in
 import platform.posix.syscall
 
 private const val SYS_STATX = 332L
 private const val SYS_pipe2 = 293L
+private const val SYS_pidfd_open = 434L
 
 interface LinuxApi {
-    suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int
-    suspend fun suspendStatx(dirfd: Int, path: String?, flags: Int, mask: UInt, buf: CPointer<statx>?): Int
-    suspend fun suspendUnlink(path: String?, flags: Int): Int = suspendUnlinkat(AT_FDCWD, path, flags)
-    suspend fun suspendUnlinkat(fd: Int, path: String?, flags: Int): Int
+    suspend fun pidfdOpen(pid: Int, flags: UInt = 0U): Int = syscall(SYS_pidfd_open, pid, flags).toInt().negErrno()
+    suspend fun pipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int = syscall(SYS_pipe2, fds, pipeFlags).toInt().negErrno()
+    suspend fun statx(dirfd: Int, path: String?, flags: Int, mask: UInt, buf: CPointer<statx>?): Int = memScoped {
+        val cPath = path?.cstr?.getPointer(this)
+        syscall(SYS_STATX, dirfd, cPath, flags, mask, buf).toInt().negErrno()
+    }
+    suspend fun unlinkat(fd: Int, path: String?, flags: Int): Int = memScoped {
+        val cPath = path?.cstr?.getPointer(this)
+        syscall(SYS_unlinkat.toLong(), fd, cPath, flags).toInt().negErrno()
+    }
+    suspend fun unlink(path: String?, flags: Int): Int = unlinkat(AT_FDCWD, path, flags)
 }
+
+val SuspendIo.linux: LinuxApi
+    get() = this as LinuxApi
 
 actual interface SuspendIo: PosixApi, LinuxApi
-
-actual suspend fun SuspendIo.write(fd: Int, buf: CPointer<*>, byte: ULong): Int = suspendWrite(fd, buf, byte)
-actual suspend fun SuspendIo.read(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int = suspendRead(fd, bytes, nbyte)
-actual suspend fun SuspendIo.accept(fd: Int, addr: CPointer<sockaddr_in>?, addrLen: CPointer<UIntVarOf<UInt>>?): Int = suspendAccept(fd, addr, addrLen)
-actual suspend fun SuspendIo.connect(fd: Int, addr: CPointer<sockaddr>, len: UInt): Int = suspendConnect(fd, addr, len)
-actual suspend fun SuspendIo.open(path: String?, flags: Int, mode: UInt): Int = suspendOpen(path, flags, mode)
-actual suspend fun SuspendIo.close(fd: Int): Int = suspendClose(fd)
-actual suspend fun SuspendIo.shutdown(fd: Int, how: Int): Int = suspendShutdown(fd, how)
-actual suspend fun SuspendIo.bind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int = suspendBind(fd, addr, addrlen)
-actual suspend fun SuspendIo.listen(fd: Int, backlog: Int): Int = suspendListen(fd, backlog)
-actual suspend fun SuspendIo.socket(domain: Int, type: Int, protocol: Int): Int = suspendSocket(domain, type, protocol)
-actual suspend fun SuspendIo.getsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int = suspendGetsockname(fd, addr, len)
-actual suspend fun SuspendIo.getpeername(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int = suspendGetpeername(fd, addr, len)
-actual suspend fun SuspendIo.mkdir(path: String?, mode: UInt): Int = suspendMkdir(path, mode)
-actual suspend fun SuspendIo.pread(fd: Int, bytes: CPointer<*>?, nbyte: ULong, offset: Long): Int = suspendPread(fd, bytes, nbyte, offset)
-suspend fun SuspendIo.unlink(path: String?, flags: Int): Int = suspendUnlink(path, flags)
-suspend fun SuspendIo.unlinkat(fd: Int, path: String?, flags: Int): Int = suspendUnlinkat(fd, path, flags)
-
-interface LinuxSuspendIo: LinuxApi {
-    override suspend fun suspendPipe(
-        fds: CPointer<IntVarOf<Int>>?,
-        pipeFlags: Int,
-    ): Int {
-        return syscall(
-            SYS_pipe2,
-            fds,
-            pipeFlags,
-        ).toInt().negErrno()
-    }
-
-    override suspend fun suspendStatx(dirfd: Int, path: String?, flags: Int, mask: UInt, buf: CPointer<statx>?) =
-        memScoped {
-            val cPath = path?.cstr?.getPointer(this)
-
-            syscall(
-                SYS_STATX,
-                dirfd,
-                cPath,
-                flags,
-                mask,
-                buf,
-            ).toInt().negErrno()
-        }
-
-    override suspend fun suspendUnlinkat(
-        fd: Int,
-        path: String?,
-        flags: Int,
-    ): Int = memScoped {
-        val cPath = path?.cstr?.getPointer(this)
-
-        syscall(
-            SYS_unlinkat.toLong(),
-            fd,
-            cPath,
-            flags,
-        ).toInt().negErrno()
-    }
-}

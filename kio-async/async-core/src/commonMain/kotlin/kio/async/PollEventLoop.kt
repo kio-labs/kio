@@ -66,15 +66,6 @@ interface Poller {
     fun close()
 }
 
-typealias PollInterest = Int
-
-const val POLL_INTEREST_READ = 1
-const val POLL_INTEREST_WRITE = 2
-
-// JVM only
-const val POLL_INTEREST_CONNECT = 4
-const val POLL_INTEREST_ACCEPT = 8
-
 @OptIn(InternalCoroutinesApi::class)
 internal class AsyncPollEventDispatcher(
     factory: PollerFactory,

@@ -1,14 +1,9 @@
 package kio.util
 
-import kio.async.bind
-import kio.async.close
+import kio.async.fdRegistration
 import kio.async.io.ServerSocket
-import kio.async.io.getAddress
-import kio.async.io.port
-import kio.async.io.serverSocket
-import kio.async.listen
 import kio.async.poller
-import kio.async.socket
+import kio.async.posix
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.UnsafeNumber
@@ -40,7 +35,7 @@ actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
     val io = currentCoroutineContext().poller.io
     val backlog: Int = 128
 // TODO: Judge IP type form host.
-    val serverFd = io.socket(AF_INET, SOCK_STREAM, 0)
+    val serverFd = io.posix.socket(AF_INET, SOCK_STREAM, 0)
     if (serverFd < 0) {
         throw IOException("could not create server socket: ${resultErrorMessage(serverFd)}")
     }
@@ -71,20 +66,21 @@ actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
             sin_addr.s_addr = ip
         }
 
-        io.bind(serverFd, serverAddr.ptr.reinterpret(), sizeOf<sockaddr_in>().convert()).let { ret ->
+        io.posix.bind(serverFd, serverAddr.ptr.reinterpret(), sizeOf<sockaddr_in>().convert()).let { ret ->
             if (ret < 0) {
                 throw IOException("could not bind $host:$port. ${resultErrorMessage(ret)}")
             }
         }
-        io.listen(serverFd, backlog).let { ret ->
+        io.posix.listen(serverFd, backlog).let { ret ->
             if (ret < 0) {
                 throw IOException("could not listen $host:$port. ${resultErrorMessage(ret)}")
             }
         }
 
-        io.serverSocket(serverFd)
+        io.fdRegistration?.attachRead(serverFd)
+        return serverFd
     } catch (t: Throwable) {
-        io.close(serverFd)
+        io.posix.close(serverFd)
         throw t
     }
 }

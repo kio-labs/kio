@@ -30,101 +30,87 @@ import platform.posix.sockaddr_in
  * < 0  : -errno
  */
 interface PosixApi {
-    suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Int
-    suspend fun suspendRead(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int
-    suspend fun suspendPread(fd: Int, bytes: CPointer<*>?, nbyte: ULong, offset: Long): Int
-
-    suspend fun suspendAccept(fd: Int, addr: CPointer<sockaddr_in>?, addrLen: CPointer<UIntVarOf<UInt>>?): Int
-
-    suspend fun suspendConnect(fd: Int, addr: CPointer<sockaddr>, len: UInt): Int
-    suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int
-    suspend fun suspendClose(fd: Int): Int
-
-    suspend fun suspendShutdown(fd: Int, how: Int): Int
-    suspend fun suspendBind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int
-    suspend fun suspendListen(fd: Int, backlog: Int): Int
-    suspend fun suspendSocket(domain: Int, type: Int, protocol: Int): Int
-
-    suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?): Int
-    suspend fun suspendStat(path: String?, buf: CPointer<platform.posix.stat>?): Int
-    suspend fun suspendFstat(fd: Int, buf: CPointer<platform.posix.stat>?): Int
-    suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
-    suspend fun suspendGetpeername(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
-    suspend fun suspendMkdir(path: String?, mode: UInt): Int
-
-    suspend fun suspendSendmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int
-    suspend fun suspendRecvmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int
-
-    suspend fun suspnedSendto(fd: Int, buf: CPointer<*>?, n: ULong, flags: Int, addr: CPointer<sockaddr>?, addrLen: UInt): Int
+    suspend fun write(fd: Int, buf: CPointer<*>, byte: ULong): Int = platform.posix.write(fd, buf, byte).toInt().negErrno()
+    suspend fun read(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int = platform.posix.read(fd, bytes, nbyte).toInt().negErrno()
+    suspend fun accept(fd: Int, addr: CPointer<sockaddr_in>?, addrLen: CPointer<UIntVarOf<UInt>>?): Int = platform.posix.accept(fd, addr?.reinterpret(), addrLen).negErrno()
+    suspend fun connect(fd: Int, addr: CPointer<sockaddr>, len: UInt): Int = platform.posix.connect(fd, addr, len).negErrno()
+    suspend fun pread(fd: Int, bytes: CPointer<*>?, nbyte: ULong, offset: Long): Int = platform.posix.pread(fd, bytes, nbyte, offset).toInt().negErrno()
+    suspend fun open(path: String?, flags: Int, mode: UInt): Int = platform.posix.open(path, flags, mode).negErrno()
+    suspend fun close(fd: Int): Int = platform.posix.close(fd).negErrno()
+    suspend fun pipe(fds: CPointer<IntVarOf<Int>>?): Int = platform.posix.pipe(fds).negErrno()
+    suspend fun shutdown(fd: Int, how: Int): Int = platform.posix.shutdown(fd, how).negErrno()
+    suspend fun bind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int = platform.posix.bind(fd, addr, addrlen).negErrno()
+    suspend fun listen(fd: Int, backlog: Int): Int = platform.posix.listen(fd, backlog).negErrno()
+    suspend fun socket(domain: Int, type: Int, protocol: Int): Int = platform.posix.socket(domain, type, protocol).negErrno()
+    suspend fun stat(path: String?, buf: CPointer<platform.posix.stat>?): Int = platform.posix.stat(path, buf).negErrno()
+    suspend fun fstat(fd: Int, buf: CPointer<platform.posix.stat>?): Int = platform.posix.fstat(fd, buf)
+    suspend fun getsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int = platform.posix.getsockname(fd, addr, len).negErrno()
+    suspend fun getpeername(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int = platform.posix.getpeername(fd, addr, len).negErrno()
+    @OptIn(UnsafeNumber::class)
+    suspend fun mkdir(path: String?, mode: UInt): Int = platform.posix.mkdir(path, mode.convert()).negErrno()
+    suspend fun recvmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int = platform.posix.recvmsg(fd, message, flags).toInt().negErrno()
+    suspend fun sendmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int = platform.posix.sendmsg(fd, message, flags).toInt().negErrno()
+    suspend fun sendto(fd: Int, buf: CPointer<*>?, n: ULong, flags: Int, addr: CPointer<sockaddr>?, addrLen: UInt): Int = platform.posix.sendto(fd, buf, n, flags, addr, addrLen).toInt().negErrno()
+    suspend fun waitid(idtype: platform.posix.idtype_t, id: UInt, infop: CPointer<platform.posix.siginfo_t>?, options: Int): Int = platform.posix.waitid(idtype, id, infop, options).negErrno()
 }
 
-actual interface IoPoller {
-    fun attach(fd: Int, event: PollInterest) {}
-    fun detach(fd: Int, event: PollInterest) {}
+val SuspendIo.posix: PosixApi
+    get() = this as PosixApi
 
-    suspend fun awaitIo(handle: Int, interest: PollInterest)
+val SuspendIo.fdRegistration: FdRegistration?
+    get() = this as? FdRegistration
+
+interface FdRegistration {
+    fun attachRead(fd: Int)
+    fun attachWrite(fd: Int)
+    fun detachRead(fd: Int)
+    fun detachWrite(fd: Int)
 }
 
-fun SuspendIo.attachFD(fd: Int, event: PollInterest) {
-    (this as? IoPoller)?.attach(fd, event)
-}
-
-fun SuspendIo.detachFD(fd: Int, event: PollInterest)  {
-    (this as? IoPoller)?.detach(fd, event)
-}
-
-expect suspend fun SuspendIo.write(fd: Int, buf: CPointer<*>, byte: ULong): Int
-expect suspend fun SuspendIo.read(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int
-expect suspend fun SuspendIo.pread(fd: Int, bytes: CPointer<*>?, nbyte: ULong, offset: Long): Int
-expect suspend fun SuspendIo.accept(fd: Int, addr: CPointer<sockaddr_in>?, addrLen: CPointer<UIntVarOf<UInt>>?): Int
-
-expect suspend fun SuspendIo.connect(fd: Int, addr: CPointer<sockaddr>, len: UInt): Int
-expect suspend fun SuspendIo.open(path: String?, flags: Int, mode: UInt): Int
-expect suspend fun SuspendIo.close(fd: Int): Int
-expect suspend fun SuspendIo.shutdown(fd: Int, how: Int): Int
-expect suspend fun SuspendIo.bind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int
-expect suspend fun SuspendIo.listen(fd: Int, backlog: Int): Int
-expect suspend fun SuspendIo.socket(domain: Int, type: Int, protocol: Int): Int
-expect suspend fun SuspendIo.getsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
-expect suspend fun SuspendIo.getpeername(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int
-expect suspend fun SuspendIo.mkdir(path: String?, mode: UInt): Int
-
-interface PosixSuspendIo : DefaultPosixApi, IoPoller {
-    override suspend fun suspendWrite(fd: Int, buf: CPointer<*>, byte: ULong): Int = posixCall(
+abstract class PosixSuspendIo: PosixApi {
+    @OptIn(ExperimentalForeignApi::class)
+    override suspend fun write(fd: Int, buf: CPointer<*>, byte: ULong): Int = posixCall(
         func = { platform.posix.write(fd, buf, byte).toInt() },
-        waitIO = { awaitIo(fd, POLL_INTEREST_WRITE) }
+        waitIO = { awaitForWrite(fd) }
     )
 
-    override suspend fun suspendSendmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int = posixCall(
+    @OptIn(ExperimentalForeignApi::class)
+    override suspend fun sendmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int = posixCall(
         func = { platform.posix.sendmsg(fd, message, flags).toInt() },
-        waitIO = { awaitIo(fd, POLL_INTEREST_WRITE) }
+        waitIO = { awaitForWrite(fd) }
     )
 
-    override suspend fun suspnedSendto(fd: Int, buf: CPointer<*>?, n: ULong, flags: Int, addr: CPointer<sockaddr>?, addrLen: UInt): Int = posixCall(
+    @OptIn(ExperimentalForeignApi::class)
+    override suspend fun sendto(fd: Int, buf: CPointer<*>?, n: ULong, flags: Int, addr: CPointer<sockaddr>?, addrLen: UInt): Int = posixCall(
         func = { platform.posix.sendto(fd, buf, n, flags, addr, addrLen).toInt() },
-        waitIO = { awaitIo(fd, POLL_INTEREST_WRITE) }
+        waitIO = { awaitForWrite(fd) }
     )
 
-    override suspend fun suspendRead(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int = posixCall(
+    @OptIn(ExperimentalForeignApi::class)
+    override suspend fun read(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int = posixCall(
         func = { platform.posix.read(fd, bytes, nbyte).toInt() },
-        waitIO = { awaitIo(fd, POLL_INTEREST_READ) }
+        waitIO = { awaitForRead(fd) }
     )
 
-    override suspend fun suspendRecvmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int = posixCall(
+    @OptIn(ExperimentalForeignApi::class)
+    override suspend fun recvmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int = posixCall(
         func = { platform.posix.recvmsg(fd, message, flags).toInt() },
-        waitIO = { awaitIo(fd, POLL_INTEREST_READ) }
+        waitIO = { awaitForRead(fd) }
     )
 
-    override suspend fun suspendAccept(
+    @OptIn(ExperimentalForeignApi::class)
+    override suspend fun accept(
         fd: Int,
         addr: CPointer<platform.posix.sockaddr_in>?,
         addrLen: CPointer<UIntVarOf<UInt>>?
     ): Int = posixCall(
         func = { platform.posix.accept(fd, addr?.reinterpret(), addrLen) },
-        waitIO = { awaitIo(fd, POLL_INTEREST_READ) }
+        waitIO = { awaitForRead(fd) }
     )
 
-    override suspend fun suspendConnect(fd: Int, addr: CPointer<platform.posix.sockaddr>, len: UInt): Int {
+
+    @OptIn(ExperimentalForeignApi::class)
+    override suspend fun connect(fd: Int, addr: CPointer<platform.posix.sockaddr>, len: UInt): Int {
         val ret = platform.posix.connect(fd, addr, len)
         if (ret == 0) {
             return 0
@@ -136,78 +122,14 @@ interface PosixSuspendIo : DefaultPosixApi, IoPoller {
             return -connectErrno
         }
 
-        awaitIo(fd, POLL_INTEREST_WRITE)
+        awaitForWrite(fd)
 
         val socketError = getSocketError(fd)
         return if (socketError == 0) 0 else -socketError
     }
-}
 
-interface DefaultPosixApi: PosixApi {
-    override suspend fun suspendPread(fd: Int, bytes: CPointer<*>?, nbyte: ULong, offset: Long): Int {
-        return platform.posix.pread(fd, bytes, nbyte, offset).toInt().negErrno()
-    }
-
-    override suspend fun suspendOpen(path: String?, flags: Int, mode: UInt): Int {
-        return platform.posix.open(path, flags, mode).negErrno()
-    }
-
-    override suspend fun suspendClose(fd: Int): Int {
-        return platform.posix.close(fd).negErrno()
-    }
-
-    override suspend fun suspendPipe(fds: CPointer<IntVarOf<Int>>?): Int {
-        return platform.posix.pipe(fds).negErrno()
-    }
-
-    override suspend fun suspendShutdown(fd: Int, how: Int): Int {
-        return platform.posix.shutdown(fd, how).negErrno()
-    }
-
-    override suspend fun suspendBind(fd: Int, addr: CPointer<sockaddr>?, addrlen: UInt): Int {
-        return platform.posix.bind(fd, addr, addrlen).negErrno()
-    }
-
-    override suspend fun suspendListen(fd: Int, backlog: Int): Int {
-        return platform.posix.listen(fd, backlog).negErrno()
-    }
-
-    override suspend fun suspendSocket(domain: Int, type: Int, protocol: Int): Int {
-        return platform.posix.socket(domain, type, protocol).negErrno()
-    }
-
-    override suspend fun suspendStat(path: String?, buf: CPointer<platform.posix.stat>?): Int {
-        return platform.posix.stat(path, buf).negErrno()
-    }
-
-    override suspend fun suspendFstat(fd: Int, buf: CPointer<platform.posix.stat>?): Int {
-        return platform.posix.fstat(fd, buf)
-    }
-
-    override suspend fun suspendGetsockname(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int {
-        return platform.posix.getsockname(fd, addr, len).negErrno()
-    }
-
-    override suspend fun suspendGetpeername(fd: Int, addr: CPointer<sockaddr>?, len: CPointer<UIntVarOf<UInt>>?): Int {
-        return platform.posix.getpeername(fd, addr, len).negErrno()
-    }
-
-    @OptIn(UnsafeNumber::class)
-    override suspend fun suspendMkdir(path: String?, mode: UInt): Int {
-        return platform.posix.mkdir(path, mode.convert()).negErrno()
-    }
-
-    override suspend fun suspendRecvmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int {
-        return platform.posix.recvmsg(fd, message, flags).toInt().negErrno()
-    }
-
-    override suspend fun suspendSendmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int {
-        return platform.posix.sendmsg(fd, message, flags).toInt().negErrno()
-    }
-
-    override suspend fun suspnedSendto(fd: Int, buf: CPointer<*>?, n: ULong, flags: Int, addr: CPointer<sockaddr>?, addrLen: UInt): Int {
-        return platform.posix.sendto(fd, buf, n, flags, addr, addrLen).toInt().negErrno()
-    }
+    abstract suspend fun awaitForRead(fd: Int)
+    abstract suspend fun awaitForWrite(fd: Int)
 }
 
 private fun getSocketError(fd: Int): Int = memScoped {
