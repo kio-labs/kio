@@ -1,0 +1,9 @@
+package = kio.async.io.internal.spawn
+headers = spawn.h
+
+---
+#include <crt_externs.h>
+
+static inline char **kio_get_environ(void) {
+    return *_NSGetEnviron();
+}

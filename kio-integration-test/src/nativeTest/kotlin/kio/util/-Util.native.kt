@@ -1,7 +1,7 @@
 package kio.util
 
+import kio.async.fdRegistration
 import kio.async.io.ServerSocket
-import kio.async.io.serverSocket
 import kio.async.poller
 import kio.async.posix
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -77,7 +77,8 @@ actual suspend fun tcpBind(host: String, port: Int): ServerSocket = memScoped {
             }
         }
 
-        io.serverSocket(serverFd)
+        io.fdRegistration?.attachRead(serverFd)
+        return serverFd
     } catch (t: Throwable) {
         io.posix.close(serverFd)
         throw t

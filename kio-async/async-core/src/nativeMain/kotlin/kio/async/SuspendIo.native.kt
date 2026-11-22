@@ -57,61 +57,59 @@ interface PosixApi {
 val SuspendIo.posix: PosixApi
     get() = this as PosixApi
 
-typealias PollInterest = Int
+val SuspendIo.fdRegistration: FdRegistration?
+    get() = this as? FdRegistration
 
-const val POLL_INTEREST_READ = 1
-const val POLL_INTEREST_WRITE = 2
-
-interface IoPoller {
-    fun attach(fd: Int, event: PollInterest) {}
-    fun detach(fd: Int, event: PollInterest) {}
-
-    suspend fun awaitIo(handle: Int, interest: PollInterest)
+interface FdRegistration {
+    fun attachRead(fd: Int)
+    fun attachWrite(fd: Int)
+    fun detachRead(fd: Int)
+    fun detachWrite(fd: Int)
 }
 
-fun SuspendIo.attachFD(fd: Int, event: PollInterest) {
-    (this as? IoPoller)?.attach(fd, event)
-}
-
-fun SuspendIo.detachFD(fd: Int, event: PollInterest)  {
-    (this as? IoPoller)?.detach(fd, event)
-}
-
-interface PosixSuspendIo : PosixApi, IoPoller {
+abstract class PosixSuspendIo: PosixApi {
+    @OptIn(ExperimentalForeignApi::class)
     override suspend fun write(fd: Int, buf: CPointer<*>, byte: ULong): Int = posixCall(
         func = { platform.posix.write(fd, buf, byte).toInt() },
-        waitIO = { awaitIo(fd, POLL_INTEREST_WRITE) }
+        waitIO = { awaitForWrite(fd) }
     )
 
+    @OptIn(ExperimentalForeignApi::class)
     override suspend fun sendmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int = posixCall(
         func = { platform.posix.sendmsg(fd, message, flags).toInt() },
-        waitIO = { awaitIo(fd, POLL_INTEREST_WRITE) }
+        waitIO = { awaitForWrite(fd) }
     )
 
+    @OptIn(ExperimentalForeignApi::class)
     override suspend fun sendto(fd: Int, buf: CPointer<*>?, n: ULong, flags: Int, addr: CPointer<sockaddr>?, addrLen: UInt): Int = posixCall(
         func = { platform.posix.sendto(fd, buf, n, flags, addr, addrLen).toInt() },
-        waitIO = { awaitIo(fd, POLL_INTEREST_WRITE) }
+        waitIO = { awaitForWrite(fd) }
     )
 
+    @OptIn(ExperimentalForeignApi::class)
     override suspend fun read(fd: Int, bytes: CPointer<*>, nbyte: ULong): Int = posixCall(
         func = { platform.posix.read(fd, bytes, nbyte).toInt() },
-        waitIO = { awaitIo(fd, POLL_INTEREST_READ) }
+        waitIO = { awaitForRead(fd) }
     )
 
+    @OptIn(ExperimentalForeignApi::class)
     override suspend fun recvmsg(fd: Int, message: CPointer<msghdr>?, flags: Int): Int = posixCall(
         func = { platform.posix.recvmsg(fd, message, flags).toInt() },
-        waitIO = { awaitIo(fd, POLL_INTEREST_READ) }
+        waitIO = { awaitForRead(fd) }
     )
 
+    @OptIn(ExperimentalForeignApi::class)
     override suspend fun accept(
         fd: Int,
         addr: CPointer<platform.posix.sockaddr_in>?,
         addrLen: CPointer<UIntVarOf<UInt>>?
     ): Int = posixCall(
         func = { platform.posix.accept(fd, addr?.reinterpret(), addrLen) },
-        waitIO = { awaitIo(fd, POLL_INTEREST_READ) }
+        waitIO = { awaitForRead(fd) }
     )
 
+
+    @OptIn(ExperimentalForeignApi::class)
     override suspend fun connect(fd: Int, addr: CPointer<platform.posix.sockaddr>, len: UInt): Int {
         val ret = platform.posix.connect(fd, addr, len)
         if (ret == 0) {
@@ -124,11 +122,14 @@ interface PosixSuspendIo : PosixApi, IoPoller {
             return -connectErrno
         }
 
-        awaitIo(fd, POLL_INTEREST_WRITE)
+        awaitForWrite(fd)
 
         val socketError = getSocketError(fd)
         return if (socketError == 0) 0 else -socketError
     }
+
+    abstract suspend fun awaitForRead(fd: Int)
+    abstract suspend fun awaitForWrite(fd: Int)
 }
 
 private fun getSocketError(fd: Int): Int = memScoped {

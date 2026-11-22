@@ -10,10 +10,11 @@ import kotlinx.io.IOException
 import platform.posix.*
 
 internal actual suspend fun openFileSource(path: String): AsyncRawSource {
-    val io = currentCoroutineContext().poller.io
+    val poller = currentCoroutineContext().poller
+    val io = poller.io
     val fd = io.openFile(path)
 
-    io.attachFD(fd, POLL_INTEREST_READ)
+    io.fdRegistration?.attachRead(fd)
 
     val source = io.asyncRawSource(fd)
     return object : AsyncRawSource {
@@ -23,7 +24,7 @@ internal actual suspend fun openFileSource(path: String): AsyncRawSource {
         ): Long = source.readAtMostTo(sink, byteCount)
 
         override suspend fun close() {
-            io.detachFD(fd, POLL_INTEREST_READ)
+            io.fdRegistration?.detachRead(fd)
 
             source.close()
         }

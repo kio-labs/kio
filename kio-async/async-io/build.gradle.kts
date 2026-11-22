@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalKotlinGradlePluginApi::class)
-
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 
 plugins {
@@ -9,7 +7,11 @@ plugins {
 
 kotlin {
     jvm()
-    macosArm64()
+    macosArm64 {
+        compilations.getByName("main") {
+            cinterops.create("spawn")
+        }
+    }
     linuxX64()
 
     sourceSets {

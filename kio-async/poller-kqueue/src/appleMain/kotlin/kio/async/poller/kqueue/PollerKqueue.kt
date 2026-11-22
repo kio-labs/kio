@@ -1,43 +1,37 @@
 package kio.async.poller.kqueue
 
-import kio.async.PollInterest
-import kio.async.POLL_INTEREST_READ
-import kio.async.POLL_INTEREST_WRITE
+import kio.async.FdRegistration
 import kio.async.Poller
 import kio.async.PollerFactory
-import kio.async.SuspendIo
 import kio.async.PosixSuspendIo
-import kotlinx.cinterop.Arena
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.allocArray
-import kotlinx.cinterop.get
-import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.ptr
-import kotlinx.cinterop.toKString
+import kio.async.SuspendIo
+import kotlinx.cinterop.*
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.io.IOException
-import platform.darwin.EVFILT_READ
-import platform.darwin.EVFILT_WRITE
-import platform.darwin.EV_ADD
-import platform.darwin.EV_DELETE
-import platform.darwin.EV_ENABLE
-import platform.darwin.kevent
-import platform.darwin.kqueue
+import platform.darwin.*
 import platform.posix.errno
 import platform.posix.strerror
 import platform.posix.timespec
-import kotlin.collections.set
-import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.resume
 
 object Kqueue : PollerFactory {
     override fun create(): Poller = KqueuePoller()
 }
 
-private class KqueuePoller : SuspendIo, Poller, PosixSuspendIo {
+val SuspendIo.kqueue: KqueueRegister
+    get() = (this as KqueueIo).kqueueRegister
+
+typealias KqueueFilter = Short
+
+interface KqueueRegister {
+    fun attach(ident: ULong, filter: KqueueFilter, flags: UShort, fflags: UInt = 0U, data: Long = 0L)
+    fun detach(ident: ULong, filter: KqueueFilter)
+    suspend fun awaitFilter(ident: ULong, filter: KqueueFilter)
+}
+
+private class KqueuePoller : Poller, KqueueRegister {
     private val kq = kqueue()
 
     @OptIn(ExperimentalForeignApi::class)
@@ -45,18 +39,17 @@ private class KqueuePoller : SuspendIo, Poller, PosixSuspendIo {
 
     @OptIn(ExperimentalForeignApi::class)
     private val events = arean.allocArray<kevent>(EVENT_CAPACITY)
-    private val continuationMap: MutableMap<Pair<Any, PollInterest>, CancellableContinuation<Unit>> =
-        mutableMapOf()
+    private val continuationMap: MutableMap<Pair<ULong, KqueueFilter>, CancellableContinuation<Unit>> = mutableMapOf()
 
-    @OptIn(ExperimentalForeignApi::class, ExperimentalAtomicApi::class)
-    override fun attach(fd: Int, event: PollInterest): Unit = memScoped {
+    @OptIn(ExperimentalForeignApi::class)
+    override fun attach(ident: ULong, filter: KqueueFilter, flags: UShort, fflags: UInt, data: Long) = memScoped {
         val change = alloc<kevent> {
-            ident = fd.toULong()
-            filter = event.filter()
-            flags = (EV_ADD or EV_ENABLE).toUShort()
-            fflags = 0U
-            data = 0
-            udata = null
+            this.ident = ident
+            this.filter = filter
+            this.flags = flags
+            this.fflags = fflags
+            this.data = data
+            this.udata = null
         }
 
         if (kevent(kq, change.ptr, 1, null, 0, null) == -1) {
@@ -64,11 +57,11 @@ private class KqueuePoller : SuspendIo, Poller, PosixSuspendIo {
         }
     }
 
-    @OptIn(ExperimentalForeignApi::class, ExperimentalAtomicApi::class)
-    override fun detach(fd: Int, event: PollInterest): Unit = memScoped {
+    @OptIn(ExperimentalForeignApi::class)
+    override fun detach(ident: ULong, filter: KqueueFilter) = memScoped {
         val change = alloc<kevent> {
-            ident = fd.toULong()
-            filter = event.filter()
+            this.ident = ident
+            this.filter = filter
             flags = (EV_DELETE).toUShort()
             fflags = 0U
             data = 0
@@ -80,19 +73,17 @@ private class KqueuePoller : SuspendIo, Poller, PosixSuspendIo {
         }
     }
 
-    override suspend fun awaitIo(handle: Int, interest: PollInterest) = suspendCancellableCoroutine { c ->
-        continuationMap[handle to interest] = c
+    override suspend fun awaitFilter(ident: ULong, filter: KqueueFilter) = suspendCancellableCoroutine { c ->
+        continuationMap[ident to filter] = c
         c.invokeOnCancellation {
-            continuationMap.remove(handle to interest)
+            continuationMap.remove(ident to filter)
         }
     }
 
-    override val io: SuspendIo = this
+    override val io: SuspendIo = KqueueIo(this)
 
     @OptIn(ExperimentalForeignApi::class)
-    override fun poll(
-        timeoutMillis: Long
-    ) = memScoped {
+    override fun poll(timeoutMillis: Long) = memScoped {
         val timeoutPtr = when {
             timeoutMillis < 0 -> null
 
@@ -110,14 +101,10 @@ private class KqueuePoller : SuspendIo, Poller, PosixSuspendIo {
 
         for (i in 0 until n) {
             val e = events[i]
-            val fd = e.ident.toInt()
-            val pollInterest = when (e.filter.toInt()) {
-                EVFILT_READ -> POLL_INTEREST_READ
-                EVFILT_WRITE -> POLL_INTEREST_WRITE
-                else -> continue
-            }
+            val ident = e.ident
+            val filter = e.filter
 
-            val c = continuationMap.remove(fd to pollInterest)
+            val c = continuationMap.remove(ident to filter)
             c?.resume(Unit)
         }
     }
@@ -142,13 +129,33 @@ private class KqueuePoller : SuspendIo, Poller, PosixSuspendIo {
 
 private const val EVENT_CAPACITY = 1024
 
-private fun PollInterest.filter() = when (this) {
-    POLL_INTEREST_READ -> EVFILT_READ.toShort()
-    POLL_INTEREST_WRITE -> EVFILT_WRITE.toShort()
-    else -> error("never")
-}
-
 @OptIn(ExperimentalForeignApi::class)
 internal fun errnoMessage(): String {
     return strerror(errno)?.toKString() ?: "Unknown errno: $errno"
+}
+
+private class KqueueIo(val kqueueRegister: KqueueRegister) : SuspendIo, PosixSuspendIo(), FdRegistration {
+    override suspend fun awaitForRead(fd: Int) {
+        kqueueRegister.awaitFilter(fd.toULong(), EVFILT_READ.toShort())
+    }
+
+    override suspend fun awaitForWrite(fd: Int) {
+        kqueueRegister.awaitFilter(fd.toULong(), EVFILT_WRITE.toShort())
+    }
+
+    override fun attachRead(fd: Int) {
+        kqueueRegister.attach(fd.toULong(), EVFILT_READ.toShort(), (EV_ADD or EV_ENABLE or EV_CLEAR).toUShort())
+    }
+
+    override fun attachWrite(fd: Int) {
+        kqueueRegister.attach(fd.toULong(), EVFILT_WRITE.toShort(), (EV_ADD or EV_ENABLE or EV_CLEAR).toUShort())
+    }
+
+    override fun detachRead(fd: Int) {
+        kqueueRegister.detach(fd.toULong(), EVFILT_READ.toShort())
+    }
+
+    override fun detachWrite(fd: Int) {
+        kqueueRegister.detach(fd.toULong(), EVFILT_WRITE.toShort())
+    }
 }

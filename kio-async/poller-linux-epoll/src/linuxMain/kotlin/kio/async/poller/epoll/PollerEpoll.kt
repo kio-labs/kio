@@ -1,44 +1,34 @@
 package kio.async.poller.epoll
 
-import kio.async.LinuxApi
-import kio.async.POLL_INTEREST_READ
-import kio.async.POLL_INTEREST_WRITE
-import kio.async.PollInterest
-import kio.async.Poller
-import kio.async.PollerFactory
-import kio.async.PosixSuspendIo
-import kio.async.SuspendIo
-import kotlinx.cinterop.Arena
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.allocArray
-import kotlinx.cinterop.cValue
-import kotlinx.cinterop.get
+import kio.async.*
+import kotlinx.cinterop.*
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.io.IOException
-import platform.linux.EPOLLERR
-import platform.linux.EPOLLHUP
-import platform.linux.EPOLLIN
-import platform.linux.EPOLLOUT
-import platform.linux.EPOLLRDHUP
-import platform.linux.EPOLL_CTL_ADD
-import platform.linux.EPOLL_CTL_DEL
-import platform.linux.EPOLL_CTL_MOD
-import platform.linux.epoll_create1
-import platform.linux.epoll_ctl
-import platform.linux.epoll_event
-import platform.linux.epoll_wait
-import kotlin.collections.set
+import platform.linux.*
+import platform.posix.EINTR
+import platform.posix.errno
+import platform.posix.strerror
 import kotlin.coroutines.resume
 
 object EPoll : PollerFactory {
     override fun create(): Poller = EpollPoller()
 }
 
+val SuspendIo.epoll: EpollRegister
+    get() = (this as EpollIo).register
+
+interface EpollRegister {
+    fun attach(fd: Int, interest: UInt) {}
+    fun detach(fd: Int, interest: UInt) {}
+
+    suspend fun awaitIo(fd: Int, interest: UInt)
+}
+
 private const val EVENT_CAPACITY = 64
 
-private class EpollPoller : Poller, SuspendIo, PosixSuspendIo {
+private class EpollPoller : Poller, EpollRegister {
     val epollfd = epoll_create1(0)
 
     @OptIn(ExperimentalForeignApi::class)
@@ -50,8 +40,12 @@ private class EpollPoller : Poller, SuspendIo, PosixSuspendIo {
     // map of fd and events
     val registeredEvents: MutableMap<Int, UInt> = mutableMapOf()
 
-    private val continuationMap: MutableMap<Pair<Int, PollInterest>, CancellableContinuation<Unit>> =
-        mutableMapOf()
+    private data class Task(
+        val interest: UInt,
+        val task: CancellableContinuation<Unit>
+    )
+
+    private val continuationMap: MutableMap<Int, MutableList<Task>> = mutableMapOf()
 
     init {
         if (epollfd == -1) {
@@ -60,14 +54,14 @@ private class EpollPoller : Poller, SuspendIo, PosixSuspendIo {
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    override fun attach(fd: Int, event: PollInterest) {
+    override fun attach(fd: Int, interest: UInt) {
         val oldEvents = registeredEvents[fd] ?: 0U
-        val newEvents = oldEvents or event.toEvent()
+        val newEvents = oldEvents or interest
 
         if (oldEvents == newEvents) return
 
         val ev = cValue<epoll_event> {
-            this.events = newEvents
+            this.events = newEvents or EPOLLET
             this.data.fd = fd
         }
         val result = if (oldEvents == 0U) {
@@ -76,47 +70,54 @@ private class EpollPoller : Poller, SuspendIo, PosixSuspendIo {
             epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, ev)
         }
         if (result == -1) {
-            throw IOException("error happened when attach: fd=$fd, interest=$event")
+            throw IOException("error happened when attach: fd=$fd, interest=$interest")
         }
         registeredEvents[fd] = newEvents
     }
 
     @OptIn(ExperimentalForeignApi::class)
-    override fun detach(fd: Int, event: PollInterest) {
+    override fun detach(fd: Int, interest: UInt) {
         val oldEvents = registeredEvents[fd] ?: return
 
-        val newEvents = oldEvents and event.toEvent().inv()
+        val newEvents = oldEvents and interest.inv()
 
         val result = if (newEvents == 0U) {
             epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, null)
             registeredEvents.remove(fd)
         } else {
             val ev = cValue<epoll_event> {
-                this.events = newEvents
+                this.events = newEvents or EPOLLET
                 this.data.fd = fd
             }
             epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, ev)
             registeredEvents[fd] = newEvents
         }
         if (result == -1) {
-            throw IOException("error happened when detach: fd=$fd, interest=$event")
+            throw IOException("error happened when detach: fd=$fd, interest=$interest")
         }
     }
 
-    override suspend fun awaitIo(handle: Int, interest: PollInterest) = suspendCancellableCoroutine { c ->
-        continuationMap[handle to interest] = c
+    override suspend fun awaitIo(fd: Int, interest: UInt) = suspendCancellableCoroutine { c ->
+        val tasks = continuationMap.getOrPut(fd) { mutableListOf() }
+        val task = Task(interest, c)
+        tasks.add(task)
         c.invokeOnCancellation {
-            continuationMap.remove(handle to interest)
+            continuationMap[fd]?.remove(task)
         }
     }
 
-    override val io: SuspendIo = this
+    override val io: SuspendIo = EpollIo(this)
 
     @OptIn(ExperimentalForeignApi::class)
     override fun poll(timeoutMillis: Long) {
-        val nfd = epoll_wait(epollfd, events, EVENT_CAPACITY, timeoutMillis.toInt())
+        require(timeoutMillis >= -1L) { "Invalid poll timeout: $timeoutMillis" }
+        val timeout = if (timeoutMillis == -1L) -1 else timeoutMillis.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val nfd = epoll_wait(epollfd, events, EVENT_CAPACITY, timeout)
         if (nfd == -1) {
-            throw IOException("error happened when epoll_wait")
+            val error = errno
+            // Let the dispatcher run timers and recompute the remaining wait timeout.
+            if (error == EINTR) return
+            throw IOException("epoll_wait failed: epollfd=$epollfd, timeout=$timeout, " + "errno=$error (${strerror(error)?.toKString()})")
         }
 
         for (i in 0 until nfd) {
@@ -124,18 +125,20 @@ private class EpollPoller : Poller, SuspendIo, PosixSuspendIo {
             val fd = event.data.fd
             val events = event.events
 
-            if ((events and (EPOLLERR or EPOLLHUP or EPOLLRDHUP)) != 0U) {
-                continuationMap.remove(fd to POLL_INTEREST_READ)?.resume(Unit)
-                continuationMap.remove(fd to POLL_INTEREST_WRITE)?.resume(Unit)
+            if ((events and (EPOLLERR or EPOLLHUP)) != 0U) {
+                val tasks = continuationMap[fd] ?: continue
+                tasks.forEach { (_, c) -> c.resume(Unit)}
+                tasks.clear()
                 continue
             }
-            if ((events and EPOLLOUT) != 0U) {
-                val c = continuationMap.remove(fd to POLL_INTEREST_WRITE)
-                c?.resume(Unit)
-            }
-            if ((events and EPOLLIN) != 0U) {
-                val c = continuationMap.remove(fd to POLL_INTEREST_READ)
-                c?.resume(Unit)
+
+            val i = continuationMap[fd]?.iterator() ?: continue
+            while (i.hasNext()) {
+                val (interest, c) = i.next()
+                if (interest and events != 0U) {
+                    i.remove()
+                    c.resume(Unit)
+                }
             }
         }
     }
@@ -145,8 +148,10 @@ private class EpollPoller : Poller, SuspendIo, PosixSuspendIo {
 
         val cause = CancellationException("Epoll poller shutdown")
 
-        continuations.forEach {
-            it.cancel(cause)
+        continuations.forEach { tasks ->
+            tasks.forEach { (_, c) ->
+                c.cancel(cause)
+            }
         }
     }
 
@@ -157,10 +162,28 @@ private class EpollPoller : Poller, SuspendIo, PosixSuspendIo {
     }
 }
 
-private fun PollInterest.toEvent(): UInt {
-    return when (this) {
-        POLL_INTEREST_READ -> EPOLLIN
-        POLL_INTEREST_WRITE -> EPOLLOUT
-        else -> error("invalid PollInterest $this")
+private class EpollIo(val register: EpollRegister): SuspendIo, PosixSuspendIo(), FdRegistration {
+    override suspend fun awaitForRead(fd: Int) {
+        register.awaitIo(fd, EPOLLIN)
+    }
+
+    override suspend fun awaitForWrite(fd: Int) {
+        register.awaitIo(fd, EPOLLOUT)
+    }
+
+    override fun attachRead(fd: Int) {
+        register.attach(fd, EPOLLIN)
+    }
+
+    override fun attachWrite(fd: Int) {
+        register.attach(fd, EPOLLOUT)
+    }
+
+    override fun detachRead(fd: Int) {
+        register.detach(fd, EPOLLIN)
+    }
+
+    override fun detachWrite(fd: Int) {
+        register.detach(fd, EPOLLOUT)
     }
 }

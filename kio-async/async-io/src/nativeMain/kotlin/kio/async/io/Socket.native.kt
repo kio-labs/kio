@@ -4,11 +4,9 @@ package kio.async.io
 
 import kio.async.AsyncRawSink
 import kio.async.AsyncRawSource
-import kio.async.POLL_INTEREST_READ
-import kio.async.POLL_INTEREST_WRITE
+import kio.async.Poller
 import kio.async.SuspendIo
-import kio.async.attachFD
-import kio.async.detachFD
+import kio.async.fdRegistration
 import kio.async.poller
 import kio.async.posix
 import kotlinx.atomicfu.atomic
@@ -58,13 +56,13 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
                 }
 
                 val aiAddr = ai.pointed.ai_addr ?: throw IOException("no ai_addr value")
-                io.attachFD(fd, POLL_INTEREST_WRITE)
+                io.fdRegistration?.attachWrite(fd)
                 io.posix.connect(fd, aiAddr, ai.pointed.ai_addrlen)
 
-                return@memScoped FdRawAsyncConnection(io = io, fd = fd)
+                return@memScoped FdRawAsyncConnection(poller = poller, fd = fd)
             } catch (t: Throwable) {
                 lastError = t
-                io.detachFD(fd, POLL_INTEREST_WRITE)
+                io.fdRegistration?.detachWrite(fd)
                 io.posix.close(fd)
                 ai = ai.pointed.ai_next
             }
@@ -78,13 +76,8 @@ actual suspend fun openConnection(host: String, port: Int): AsyncRawConnection =
 
 
 actual suspend fun Socket.asAsyncConnection(): AsyncRawConnection {
-    val io = currentCoroutineContext().poller.io
-    return FdRawAsyncConnection(io, this)
-}
-
-fun SuspendIo.serverSocket(serverFd: Int): ServerSocket {
-    attachFD(serverFd, POLL_INTEREST_READ)
-    return serverFd
+    val poller = currentCoroutineContext().poller
+    return FdRawAsyncConnection(poller, this)
 }
 
 actual typealias ServerSocket = Int
@@ -96,20 +89,22 @@ actual suspend fun ServerSocket.accept(): Socket {
 }
 
 actual suspend fun ServerSocket.close() {
-    val io = currentCoroutineContext().poller.io
-    io.detachFD(this, POLL_INTEREST_READ)
+    val poller = currentCoroutineContext().poller
+    val io = poller.io
+    io.fdRegistration?.detachRead(this)
     io.posix.close(this)
 }
 
 private class FdRawAsyncConnection(
-    private val io: SuspendIo,
+    private val poller: Poller,
     private val fd: Int,
+    private val io: SuspendIo = poller.io,
     override val source: AsyncRawSource = io.asyncRawSource(fd),
     override val sink: AsyncRawSink = io.asyncRawSink(fd)
 ) : AsyncRawConnection {
     init {
-        io.attachFD(fd, POLL_INTEREST_WRITE)
-        io.attachFD(fd, POLL_INTEREST_READ)
+        io.fdRegistration?.attachWrite(fd)
+        io.fdRegistration?.attachRead(fd)
     }
 
     private val closed = atomic(false)
@@ -129,8 +124,8 @@ private class FdRawAsyncConnection(
         } catch (e: IOException) {
             // Ignore exception when close.
         } finally {
-            io.detachFD(fd, POLL_INTEREST_WRITE)
-            io.detachFD(fd, POLL_INTEREST_READ)
+            io.fdRegistration?.detachWrite(fd)
+            io.fdRegistration?.detachRead(fd)
 
             io.posix.close(fd)
         }
@@ -214,4 +209,3 @@ private fun ntohs(value: UShort): UShort {
     return (((v and 0x00FFu) shl 8) or
             ((v and 0xFF00u) shr 8)).toUShort()
 }
-

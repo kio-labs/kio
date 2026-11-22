@@ -1,11 +1,10 @@
 package kio.async.poller.poll
 
-import kio.async.IoPoller
-import kio.async.PollInterest
-import kio.async.POLL_INTEREST_READ
-import kio.async.POLL_INTEREST_WRITE
+import kio.async.FdRegistration
 import kio.async.Poller
 import kio.async.PollerFactory
+import kio.async.PosixSuspendIo
+import kio.async.SuspendIo
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.UnsafeNumber
 import kotlinx.cinterop.allocArray
@@ -17,41 +16,46 @@ import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.io.IOException
-import platform.posix.POLLRDNORM
-import platform.posix.POLLWRNORM
+import platform.posix.POLLIN
+import platform.posix.POLLOUT
 import platform.posix.errno
 import platform.posix.pollfd
 import platform.posix.strerror
-import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlin.native.concurrent.ObsoleteWorkersApi
 
 expect val PosixPoll: PollerFactory
 
-internal abstract class NativePoller : IoPoller, Poller {
-    private val pollFdRequestMap: MutableMap<Pair<Int, PollInterest>, PollFdRequest> =
+val SuspendIo.posixPoll: PosixPollRegister
+    get() = this as PosixPollRegister
+
+interface PosixPollRegister {
+    fun attach(fd: Int, interest: Int) {}
+    fun detach(fd: Int, interest: Int) {}
+
+    suspend fun awaitIo(fd: Int, interest: Int)
+}
+
+internal abstract class NativePoller : PosixPollRegister, Poller {
+    private val pollFdRequestMap: MutableMap<Pair<Int, Int>, PollFdRequest> =
         mutableMapOf()
-    private val continuationMap: MutableMap<Pair<Int, PollInterest>, CancellableContinuation<Unit>> =
+    private val continuationMap: MutableMap<Pair<Int, Int>, CancellableContinuation<Unit>> =
         mutableMapOf()
 
-    override fun attach(fd: Int, event: PollInterest) {
-        val fdRequest = when (event) {
-            POLL_INTEREST_READ -> PollFdRequest(fd, POLLRDNORM)
-            POLL_INTEREST_WRITE -> PollFdRequest(fd, POLLWRNORM)
-            else -> error("never")
-        }
+    override fun attach(fd: Int, interest: Int) {
+        val fdRequest = PollFdRequest(fd, interest)
 
-        pollFdRequestMap[fd to event] = fdRequest
+        pollFdRequestMap[fd to interest] = fdRequest
     }
 
-    override fun detach(fd: Int, event: PollInterest) {
-        pollFdRequestMap.remove(fd to event)
+    override fun detach(fd: Int, interest: Int) {
+        pollFdRequestMap.remove(fd to interest)
     }
 
-    override suspend fun awaitIo(handle: Int, interest: PollInterest) = suspendCancellableCoroutine { c ->
-        continuationMap[handle to interest] = c
+    override suspend fun awaitIo(fd: Int, interest: Int) = suspendCancellableCoroutine { c ->
+        continuationMap[fd to interest] = c
         c.invokeOnCancellation {
-            continuationMap.remove(handle to interest)
+            continuationMap.remove(fd to interest)
         }
     }
 
@@ -127,5 +131,31 @@ internal abstract class NativePoller : IoPoller, Poller {
         fun needContinue(): Boolean {
             return revents != 0
         }
+    }
+}
+
+internal class PollerIo(private val register: PosixPollRegister): PosixSuspendIo(), FdRegistration {
+    override suspend fun awaitForRead(fd: Int) {
+        register.awaitIo(fd, POLLIN)
+    }
+
+    override suspend fun awaitForWrite(fd: Int) {
+        register.awaitIo(fd, POLLOUT)
+    }
+
+    override fun attachRead(fd: Int) {
+        register.attach(fd, POLLIN)
+    }
+
+    override fun attachWrite(fd: Int) {
+        register.attach(fd, POLLOUT)
+    }
+
+    override fun detachRead(fd: Int) {
+        register.detach(fd, POLLIN)
+    }
+
+    override fun detachWrite(fd: Int) {
+        register.detach(fd, POLLOUT)
     }
 }

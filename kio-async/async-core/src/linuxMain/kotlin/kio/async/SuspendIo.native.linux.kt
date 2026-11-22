@@ -13,8 +13,10 @@ import platform.posix.syscall
 
 private const val SYS_STATX = 332L
 private const val SYS_pipe2 = 293L
+private const val SYS_pidfd_open = 434L
 
 interface LinuxApi {
+    suspend fun pidfdOpen(pid: Int, flags: UInt = 0U): Int = syscall(SYS_pidfd_open, pid, flags).toInt().negErrno()
     suspend fun pipe(fds: CPointer<IntVarOf<Int>>?, pipeFlags: Int): Int = syscall(SYS_pipe2, fds, pipeFlags).toInt().negErrno()
     suspend fun statx(dirfd: Int, path: String?, flags: Int, mask: UInt, buf: CPointer<statx>?): Int = memScoped {
         val cPath = path?.cstr?.getPointer(this)
