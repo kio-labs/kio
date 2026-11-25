@@ -2,6 +2,8 @@ package kio.async
 
 import kotlinx.io.Buffer
 import kotlinx.io.IOException
+import kotlinx.io.UnsafeIoApi
+import kotlinx.io.unsafe.UnsafeBufferOperations
 import java.nio.ByteBuffer
 import java.nio.channels.ReadableByteChannel
 import java.nio.channels.SelectableChannel
@@ -82,28 +84,31 @@ private fun doRead(
     return n.toLong()
 }
 
+@OptIn(UnsafeIoApi::class)
 private fun doWriteOnce(
     source: Buffer,
     byteCount: Long,
     write: (ByteBuffer) -> Int,
 ): Long {
-    if (byteCount == 0L) return 0L
+    if (byteCount == 0L || source.size == 0L) return 0L
     require(byteCount >= 0) { "byteCount < 0: $byteCount" }
 
-    val size = minOf(byteCount, 8192L).toInt()
+    var bytesWritten = 0
+    UnsafeBufferOperations.readFromHead(source) { data, pos, limit ->
+        val toCopy = minOf(byteCount, (limit - pos).toLong()).toInt()
+        val byteBuffer = ByteBuffer.wrap(data, pos, toCopy)
 
-    val bytes = ByteArray(size)
-    val copied = source.readAtMostTo(bytes, 0, size)
-
-    if (copied == 0) return 0L
-
-    val byteBuffer = ByteBuffer.wrap(bytes, 0, copied)
-
-    val n = try {
-        write(byteBuffer)
-    } catch (e: java.io.IOException) {
-        throw IOException(e.message ?: "write failed", e)
+        bytesWritten = try {
+            write(byteBuffer)
+        } catch (e: java.io.IOException) {
+            throw IOException(e.message ?: "write failed", e)
+        }
+        0
     }
 
-    return n.toLong()
+    if (bytesWritten > 0) {
+        source.skip(bytesWritten.toLong())
+    }
+
+    return bytesWritten.toLong()
 }
