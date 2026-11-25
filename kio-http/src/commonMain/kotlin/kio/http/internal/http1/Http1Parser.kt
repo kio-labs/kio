@@ -131,15 +131,13 @@ private fun validateHostHeader(host: CharSequence) {
     }
 }
 
-private val versions = listOf(HttpProtocolVersion.HTTP_1_0, HttpProtocolVersion.HTTP_1_1)
-
 private fun parseHttpMethod(result: String): HttpMethod {
     return HttpMethod.parse(result)
 }
 
 private fun parseVersion(text: String): HttpProtocolVersion {
     val version = HttpProtocolVersion.parse(text)
-    if (versions.contains(version)) {
+    if (version == HttpProtocolVersion.HTTP_1_1) {
         return version
     }
 

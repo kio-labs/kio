@@ -15,6 +15,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.io.EOFException
 import kotlinx.io.IOException
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 suspend fun CoroutineScope.httpServer(
     serverSocket: ServerSocket,
@@ -33,7 +35,14 @@ suspend fun CoroutineScope.httpServer(
 
         logger.info("HTTP server started")
 
-        with(logger) { startHttpServer(route, serverSocket, enableProtocolLogger, connectionWrapper) }
+        with(logger) {
+            startHttpServer(
+                route = route,
+                serverSocket = serverSocket,
+                enableProtocolLogger = enableProtocolLogger,
+                connectionWrapper = connectionWrapper,
+            )
+        }
 
         logger.info("HTTP server stopped")
     }
@@ -70,7 +79,7 @@ private suspend fun CoroutineScope.startHttpServer(
                 val selectedAlpn = sslConnection?.getSelectedAlpn()
                 when (selectedAlpn) {
                     "h2" -> route.http2Connection(conn, enableProtocolLogger)
-                    else -> route.http1Connection(conn)
+                    else -> route.http1Connection(conn = conn)
                 }
             } catch (_: EOFException) {
                 logger.trace("connection closed by peer")

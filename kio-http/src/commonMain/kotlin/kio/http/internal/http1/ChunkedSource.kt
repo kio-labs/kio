@@ -51,8 +51,10 @@ private suspend fun readChunkToBuffer(source: AsyncSource, target: Buffer): Long
     val countStr = source.readCrlfLine()
     val count = countStr.toLongOrNull(16) ?: throw IOException("invalid chunk count ($countStr).")
     if (count == 0L) {
-        // Skip /r/n and finish.
-        source.skip(2)
+        // Drain optional trailer headers until empty CRLF line.
+        while (source.readCrlfLine().isNotEmpty()) {
+            // skip trailer line
+        }
         return 0
     }
 

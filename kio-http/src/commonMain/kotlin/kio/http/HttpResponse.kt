@@ -4,6 +4,7 @@ import io.ktor.http.BadContentTypeFormatException
 import io.ktor.http.ContentType
 import io.ktor.http.HeadersBuilder
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.charset
 import io.ktor.http.withCharset
@@ -103,6 +104,13 @@ suspend fun CallContext.responseAsync(
     responseTrailer.configTrailers()
 
     responseSink.transferFrom(source)
+}
+
+internal fun isBodylessResponse(status: HttpStatusCode, method: HttpMethod): Boolean {
+    return method == HttpMethod.Head ||
+        status.value in 100..199 ||
+        status == HttpStatusCode.NoContent ||
+        status == HttpStatusCode.NotModified
 }
 
 private fun HeadersBuilder.canWriteContentLength(): Boolean {

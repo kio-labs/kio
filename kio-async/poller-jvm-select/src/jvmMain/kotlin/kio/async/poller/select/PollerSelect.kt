@@ -62,18 +62,24 @@ internal class PollerSelect : Poller, SuspendChannelIo {
         }
 
         val selectedKeys = selector.selectedKeys()
-        for (key in selectedKeys) {
+        val iterator = selectedKeys.iterator()
+        while (iterator.hasNext()) {
+            val key = iterator.next()
+            iterator.remove()
             if (!key.isValid) continue
 
             val channel = SelectionKeyWrapper(key.channel())
             val readyOp = key.readyOps()
             if (readyOp and SelectionKey.OP_READ != 0) {
                 onActive(channel, SelectionKey.OP_READ)
-            } else if (readyOp and SelectionKey.OP_ACCEPT != 0) {
+            }
+            if (readyOp and SelectionKey.OP_ACCEPT != 0) {
                 onActive(channel, SelectionKey.OP_ACCEPT)
-            } else if (readyOp and SelectionKey.OP_WRITE != 0) {
+            }
+            if (readyOp and SelectionKey.OP_WRITE != 0) {
                 onActive(channel, SelectionKey.OP_WRITE)
-            } else if (readyOp and SelectionKey.OP_CONNECT != 0) {
+            }
+            if (readyOp and SelectionKey.OP_CONNECT != 0) {
                 onActive(channel, SelectionKey.OP_CONNECT)
             }
         }
