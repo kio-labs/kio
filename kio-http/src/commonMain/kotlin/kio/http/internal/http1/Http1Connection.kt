@@ -23,7 +23,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
-internal suspend fun Route.http1Connection(
+suspend fun Route.http1Connection(
     conn: AsyncConnection,
     keepAliveTimeout: Duration = 60.seconds,
     maxKeepAliveRequests: Int = 1000,

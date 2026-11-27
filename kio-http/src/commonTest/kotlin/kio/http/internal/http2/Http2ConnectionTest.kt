@@ -589,13 +589,15 @@ private class MockHttpClientServerConnection(
     val http2Conn = Http2Connection(
         serverConnection.buffered(),
         testScope,
-        mockLogger
+        mockLogger,
+        Settings()
     )
 
     val peerConn = Http2Connection(
         clientConnection.buffered(),
         testScope,
-        mockLogger
+        mockLogger,
+        Settings()
     )
 
     init {
