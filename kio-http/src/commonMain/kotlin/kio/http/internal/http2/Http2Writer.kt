@@ -75,7 +75,7 @@ internal suspend fun AsyncSink.writeWindowUpdate(
         flags = FLAG_NONE,
     )
     writeInt(windowSizeIncrement.toInt())
-}
+}.also { conn.h2Logger.trace("writeWindowUpdate: streamId$streamId, windowSizeIncrement=$windowSizeIncrement") }
 
 context(conn: Http2Connection)
 internal suspend fun AsyncSink.writeSetting(

@@ -42,26 +42,25 @@ class StreamResetCancellationException(
     val errorCode: ErrorCode,
 ) : CancellationException("stream was reset: $errorCode")
 
-internal suspend fun Route.http2Connection(
+suspend fun Route.http2Connection(
     conn: AsyncConnection,
-    enableProtocolLogger: Boolean
+    enableProtocolLogger: Boolean,
+    http2Settings: Settings = Settings(),
 ) {
     val h2Logger = currentLoggingBackend().newLogger(
         name = "Http2Connection",
         logWrapper = { if (enableProtocolLogger) it() }
     )
 
-    with(h2Logger) {
-        http2Connection(conn) { conn, stream ->
-            // handle http2 stream in a launched coroutine.
-            with(conn) { handleHttp2Request(stream) }
-        }
+    http2Connection(conn, h2Logger, http2Settings) { conn, stream ->
+        handleHttp2Request(conn, stream)
     }
 }
 
-context(h2Logger: Logger)
 internal suspend fun http2Connection(
     conn: AsyncConnection,
+    h2Logger: Logger,
+    http2Settings: Settings,
     handleHttp2Request: suspend CoroutineScope.(Http2Connection, Http2Stream) -> Unit
 ) {
     // Uncaught exceptions from stream coroutines are reported here.
@@ -77,7 +76,8 @@ internal suspend fun http2Connection(
             val http2Connection = Http2Connection(
                 socketConn = conn,
                 connectionScope = this,
-                h2Logger = h2Logger
+                h2Logger = h2Logger,
+                http2Settings = http2Settings
             ).also { connection ->
                 connection.handleStreamConnection = { stream ->
                     handleHttp2Request.invoke(this, connection, stream)
@@ -94,11 +94,10 @@ internal class Http2Connection constructor(
     val socketConn: AsyncConnection,
     private val connectionScope: CoroutineScope,
     val h2Logger: Logger,
+    /** Settings we communicate to the peer. */
+    val http2Settings: Settings
 ) {
     lateinit var handleStreamConnection: suspend CoroutineScope.(Http2Stream) -> Unit
-
-    /** Settings we communicate to the peer. */
-    val http2Settings = Settings()
 
     /**
      * Serializes writes to the connection sink.
@@ -424,9 +423,8 @@ internal fun parseHttpResponseHead(headers: List<Header>): HttpResponseHead {
     return builder.build()
 }
 
-context(http2Connection: Http2Connection)
 private suspend fun Route.handleHttp2Request(
-    stream: Http2Stream,
+    http2Connection: Http2Connection, stream: Http2Stream,
 ) {
     val head = stream.requestHead
     val fields = mapOf("protocol" to "HTTP/2", "streamId" to stream.streamId, "method" to head.method, "target" to head.uri)

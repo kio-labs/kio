@@ -34,6 +34,8 @@ fun Route.route(path: String, block: Route.() -> Unit) {
     createRouteFromPath(path).apply(block)
 }
 
+fun Route() = Route(RootSegment, ArrayDeque())
+
 class Route internal constructor(
     internal val segment: PathSegment,
     internal val httpCallInterceptors: ArrayDeque<CallInterceptor>,

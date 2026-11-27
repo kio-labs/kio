@@ -31,7 +31,7 @@ suspend fun currentLoggingBackend(): LoggingBackEnd {
     return currentCoroutineContext()[CoroutineLoggingBackend]?.loggingBackEnd ?: error("CoroutineLoggingBackend not set")
 }
 
-internal data class CoroutineLoggingBackend(
+data class CoroutineLoggingBackend(
     val loggingBackEnd: LoggingBackEnd
 ) : AbstractCoroutineContextElement(CoroutineLoggingBackend) {
     companion object Key : CoroutineContext.Key<CoroutineLoggingBackend>
