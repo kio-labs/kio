@@ -165,7 +165,11 @@ internal class InternalSslServerConnection(
     private val supportProtocolsRef = StableRef.create(supportProtocols.joinToString(separator = PROTOCOL_SEPARATOR))
 
     init {
-        if (SSL_CTX_use_certificate_file(ctx, certificate.file, certificate.type.toType()) != 1) {
+        val certResult = when (certificate.type) {
+            CertificateFileType.PEM -> SSL_CTX_use_certificate_chain_file(ctx, certificate.file)
+            CertificateFileType.ASN1 -> SSL_CTX_use_certificate_file(ctx, certificate.file, SSL_FILETYPE_ASN1)
+        }
+        if (certResult != 1) {
             throw TlsException("error when set ca file: ${opensslErrorString()}")
         }
 
